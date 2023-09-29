@@ -21,7 +21,11 @@ library
     exposed-modules:  MyLib
     -- other-modules:
     -- other-extensions:
-    build-depends:    base ^>=4.16.3.0
+    build-depends:
+        base ^>=4.16.3.0,
+        bytestring,
+        cborg,
+        text
     hs-source-dirs:   src
     default-language: GHC2021
 

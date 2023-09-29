@@ -19,7 +19,7 @@
         (system:
           let
             pkgs = nixpkgs.legacyPackages.${system};
-            ghcver = "ghc926";
+            ghcver = "ghc927";
           in
           {
             default = devenv.lib.mkShell {
@@ -30,6 +30,7 @@
                   packages = with pkgs.haskell.packages.${ghcver};
                     [ haskell-language-server
                       ormolu
+                      pkgs.haskell.compiler.${ghcver}
                     ];
 
                   enterShell = ''
