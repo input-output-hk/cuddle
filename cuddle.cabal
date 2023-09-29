@@ -19,12 +19,15 @@ common warnings
 library
     import:           warnings
     exposed-modules:  MyLib
-    -- other-modules:
+    other-modules:
+        Codec.CBOR.Cuddle.CDDL
+        Codec.CBOR.Cuddle.Pretty
     -- other-extensions:
     build-depends:
         base ^>=4.16.3.0,
         bytestring,
         cborg,
+        prettyprinter,
         text
     hs-source-dirs:   src
     default-language: GHC2021

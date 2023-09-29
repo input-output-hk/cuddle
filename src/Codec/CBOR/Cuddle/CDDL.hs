@@ -1,10 +1,10 @@
 -- | This module defined the data structure of CDDL as specified in
 --   https://datatracker.ietf.org/doc/rfc8610/
-module Codec.CBOR.Cuddle where
+module Codec.CBOR.Cuddle.CDDL where
 
-import Data.ByteString (ByteString)
 import Data.Text qualified as T
 import qualified Data.ByteString as B
+import qualified Data.List.NonEmpty as NE
 
 -- |
 --  A name can consist of any of the characters from the set {"A" to
@@ -30,6 +30,7 @@ import qualified Data.ByteString as B
 --  *  Rule names (types or groups) do not appear in the actual CBOR
 --      encoding, but names used as "barewords" in member keys do.
 newtype Name = Name T.Text
+  deriving Show
 
 -- |
 --   assignt = "=" / "/="
@@ -71,7 +72,9 @@ data Assign = AssignEq | AssignExt
 --   definitions before a determination can be made.)
 data Rule = Rule Name Assign TypeOrGroup
 
-data TyOp = RangeOp | CtrlOp
+data RangeBound = ClOpen | Closed
+
+data TyOp = RangeOp RangeBound | CtrlOp Name
 
 data TypeOrGroup = TOGType Type0 | TOGGroup Group
 
@@ -79,7 +82,7 @@ data TypeOrGroup = TOGType Type0 | TOGGroup Group
 -- A type can be given as a choice between one or more types.  The
 --   choice matches a data item if the data item matches any one of the
 --   types given in the choice.
-data Type0 = Type0 Type1 [Type1]
+newtype Type0 = Type0 (NE.NonEmpty Type1)
 
 -- |
 -- Two types can be combined with a range operator (see below)
@@ -106,7 +109,7 @@ data Type2
     T2Array Group
   | -- | an "unwrapped" group (see Section 3.7), which matches the group
     --  inside a type defined as a map or an array by wrapping the group, or
-    T2Unwrapped Group
+    T2Unwrapped Name
   | -- | an enumeration expression, which matches any value that is within the
     --  set of values that the values of the group given can take, or
     T2Enum Group
@@ -118,10 +121,6 @@ data Type2
     T2DataItem Int (Maybe Int)
   | -- | Any data item
     T2Any
-
-newtype Choice = Choice Group
-
-data Representation
 
 -- |
 --  An optional _occurrence_ indicator can be given in front of a group
@@ -146,7 +145,7 @@ data OccurrenceIndicator
 -- |
 --   A group matches any sequence of key/value pairs that matches any of
 --   the choices given (again using PEG semantics).
-data Group = Group GrpChoice [GrpChoice]
+newtype Group = Group (NE.NonEmpty GrpChoice)
 
 type GrpChoice = [GroupEntry]
 
