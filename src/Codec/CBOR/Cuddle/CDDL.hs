@@ -6,6 +6,8 @@ import Data.Text qualified as T
 import qualified Data.ByteString as B
 import qualified Data.List.NonEmpty as NE
 
+type CDDL = [Rule]
+
 -- |
 --  A name can consist of any of the characters from the set {"A" to
 --  "Z", "a" to "z", "0" to "9", "_", "-", "@", ".", "$"}, starting
@@ -84,6 +86,9 @@ data TypeOrGroup = TOGType Type0 | TOGGroup Group
 --   types given in the choice.
 newtype Type0 = Type0 (NE.NonEmpty Type1)
 
+instance Semigroup Type0 where
+  (Type0 a) <> (Type0 b) = Type0 $ a <> b
+
 -- |
 -- Two types can be combined with a range operator (see below)
 data Type1 = Type1 Type2 (Maybe (TyOp, Type2))
@@ -121,6 +126,12 @@ data Type2
     T2DataItem Int (Maybe Int)
   | -- | Any data item
     T2Any
+
+mkType :: Type2 -> Type0
+mkType t = Type0 $ NE.singleton $ Type1 t Nothing
+
+mkTypeRange :: Type2 -> Type2 -> RangeBound -> Type0
+mkTypeRange t t' rb = Type0 $ NE.singleton $ Type1 t (Just (RangeOp rb, t'))
 
 -- |
 --  An optional _occurrence_ indicator can be given in front of a group

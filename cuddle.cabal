@@ -18,10 +18,10 @@ common warnings
 
 library
     import:           warnings
-    exposed-modules:  MyLib
-    other-modules:
+    exposed-modules:
         Codec.CBOR.Cuddle.CDDL
         Codec.CBOR.Cuddle.Pretty
+    other-modules:
     -- other-extensions:
     build-depends:
         base ^>=4.16.3.0,
@@ -31,6 +31,18 @@ library
         text
     hs-source-dirs:   src
     default-language: GHC2021
+
+executable example
+    import:           warnings
+    default-language: GHC2021
+    -- other-modules:
+    -- other-extensions:
+    hs-source-dirs:   example
+    main-is:          Main.hs
+    build-depends:
+        base ^>=4.16.3.0,
+        cuddle,
+        prettyprinter
 
 test-suite cuddle-test
     import:           warnings
@@ -42,4 +54,5 @@ test-suite cuddle-test
     main-is:          Main.hs
     build-depends:
         base ^>=4.16.3.0,
-        cuddle
+        cuddle,
+        prettyprinter
