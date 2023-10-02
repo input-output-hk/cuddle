@@ -15,7 +15,7 @@ instance Pretty Rule where
   pretty (Rule n assign tog) =
     pretty n <+> case tog of
       TOGType t -> ppAssignT <+> pretty t
-      TOGGroup g -> ppAssignG <+> pretty g
+      TOGGroup g -> ppAssignG <+> enclose "[" "]" (pretty g)
     where
       ppAssignT = case assign of
         AssignEq -> "="
@@ -58,6 +58,9 @@ instance Pretty OccurrenceIndicator where
   pretty OIZeroOrMore = "*"
   pretty OIOneOrMore = "+"
   pretty (OIBounded ml mh) = pretty ml <> "*" <> pretty mh
+
+instance Pretty GrpChoice where
+  pretty (GrpChoice xs) = encloseSep mempty mempty ", " $ fmap pretty xs
 
 instance Pretty Group where
   pretty (Group (NE.toList -> xs)) =
