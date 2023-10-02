@@ -31,6 +31,7 @@
                     [ haskell-language-server
                       ormolu
                       pkgs.haskell.compiler.${ghcver}
+                      cabal-install
                     ];
 
                   enterShell = ''
