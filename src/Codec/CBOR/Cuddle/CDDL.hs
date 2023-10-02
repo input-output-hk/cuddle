@@ -5,6 +5,7 @@ module Codec.CBOR.Cuddle.CDDL where
 import Data.Text qualified as T
 import qualified Data.ByteString as B
 import qualified Data.List.NonEmpty as NE
+import Data.String (IsString)
 
 type CDDL = [Rule]
 
@@ -32,7 +33,7 @@ type CDDL = [Rule]
 --  *  Rule names (types or groups) do not appear in the actual CBOR
 --      encoding, but names used as "barewords" in member keys do.
 newtype Name = Name T.Text
-  deriving Show
+  deriving (Eq, Ord, Show, IsString, Semigroup, Monoid)
 
 -- |
 --   assignt = "=" / "/="
@@ -48,6 +49,7 @@ newtype Name = Name T.Text
 --   a rule name that has not yet been defined; this makes the right-hand
 --   side the first entry in the choice being created.)
 data Assign = AssignEq | AssignExt
+  deriving (Show)
 
 -- |
 --  rule = typename [genericparm] S assignt S type
@@ -73,18 +75,23 @@ data Assign = AssignEq | AssignExt
 --   this semantic processing may need to span several levels of rule
 --   definitions before a determination can be made.)
 data Rule = Rule Name Assign TypeOrGroup
+  deriving (Show)
 
 data RangeBound = ClOpen | Closed
+  deriving (Show)
 
 data TyOp = RangeOp RangeBound | CtrlOp Name
+  deriving (Show)
 
 data TypeOrGroup = TOGType Type0 | TOGGroup Group
+  deriving (Show)
 
 -- |
 -- A type can be given as a choice between one or more types.  The
 --   choice matches a data item if the data item matches any one of the
 --   types given in the choice.
 newtype Type0 = Type0 (NE.NonEmpty Type1)
+  deriving (Show)
 
 instance Semigroup Type0 where
   (Type0 a) <> (Type0 b) = Type0 $ a <> b
@@ -92,6 +99,7 @@ instance Semigroup Type0 where
 -- |
 -- Two types can be combined with a range operator (see below)
 data Type1 = Type1 Type2 (Maybe (TyOp, Type2))
+  deriving (Show)
 
 data Type2
   = -- | A type can be just a single value (such as 1 or "icecream" or
@@ -126,6 +134,7 @@ data Type2
     T2DataItem Int (Maybe Int)
   | -- | Any data item
     T2Any
+  deriving (Show)
 
 mkType :: Type2 -> Type0
 mkType t = Type0 $ NE.singleton $ Type1 t Nothing
@@ -152,11 +161,13 @@ data OccurrenceIndicator
   | OIZeroOrMore
   | OIOneOrMore
   | OIBounded (Maybe Int) (Maybe Int)
+  deriving (Show)
 
 -- |
 --   A group matches any sequence of key/value pairs that matches any of
 --   the choices given (again using PEG semantics).
 newtype Group = Group (NE.NonEmpty GrpChoice)
+  deriving (Show)
 
 type GrpChoice = [GroupEntry]
 
@@ -168,6 +179,7 @@ type GrpChoice = [GroupEntry]
 --  only be used for matching arrays, not for maps.  (See below for how
 --  that is modified by the occurrence indicator.)
 data GroupEntry = GroupEntry (Maybe OccurrenceIndicator) (Maybe MemberKey) Type0
+  deriving (Show)
 
 -- |
 --  Key types can be given by a type expression, a bareword (which stands
@@ -181,11 +193,13 @@ data MemberKey
   = MKType Type1
   | MKBareword Name
   | MKValue Value
+  deriving (Show)
 
 data Value =
     -- Should be bigger than just Int
     VNum Int
   | VText T.Text
   | VBytes B.ByteString
+  deriving (Show)
 
 newtype Comment = Comment T.Text
