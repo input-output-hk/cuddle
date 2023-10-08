@@ -21,14 +21,22 @@ library
     exposed-modules:
         Codec.CBOR.Cuddle.CDDL
         Codec.CBOR.Cuddle.Pretty
+        Codec.CBOR.Cuddle.Schema
+        Codec.CBOR.Cuddle.Schema.Encode
+        Codec.CBOR.Cuddle.Schema.Decode
+        Codec.CBOR.Cuddle.Schema.CDDL
     other-modules:
+        Codec.CBOR.Cuddle.Schema.Core
     -- other-extensions:
     build-depends:
         base ^>=4.16.3.0,
         bytestring,
         cborg,
+        containers,
         prettyprinter,
-        text
+        text,
+        mtl,
+        QuickCheck
     hs-source-dirs:   src
     default-language: GHC2021
 
@@ -54,5 +62,10 @@ test-suite cuddle-test
     main-is:          Main.hs
     build-depends:
         base ^>=4.16.3.0,
+        bytestring,
         cuddle,
-        prettyprinter
+        prettyprinter,
+        text,
+        QuickCheck,
+        hspec,
+        cborg
