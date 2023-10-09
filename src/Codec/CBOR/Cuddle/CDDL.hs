@@ -2,9 +2,9 @@
 --   https://datatracker.ietf.org/doc/rfc8610/
 module Codec.CBOR.Cuddle.CDDL where
 
+import Data.ByteString qualified as B
+import Data.List.NonEmpty qualified as NE
 import Data.Text qualified as T
-import qualified Data.ByteString as B
-import qualified Data.List.NonEmpty as NE
 
 type CDDL = [Rule]
 
@@ -32,7 +32,7 @@ type CDDL = [Rule]
 --  *  Rule names (types or groups) do not appear in the actual CBOR
 --      encoding, but names used as "barewords" in member keys do.
 newtype Name = Name T.Text
-  deriving Show
+  deriving (Show)
 
 -- |
 --   assignt = "=" / "/="
@@ -48,6 +48,29 @@ newtype Name = Name T.Text
 --   a rule name that has not yet been defined; this makes the right-hand
 --   side the first entry in the choice being created.)
 data Assign = AssignEq | AssignExt
+
+{- |
+  Generics
+
+   Using angle brackets, the left-hand side of a rule can add formal
+   parameters after the name being defined, as in:
+
+      messages = message<"reboot", "now"> / message<"sleep", 1..100>
+      message<t, v> = {type: t, value: v}
+
+   When using a generic rule, the formal parameters are bound to the
+   actual arguments supplied (also using angle brackets), within the
+   scope of the generic rule (as if there were a rule of the form
+   parameter = argument).
+
+   Generic rules can be used for establishing names for both types and
+   groups.
+
+-}
+newtype GenericParam = GenericParam (NE.NonEmpty Name)
+  deriving (Show)
+
+newtype GenericArg = GenericArg (NE.NonEmpty Type1)
 
 -- |
 --  rule = typename [genericparm] S assignt S type
@@ -72,7 +95,7 @@ data Assign = AssignEq | AssignExt
 --   clear immediately either whether "b" stands for a group or a type --
 --   this semantic processing may need to span several levels of rule
 --   definitions before a determination can be made.)
-data Rule = Rule Name Assign TypeOrGroup
+data Rule = Rule Name (Maybe GenericParam) Assign TypeOrGroup
 
 data RangeBound = ClOpen | Closed
 
@@ -100,7 +123,7 @@ data Type2
     T2Value Value
   | -- | or be defined by a rule giving a meaning to a name (possibly after
     --   supplying generic arguments as required by the generic parameters)
-    T2Name Name
+    T2Name Name (Maybe GenericArg)
   | -- | or be defined in a parenthesized type expression (parentheses may be
     --   necessary to override some operator precedence),
     T2Group Type0
@@ -114,10 +137,10 @@ data Type2
     T2Array Group
   | -- | an "unwrapped" group (see Section 3.7), which matches the group
     --  inside a type defined as a map or an array by wrapping the group, or
-    T2Unwrapped Name
+    T2Unwrapped Name (Maybe GenericArg)
   | -- | an enumeration expression, which matches any value that is within the
     --  set of values that the values of the group given can take, or
-    T2Enum Group
+    T2Enum Group (Maybe GenericArg)
   | -- | a tagged data item, tagged with the "uint" given and containing the
     --  type given as the tagged value, or
     T2Tag Int Type0
@@ -182,8 +205,8 @@ data MemberKey
   | MKBareword Name
   | MKValue Value
 
-data Value =
-    -- Should be bigger than just Int
+data Value
+  = -- Should be bigger than just Int
     VNum Int
   | VText T.Text
   | VBytes B.ByteString

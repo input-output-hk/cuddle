@@ -12,8 +12,8 @@ import Prettyprinter
 deriving newtype instance Pretty Name
 
 instance Pretty Rule where
-  pretty (Rule n assign tog) =
-    pretty n <+> case tog of
+  pretty (Rule n mgen assign tog) =
+    pretty n <> pretty mgen <+> case tog of
       TOGType t -> ppAssignT <+> pretty t
       TOGGroup g -> ppAssignG <+> pretty g
     where
@@ -23,6 +23,12 @@ instance Pretty Rule where
       ppAssignG = case assign of
         AssignEq -> "="
         AssignExt -> "//="
+
+instance Pretty GenericArg where
+  pretty (GenericArg (NE.toList -> l)) = encloseSep "<" ">" ", " $ fmap pretty l
+
+instance Pretty GenericParam where
+  pretty (GenericParam (NE.toList -> l)) = encloseSep "<" ">" ", " $ fmap pretty l
 
 instance Pretty Type0 where
   pretty (Type0 (NE.toList -> l)) = encloseSep mempty mempty " / " $ fmap pretty l
@@ -40,12 +46,12 @@ instance Pretty Type1 where
 
 instance Pretty Type2 where
   pretty (T2Value v) = pretty v
-  pretty (T2Name n) = pretty n
+  pretty (T2Name n mg) = pretty n <> pretty mg
   pretty (T2Group g) = enclose "(" ")" $ pretty g
   pretty (T2Map g) = enclose "{" "}" $ pretty g
   pretty (T2Array g) = enclose "[" "]" $ pretty g
-  pretty (T2Unwrapped n) = "~" <+> pretty n
-  pretty (T2Enum g) = "&" <+> pretty g
+  pretty (T2Unwrapped n mg) = "~" <+> pretty n <> pretty mg
+  pretty (T2Enum g mg) = "&" <+> pretty g <> pretty mg
   pretty (T2Tag minor t) = "#6." <> pretty minor <+> enclose "(" ")" (pretty t)
   pretty (T2DataItem major mminor) =
     "#" <> pretty major <> case mminor of
