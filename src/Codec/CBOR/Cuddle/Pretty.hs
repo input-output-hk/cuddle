@@ -70,7 +70,9 @@ instance Pretty Group where
     encloseSep mempty mempty " // " $ fmap pretty xs
 
 instance Pretty GroupEntry where
-  pretty (GroupEntry moi mmk t) = pretty moi <+> pretty mmk <+> pretty t
+  pretty (GEType moi mmk t) = pretty moi <+> pretty mmk <+> pretty t
+  pretty (GERef moi n mga) = pretty moi <+> pretty n <+> pretty mga
+  pretty (GEGroup moi g) = pretty moi <+> enclose "(" ")" (pretty g)
 
 instance Pretty MemberKey where
   pretty (MKType t1) = pretty t1 <+> "=>"

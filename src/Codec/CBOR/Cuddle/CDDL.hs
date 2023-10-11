@@ -6,7 +6,7 @@ import Data.ByteString qualified as B
 import Data.List.NonEmpty qualified as NE
 import Data.Text qualified as T
 
-type CDDL = [Rule]
+type CDDL = NE.NonEmpty Rule
 
 -- |
 --  A name can consist of any of the characters from the set {"A" to

@@ -15,6 +15,21 @@ import Text.Megaparsec.Char.Lexer qualified as L
 
 type Parser = Parsec Void Text
 
+pRule :: Parser Rule
+pRule =
+  choice
+    [ Rule
+        <$> pName
+        <*> optional pGenericParam
+        <*> pAssignG
+        <*> (TOGGroup <$> pGroup),
+      Rule
+        <$> pName
+        <*> optional pGenericParam
+        <*> pAssignT
+        <*> (TOGType <$> pType0)
+    ]
+
 pName :: Parser Name
 pName = do
   fc <- firstChar

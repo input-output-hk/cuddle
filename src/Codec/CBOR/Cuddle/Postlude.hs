@@ -1,8 +1,5 @@
 module Codec.CBOR.Cuddle.Postlude where
 
-import Data.ByteString (ByteString)
-import Data.Text qualified as T
-
 -- |
 --
 --  CDDL predefines a number of names.  This subsection summarizes these
@@ -38,13 +35,13 @@ import Data.Text qualified as T
 --  (Note that there are no predefined names for arrays or maps; these
 --  are defined with the syntax given below.)
 data PTerm
-  = PTBool !Bool
-  | PTUInt !Int
-  | PTNInt !Int
-  | PTInt !Int
-  | PTHalf !Float
-  | PTFloat !Float
-  | PTDboule !Double
-  | PTBytes !ByteString
-  | PTText !T.Text
+  = PTBool
+  | PTUInt
+  | PTNInt
+  | PTInt
+  | PTHalf
+  | PTFloat
+  | PTDboule
+  | PTBytes
+  | PTText
   | PTAny
