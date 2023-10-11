@@ -49,24 +49,22 @@ newtype Name = Name T.Text
 --   side the first entry in the choice being created.)
 data Assign = AssignEq | AssignExt
 
-{- |
-  Generics
-
-   Using angle brackets, the left-hand side of a rule can add formal
-   parameters after the name being defined, as in:
-
-      messages = message<"reboot", "now"> / message<"sleep", 1..100>
-      message<t, v> = {type: t, value: v}
-
-   When using a generic rule, the formal parameters are bound to the
-   actual arguments supplied (also using angle brackets), within the
-   scope of the generic rule (as if there were a rule of the form
-   parameter = argument).
-
-   Generic rules can be used for establishing names for both types and
-   groups.
-
--}
+-- |
+--  Generics
+--
+--   Using angle brackets, the left-hand side of a rule can add formal
+--   parameters after the name being defined, as in:
+--
+--      messages = message<"reboot", "now"> / message<"sleep", 1..100>
+--      message<t, v> = {type: t, value: v}
+--
+--   When using a generic rule, the formal parameters are bound to the
+--   actual arguments supplied (also using angle brackets), within the
+--   scope of the generic rule (as if there were a rule of the form
+--   parameter = argument).
+--
+--   Generic rules can be used for establishing names for both types and
+--   groups.
 newtype GenericParam = GenericParam (NE.NonEmpty Name)
   deriving (Show)
 
@@ -97,6 +95,12 @@ newtype GenericArg = GenericArg (NE.NonEmpty Type1)
 --   definitions before a determination can be made.)
 data Rule = Rule Name (Maybe GenericParam) Assign TypeOrGroup
 
+-- |
+--   A range operator can be used to join two type expressions that stand
+--   for either two integer values or two floating-point values; it
+--   matches any value that is between the two values, where the first
+--   value is always included in the matching set and the second value is
+--   included for ".." and excluded for "...".
 data RangeBound = ClOpen | Closed
 
 data TyOp = RangeOp RangeBound | CtrlOp Name
@@ -190,7 +194,10 @@ type GrpChoice = [GroupEntry]
 --  the memberkey is given.  If the memberkey is not given, the entry can
 --  only be used for matching arrays, not for maps.  (See below for how
 --  that is modified by the occurrence indicator.)
-data GroupEntry = GroupEntry (Maybe OccurrenceIndicator) (Maybe MemberKey) Type0
+data GroupEntry
+  = GEType (Maybe OccurrenceIndicator) (Maybe MemberKey) Type0
+  | GERef (Maybe OccurrenceIndicator) Name (Maybe GenericArg)
+  | GEGroup (Maybe OccurrenceIndicator) Group
 
 -- |
 --  Key types can be given by a type expression, a bareword (which stands

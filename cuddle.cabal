@@ -27,6 +27,8 @@ library
         base ^>=4.16.3.0,
         bytestring,
         cborg,
+        megaparsec,
+        parser-combinators,
         prettyprinter,
         text
     hs-source-dirs:   src
