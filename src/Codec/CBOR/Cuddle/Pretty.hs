@@ -51,7 +51,8 @@ instance Pretty Type2 where
   pretty (T2Map g) = enclose "{" "}" $ pretty g
   pretty (T2Array g) = enclose "[" "]" $ pretty g
   pretty (T2Unwrapped n mg) = "~" <+> pretty n <> pretty mg
-  pretty (T2Enum g mg) = "&" <+> pretty g <> pretty mg
+  pretty (T2Enum g) = "&" <+> enclose "(" ")" (pretty g)
+  pretty (T2EnumRef g mg) = "&" <+> pretty g <+> pretty mg
   pretty (T2Tag minor t) = "#6." <> pretty minor <+> enclose "(" ")" (pretty t)
   pretty (T2DataItem major mminor) =
     "#" <> pretty major <> case mminor of

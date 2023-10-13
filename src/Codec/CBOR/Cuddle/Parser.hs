@@ -66,8 +66,8 @@ pGenericArg :: Parser GenericArg
 pGenericArg =
   GenericArg
     <$> between
-      (char '<')
-      (char '>')
+      (space *> char '<')
+      (char '>' <* space)
       (NE.sepBy1 pType1 (space <* char ',' <* space))
 
 pType0 :: Parser Type0
@@ -81,8 +81,24 @@ pType2 =
   choice
     [ T2Value <$> pValue,
       T2Name <$> pName <*> optional pGenericArg,
-      T2Group <$> pType0,
-      T2Map <$> pGroup
+      T2Group <$> between (char '(') (char ')') (space *> pType0 <* space),
+      T2Map <$> between (char '{') (char '}') (space *> pGroup <* space),
+      T2Array <$> between (char '[') (char ']') (space *> pGroup <* space),
+      T2Unwrapped <$> (char '~' *> space *> pName) <*> optional pGenericArg,
+      T2Enum
+        <$> ( char '&'
+                *> space
+                *> between
+                  (char '(')
+                  (char ')')
+                  (space *> pGroup <* space)
+            ),
+      T2EnumRef <$> (char '&' *> space *> pName) <*> optional pGenericArg,
+      T2Tag
+        <$> (string "#6" *> optional (char '.' *> L.decimal))
+        <*> between (char '(') (char ')') (space *> pType0 <* space),
+      T2DataItem <$> (char '#' *> L.decimal) <*> optional (char '.' *> L.decimal),
+      T2Any <$ char '#'
     ]
 
 pGroup :: Parser Group

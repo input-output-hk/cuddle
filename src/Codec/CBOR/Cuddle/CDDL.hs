@@ -144,10 +144,11 @@ data Type2
     T2Unwrapped Name (Maybe GenericArg)
   | -- | an enumeration expression, which matches any value that is within the
     --  set of values that the values of the group given can take, or
-    T2Enum Group (Maybe GenericArg)
+    T2Enum Group
+  | T2EnumRef Name (Maybe GenericArg)
   | -- | a tagged data item, tagged with the "uint" given and containing the
     --  type given as the tagged value, or
-    T2Tag Int Type0
+    T2Tag (Maybe Int) Type0
   | -- | a data item of a major type (given by the DIGIT), optionally
     --  constrained to the additional information given by the uint, or
     T2DataItem Int (Maybe Int)
