@@ -110,7 +110,7 @@ data RangeBound = ClOpen | Closed
 data TyOp = RangeOp RangeBound | CtrlOp Name
   deriving (Show)
 
-data TypeOrGroup = TOGType Type0 | TOGGroup Group
+data TypeOrGroup = TOGType Type0 | TOGGroup GroupEntry
   deriving (Show)
 
 -- |

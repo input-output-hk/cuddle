@@ -20,6 +20,7 @@ library
     import:           warnings
     exposed-modules:
         Codec.CBOR.Cuddle.CDDL
+        Codec.CBOR.Cuddle.Parser
         Codec.CBOR.Cuddle.Pretty
     other-modules:
     -- other-extensions:
@@ -44,7 +45,9 @@ executable example
     build-depends:
         base ^>=4.16.3.0,
         cuddle,
-        prettyprinter
+        megaparsec,
+        prettyprinter,
+        text
 
 test-suite cuddle-test
     import:           warnings

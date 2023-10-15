@@ -1,0 +1,7 @@
+coin = uint
+epoch = uint
+
+header =
+  [ header_body
+  , body_signature : $kes_signature
+  ]
