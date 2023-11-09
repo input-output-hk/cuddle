@@ -4,4 +4,6 @@ epoch = uint
 header =
   [ header_body
   , body_signature : $kes_signature
+  , test : coin / null
+  , withComment : null ; This is a comment
   ]

@@ -80,7 +80,7 @@ pGenericArg =
       (NE.sepBy1 (space *> pType1 <* space) (char ','))
 
 pType0 :: Parser Type0
-pType0 = Type0 <$> NE.sepBy1 (space *> pType1 <* space) (char ',')
+pType0 = Type0 <$> NE.sepBy1 (space *> pType1 <* space) (char '/')
 
 pType1 :: Parser Type1
 pType1 = Type1 <$> pType2 <*> optcomp ((,) <$> pTyOp <*> pType2)
