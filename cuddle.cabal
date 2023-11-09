@@ -60,4 +60,8 @@ test-suite cuddle-test
     build-depends:
         base ^>=4.16.3.0,
         cuddle,
-        prettyprinter
+        hspec,
+        hspec-megaparsec,
+        megaparsec,
+        prettyprinter,
+        text
