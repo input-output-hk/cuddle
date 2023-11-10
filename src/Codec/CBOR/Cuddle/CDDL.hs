@@ -67,10 +67,10 @@ data Assign = AssignEq | AssignExt
 --   Generic rules can be used for establishing names for both types and
 --   groups.
 newtype GenericParam = GenericParam (NE.NonEmpty Name)
-  deriving (Eq, Show)
+  deriving (Eq, Show, Semigroup)
 
 newtype GenericArg = GenericArg (NE.NonEmpty Type1)
-  deriving (Eq, Show)
+  deriving (Eq, Show, Semigroup)
 
 -- |
 --  rule = typename [genericparm] S assignt S type
@@ -118,10 +118,7 @@ data TypeOrGroup = TOGType Type0 | TOGGroup GroupEntry
 --   choice matches a data item if the data item matches any one of the
 --   types given in the choice.
 newtype Type0 = Type0 (NE.NonEmpty Type1)
-  deriving (Eq, Show)
-
-instance Semigroup Type0 where
-  (Type0 a) <> (Type0 b) = Type0 $ a <> b
+  deriving (Eq, Show, Semigroup)
 
 -- |
 -- Two types can be combined with a range operator (see below)
@@ -195,7 +192,7 @@ data OccurrenceIndicator
 --   A group matches any sequence of key/value pairs that matches any of
 --   the choices given (again using PEG semantics).
 newtype Group = Group (NE.NonEmpty GrpChoice)
-  deriving (Eq, Show)
+  deriving (Eq, Show, Semigroup)
 
 type GrpChoice = [GroupEntry]
 

@@ -121,10 +121,10 @@ pGrpChoice = many ((space *> pGrpEntry <* space) <* optional (char ','))
 pGrpEntry :: Parser GroupEntry
 pGrpEntry =
   choice
-    [ try $ GEType <$> optcomp pOccur <*> optcomp pMemberKey <*> pType0,
-      try $ GERef <$> optcomp pOccur <*> pName <*> optcomp pGenericArg,
+    [ try $ GEType <$> optcomp (pOccur <* space) <*> optcomp (pMemberKey <* space) <*> pType0,
+      try $ GERef <$> optcomp (pOccur <* space) <*> pName <*> optcomp pGenericArg,
       GEGroup
-        <$> optcomp pOccur
+        <$> optcomp (pOccur <* space)
         <*> between
           (char '(')
           (char ')')
