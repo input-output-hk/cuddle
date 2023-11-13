@@ -83,10 +83,10 @@ pGenericArg =
       (NE.sepBy1 (space *> pType1 <* space) (char ','))
 
 pType0 :: Parser Type0
-pType0 = Type0 <$> NE.sepBy1 (space *> pType1 <* space) (char '/')
+pType0 = Type0 <$> sepBy1' (space *> pType1 <* space) (char '/')
 
 pType1 :: Parser Type1
-pType1 = Type1 <$> pType2 <*> optcomp ((,) <$> pTyOp <*> pType2)
+pType1 = Type1 <$> pType2 <*> optcomp ((,) <$> (space *> pTyOp <* space) <*> pType2)
 
 pType2 :: Parser Type2
 pType2 =
@@ -137,7 +137,7 @@ pGrpEntry =
 pMemberKey :: Parser MemberKey
 pMemberKey =
   choice
-    [ try $ MKType <$> pType1 <* space <* optional (char '^' <* space) <* string "=>",
+    [ try $ MKType <$> pType1 <* space <* optcomp (char '^' <* space) <* string "=>",
       try $ MKBareword <$> pName <* space <* char ':' <* space,
       MKValue <$> pValue <* space <* char ':' <* space
     ]

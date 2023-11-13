@@ -17,6 +17,7 @@ main = hspec $
     nameSpec
     type2Spec
     grpEntrySpec
+    grpChoiceSpec
 
 valueSpec :: Spec
 valueSpec = describe "pValue" $ do
@@ -127,7 +128,7 @@ type2Spec = describe "type2" $ do
                   NE.:| [ [ GEType
                               Nothing
                               Nothing
-                              (Type0 (NE.singleton (Type1 (T2Value (VNum 0)) Nothing)))
+                              (Type0 (NE.singleton (Type1 (T2Value (VNum 1)) Nothing)))
                           ]
                         ]
               )
@@ -147,3 +148,31 @@ grpEntrySpec = describe "GroupEntry" $ do
                 NE.:| []
             )
         )
+  it "Should parse part of a group alternative" $
+    parse pGrpEntry "" "int // notConsideredHere"
+      `shouldParse` GEType
+        Nothing
+        Nothing
+        ( Type0
+            ( Type1
+                (T2Name (Name "int") Nothing)
+                Nothing
+                NE.:| []
+            )
+        )
+
+grpChoiceSpec :: SpecWith ()
+grpChoiceSpec = describe "GroupChoice" $ do
+  it "Should parse part of a group alternative" $
+    parse pGrpChoice "" "int // string"
+      `shouldParse` [ GEType
+                        Nothing
+                        Nothing
+                        ( Type0
+                            ( Type1
+                                (T2Name (Name "int") Nothing)
+                                Nothing
+                                NE.:| []
+                            )
+                        )
+                    ]
