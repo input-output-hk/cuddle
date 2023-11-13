@@ -3,8 +3,11 @@
 module Codec.CBOR.Cuddle.Parser where
 
 import Codec.CBOR.Cuddle.CDDL
+import Control.Applicative (Applicative (liftA2))
 import Control.Applicative.Combinators.NonEmpty qualified as NE
 import Data.Functor (void, ($>))
+import Data.List.NonEmpty (NonEmpty)
+import Data.List.NonEmpty qualified as NE
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Void (Void)
@@ -330,3 +333,9 @@ RFC 8610                          CDDL                         June 2019
      CRLF = %x0A / %x0D.0A
 
 -}
+
+-- | Variant on 'NE.sepEndBy1' which doesn't consume the separator
+sepBy1' :: MonadParsec e s m => m a -> m sep -> m (NonEmpty a)
+sepBy1' p sep = NE.fromList <$> go
+  where
+    go = liftA2 (:) p (many (try $ sep *> p))
