@@ -9,6 +9,9 @@ import Codec.CBOR.Cuddle.CDDL
 import Data.List.NonEmpty qualified as NE
 import Prettyprinter
 
+instance Pretty CDDL where
+  pretty (CDDL (NE.toList -> xs)) = vsep . punctuate hardline $ fmap pretty xs
+
 deriving newtype instance Pretty Name
 
 instance Pretty Rule where
@@ -31,7 +34,7 @@ instance Pretty GenericParam where
   pretty (GenericParam (NE.toList -> l)) = encloseSep "<" ">" ", " $ fmap pretty l
 
 instance Pretty Type0 where
-  pretty (Type0 (NE.toList -> l)) = encloseSep mempty mempty " / " $ fmap pretty l
+  pretty (Type0 (NE.toList -> l)) = align . encloseSep mempty mempty " / " $ fmap pretty l
 
 instance Pretty Type1 where
   pretty (Type1 t2 Nothing) = pretty t2
@@ -68,7 +71,9 @@ instance Pretty OccurrenceIndicator where
 
 instance Pretty Group where
   pretty (Group (NE.toList -> xs)) =
-    encloseSep mempty mempty " // " $ fmap pretty xs
+    align . encloseSep mempty mempty " // " $ fmap prettyGrpChoice xs
+    where
+      prettyGrpChoice = align . vsep . punctuate "," . fmap pretty
 
 instance Pretty GroupEntry where
   pretty (GEType moi mmk t) = pretty moi <+> pretty mmk <+> pretty t
