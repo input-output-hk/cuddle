@@ -1,21 +1,31 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Main (main) where
 
-import Codec.CBOR.Cuddle.CDDL
+import Codec.CBOR.Cuddle.Parser (pCDDL)
 import Codec.CBOR.Cuddle.Pretty ()
-import Prettyprinter
+import Data.Text qualified as T
+import Data.Text.IO qualified as T
+import Prettyprinter (Pretty (pretty))
 import Prettyprinter.Util (putDocW)
-import qualified Data.List.NonEmpty as NE
-
-ex1 :: Rule
-ex1 =
-  Rule
-    (Name "test1")
-    (Just . GenericParam $ NE.singleton (Name "a"))
-    AssignEq
-    ( TOGType $ mkType (T2Value $ VNum 3) <> mkType  (T2Value $ VText "3")
-    )
+import System.Environment (getArgs)
+import Text.Megaparsec (ParseErrorBundle, Parsec, errorBundlePretty, runParser)
 
 main :: IO ()
-main = putDocW 80 $ pretty ex1
+main = do
+  args <- getArgs
+  case args of
+    [fn] -> do
+      parseFromFile pCDDL fn >>= \case
+        Left err -> putStrLn $ errorBundlePretty err
+        Right res -> do
+          print res
+          putDocW 80 $ pretty res
+    _ -> putStrLn "Expected filename"
+
+parseFromFile ::
+  Parsec e T.Text a ->
+  String ->
+  IO (Either (ParseErrorBundle T.Text e) a)
+parseFromFile p file = runParser p file <$> T.readFile file

@@ -6,8 +6,13 @@
 module Codec.CBOR.Cuddle.Pretty where
 
 import Codec.CBOR.Cuddle.CDDL
+import Codec.CBOR.Cuddle.CDDL.CtlOp (CtlOp)
 import Data.List.NonEmpty qualified as NE
+import Data.Text qualified as T
 import Prettyprinter
+
+instance Pretty CDDL where
+  pretty (CDDL (NE.toList -> xs)) = vsep . punctuate hardline $ fmap pretty xs
 
 deriving newtype instance Pretty Name
 
@@ -31,7 +36,10 @@ instance Pretty GenericParam where
   pretty (GenericParam (NE.toList -> l)) = encloseSep "<" ">" ", " $ fmap pretty l
 
 instance Pretty Type0 where
-  pretty (Type0 (NE.toList -> l)) = encloseSep mempty mempty " / " $ fmap pretty l
+  pretty (Type0 (NE.toList -> l)) = align . encloseSep mempty mempty " / " $ fmap pretty l
+
+instance Pretty CtlOp where
+  pretty = pretty . T.toLower . T.pack . show
 
 instance Pretty Type1 where
   pretty (Type1 t2 Nothing) = pretty t2
@@ -40,7 +48,7 @@ instance Pretty Type1 where
       <+> ( case tyop of
               RangeOp ClOpen -> "..."
               RangeOp Closed -> ".."
-              CtrlOp n -> "." <+> pretty n
+              CtrlOp n -> "." <> pretty n
           )
       <+> pretty t2'
 
@@ -51,7 +59,8 @@ instance Pretty Type2 where
   pretty (T2Map g) = enclose "{" "}" $ pretty g
   pretty (T2Array g) = enclose "[" "]" $ pretty g
   pretty (T2Unwrapped n mg) = "~" <+> pretty n <> pretty mg
-  pretty (T2Enum g mg) = "&" <+> pretty g <> pretty mg
+  pretty (T2Enum g) = "&" <+> enclose "(" ")" (pretty g)
+  pretty (T2EnumRef g mg) = "&" <+> pretty g <+> pretty mg
   pretty (T2Tag minor t) = "#6." <> pretty minor <+> enclose "(" ")" (pretty t)
   pretty (T2DataItem major mminor) =
     "#" <> pretty major <> case mminor of
@@ -67,10 +76,14 @@ instance Pretty OccurrenceIndicator where
 
 instance Pretty Group where
   pretty (Group (NE.toList -> xs)) =
-    encloseSep mempty mempty " // " $ fmap pretty xs
+    align . encloseSep mempty mempty " // " $ fmap prettyGrpChoice xs
+    where
+      prettyGrpChoice = align . vsep . punctuate "," . fmap pretty
 
 instance Pretty GroupEntry where
-  pretty (GroupEntry moi mmk t) = pretty moi <+> pretty mmk <+> pretty t
+  pretty (GEType moi mmk t) = pretty moi <+> pretty mmk <+> pretty t
+  pretty (GERef moi n mga) = pretty moi <+> pretty n <+> pretty mga
+  pretty (GEGroup moi g) = pretty moi <+> enclose "(" ")" (pretty g)
 
 instance Pretty MemberKey where
   pretty (MKType t1) = pretty t1 <+> "=>"

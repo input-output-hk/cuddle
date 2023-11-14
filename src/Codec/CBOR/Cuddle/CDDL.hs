@@ -6,7 +6,8 @@ import Data.ByteString qualified as B
 import Data.List.NonEmpty qualified as NE
 import Data.Text qualified as T
 
-type CDDL = [Rule]
+newtype CDDL = CDDL (NE.NonEmpty Rule)
+  deriving (Eq, Show)
 
 -- |
 --  A name can consist of any of the characters from the set {"A" to
@@ -32,7 +33,7 @@ type CDDL = [Rule]
 --  *  Rule names (types or groups) do not appear in the actual CBOR
 --      encoding, but names used as "barewords" in member keys do.
 newtype Name = Name T.Text
-  deriving (Show)
+  deriving (Eq, Show)
 
 -- |
 --   assignt = "=" / "/="
@@ -48,29 +49,29 @@ newtype Name = Name T.Text
 --   a rule name that has not yet been defined; this makes the right-hand
 --   side the first entry in the choice being created.)
 data Assign = AssignEq | AssignExt
+  deriving (Eq, Show)
 
-{- |
-  Generics
-
-   Using angle brackets, the left-hand side of a rule can add formal
-   parameters after the name being defined, as in:
-
-      messages = message<"reboot", "now"> / message<"sleep", 1..100>
-      message<t, v> = {type: t, value: v}
-
-   When using a generic rule, the formal parameters are bound to the
-   actual arguments supplied (also using angle brackets), within the
-   scope of the generic rule (as if there were a rule of the form
-   parameter = argument).
-
-   Generic rules can be used for establishing names for both types and
-   groups.
-
--}
+-- |
+--  Generics
+--
+--   Using angle brackets, the left-hand side of a rule can add formal
+--   parameters after the name being defined, as in:
+--
+--      messages = message<"reboot", "now"> / message<"sleep", 1..100>
+--      message<t, v> = {type: t, value: v}
+--
+--   When using a generic rule, the formal parameters are bound to the
+--   actual arguments supplied (also using angle brackets), within the
+--   scope of the generic rule (as if there were a rule of the form
+--   parameter = argument).
+--
+--   Generic rules can be used for establishing names for both types and
+--   groups.
 newtype GenericParam = GenericParam (NE.NonEmpty Name)
-  deriving (Show)
+  deriving (Eq, Show, Semigroup)
 
 newtype GenericArg = GenericArg (NE.NonEmpty Type1)
+  deriving (Eq, Show, Semigroup)
 
 -- |
 --  rule = typename [genericparm] S assignt S type
@@ -96,25 +97,34 @@ newtype GenericArg = GenericArg (NE.NonEmpty Type1)
 --   this semantic processing may need to span several levels of rule
 --   definitions before a determination can be made.)
 data Rule = Rule Name (Maybe GenericParam) Assign TypeOrGroup
+  deriving (Eq, Show)
 
+-- |
+--   A range operator can be used to join two type expressions that stand
+--   for either two integer values or two floating-point values; it
+--   matches any value that is between the two values, where the first
+--   value is always included in the matching set and the second value is
+--   included for ".." and excluded for "...".
 data RangeBound = ClOpen | Closed
+  deriving (Eq, Show)
 
 data TyOp = RangeOp RangeBound | CtrlOp Name
+  deriving (Eq, Show)
 
-data TypeOrGroup = TOGType Type0 | TOGGroup Group
+data TypeOrGroup = TOGType Type0 | TOGGroup GroupEntry
+  deriving (Eq, Show)
 
 -- |
 -- A type can be given as a choice between one or more types.  The
 --   choice matches a data item if the data item matches any one of the
 --   types given in the choice.
 newtype Type0 = Type0 (NE.NonEmpty Type1)
-
-instance Semigroup Type0 where
-  (Type0 a) <> (Type0 b) = Type0 $ a <> b
+  deriving (Eq, Show, Semigroup)
 
 -- |
 -- Two types can be combined with a range operator (see below)
 data Type1 = Type1 Type2 (Maybe (TyOp, Type2))
+  deriving (Eq, Show)
 
 data Type2
   = -- | A type can be just a single value (such as 1 or "icecream" or
@@ -140,15 +150,17 @@ data Type2
     T2Unwrapped Name (Maybe GenericArg)
   | -- | an enumeration expression, which matches any value that is within the
     --  set of values that the values of the group given can take, or
-    T2Enum Group (Maybe GenericArg)
+    T2Enum Group
+  | T2EnumRef Name (Maybe GenericArg)
   | -- | a tagged data item, tagged with the "uint" given and containing the
     --  type given as the tagged value, or
-    T2Tag Int Type0
+    T2Tag (Maybe Int) Type0
   | -- | a data item of a major type (given by the DIGIT), optionally
     --  constrained to the additional information given by the uint, or
     T2DataItem Int (Maybe Int)
   | -- | Any data item
     T2Any
+  deriving (Eq, Show)
 
 mkType :: Type2 -> Type0
 mkType t = Type0 $ NE.singleton $ Type1 t Nothing
@@ -175,11 +187,13 @@ data OccurrenceIndicator
   | OIZeroOrMore
   | OIOneOrMore
   | OIBounded (Maybe Int) (Maybe Int)
+  deriving (Eq, Show)
 
 -- |
 --   A group matches any sequence of key/value pairs that matches any of
 --   the choices given (again using PEG semantics).
 newtype Group = Group (NE.NonEmpty GrpChoice)
+  deriving (Eq, Show, Semigroup)
 
 type GrpChoice = [GroupEntry]
 
@@ -190,7 +204,11 @@ type GrpChoice = [GroupEntry]
 --  the memberkey is given.  If the memberkey is not given, the entry can
 --  only be used for matching arrays, not for maps.  (See below for how
 --  that is modified by the occurrence indicator.)
-data GroupEntry = GroupEntry (Maybe OccurrenceIndicator) (Maybe MemberKey) Type0
+data GroupEntry
+  = GEType (Maybe OccurrenceIndicator) (Maybe MemberKey) Type0
+  | GERef (Maybe OccurrenceIndicator) Name (Maybe GenericArg)
+  | GEGroup (Maybe OccurrenceIndicator) Group
+  deriving (Eq, Show)
 
 -- |
 --  Key types can be given by a type expression, a bareword (which stands
@@ -204,11 +222,14 @@ data MemberKey
   = MKType Type1
   | MKBareword Name
   | MKValue Value
+  deriving (Eq, Show)
 
 data Value
   = -- Should be bigger than just Int
     VNum Int
   | VText T.Text
   | VBytes B.ByteString
+  deriving (Eq, Show)
 
 newtype Comment = Comment T.Text
+  deriving (Eq, Show)
