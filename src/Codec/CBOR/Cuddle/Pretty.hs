@@ -6,7 +6,9 @@
 module Codec.CBOR.Cuddle.Pretty where
 
 import Codec.CBOR.Cuddle.CDDL
+import Codec.CBOR.Cuddle.CDDL.CtlOp (CtlOp)
 import Data.List.NonEmpty qualified as NE
+import Data.Text qualified as T
 import Prettyprinter
 
 instance Pretty CDDL where
@@ -36,6 +38,9 @@ instance Pretty GenericParam where
 instance Pretty Type0 where
   pretty (Type0 (NE.toList -> l)) = align . encloseSep mempty mempty " / " $ fmap pretty l
 
+instance Pretty CtlOp where
+  pretty = pretty . T.toLower . T.pack . show
+
 instance Pretty Type1 where
   pretty (Type1 t2 Nothing) = pretty t2
   pretty (Type1 t2 (Just (tyop, t2'))) =
@@ -43,7 +48,7 @@ instance Pretty Type1 where
       <+> ( case tyop of
               RangeOp ClOpen -> "..."
               RangeOp Closed -> ".."
-              CtrlOp n -> "." <+> pretty n
+              CtrlOp n -> "." <> pretty n
           )
       <+> pretty t2'
 

@@ -15,6 +15,7 @@ main = hspec $
     valueSpec
     occurSpec
     nameSpec
+    type1Spec
     type2Spec
     grpEntrySpec
     grpChoiceSpec
@@ -176,3 +177,12 @@ grpChoiceSpec = describe "GroupChoice" $ do
                             )
                         )
                     ]
+
+type1Spec :: Spec
+type1Spec = describe "Type1" $ do
+  describe "CtlOp" $ do
+    it "Should parse a basic control operator" $
+      parse pType1 "" "uint .size 3"
+        `shouldParse` Type1
+          (T2Name (Name "uint") Nothing)
+          (Just (CtrlOp (Name "size"), T2Value (VNum 3)))

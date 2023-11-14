@@ -21,6 +21,7 @@ library
     exposed-modules:
         Codec.CBOR.Cuddle.Builder
         Codec.CBOR.Cuddle.CDDL
+        Codec.CBOR.Cuddle.CDDL.CtlOp
         Codec.CBOR.Cuddle.Parser
         Codec.CBOR.Cuddle.Pretty
     other-modules:
