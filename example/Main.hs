@@ -12,15 +12,6 @@ import Prettyprinter.Util (putDocW)
 import System.Environment (getArgs)
 import Text.Megaparsec (ParseErrorBundle, Parsec, errorBundlePretty, runParser)
 
--- ex1 :: Rule
--- ex1 =
---   Rule
---     (Name "test1")
---     (Just . GenericParam $ NE.singleton (Name "a"))
---     AssignEq
---     ( TOGType $ mkType (T2Value $ VNum 3) <> mkType (T2Value $ VText "3")
---     )
-
 main :: IO ()
 main = do
   args <- getArgs
