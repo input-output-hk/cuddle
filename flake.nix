@@ -1,6 +1,6 @@
 {
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-23.05";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-23.11";
     systems.url = "github:nix-systems/default";
     devenv.url = "github:cachix/devenv";
   };
@@ -19,7 +19,7 @@
         (system:
           let
             pkgs = nixpkgs.legacyPackages.${system};
-            ghcver = "ghc927";
+            ghcver = "ghc963";
           in
           {
             default = devenv.lib.mkShell {
