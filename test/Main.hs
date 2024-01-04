@@ -3,6 +3,7 @@
 module Main (main) where
 
 import Codec.CBOR.Cuddle.CDDL
+import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
 import Codec.CBOR.Cuddle.Parser
 import Data.List.NonEmpty qualified as NE
 import Test.Hspec
@@ -185,4 +186,4 @@ type1Spec = describe "Type1" $ do
       parse pType1 "" "uint .size 3"
         `shouldParse` Type1
           (T2Name (Name "uint") Nothing)
-          (Just (CtrlOp (Name "size"), T2Value (VNum 3)))
+          (Just (CtrlOp CtlOp.Size, T2Value (VNum 3)))
