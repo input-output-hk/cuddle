@@ -78,6 +78,7 @@ executable cuddle
     main-is:          Main.hs
     build-depends:
         , base                  ^>=4.16.3.0 || ^>=4.18.1.0
+        , cborg
         , cuddle
         , megaparsec
         , optparse-applicative

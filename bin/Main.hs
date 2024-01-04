@@ -7,9 +7,20 @@ module Main (main) where
 import Codec.CBOR.Cuddle.CBOR.Gen (generateCBORTerm)
 import Codec.CBOR.Cuddle.CDDL (CDDL, Name (..))
 import Codec.CBOR.Cuddle.CDDL.CTree (CTreeRoot')
-import Codec.CBOR.Cuddle.CDDL.Resolve (MonoRef, NameResolutionFailure, asMap, buildMonoCTree, buildRefCTree, buildResolvedCTree)
+import Codec.CBOR.Cuddle.CDDL.Resolve
+  ( MonoRef,
+    NameResolutionFailure,
+    asMap,
+    buildMonoCTree,
+    buildRefCTree,
+    buildResolvedCTree,
+  )
 import Codec.CBOR.Cuddle.Parser (pCDDL)
 import Codec.CBOR.Cuddle.Pretty ()
+import Codec.CBOR.FlatTerm (toFlatTerm)
+import Codec.CBOR.Pretty (prettyHexEnc)
+import Codec.CBOR.Term (encodeTerm)
+import Codec.CBOR.Write (toStrictByteString)
 import Data.Functor.Identity (Identity)
 import Data.Text qualified as T
 import Data.Text.IO qualified as T
@@ -28,8 +39,24 @@ data Command
   | Validate
   | GenerateCBOR GenOpts
 
-newtype GenOpts = GenOpts
-  { itemName :: T.Text
+-- | Various formats for outputtting CBOR
+data CBOROutputFormat
+  = AsCBOR
+  | AsPrettyCBOR
+  | AsTerm
+  | AsFlatTerm
+
+pCBOROutputFormat :: ReadM CBOROutputFormat
+pCBOROutputFormat = eitherReader $ \case
+  "cbor" -> Right AsCBOR
+  "pretty" -> Right AsPrettyCBOR
+  "term" -> Right AsTerm
+  "flat" -> Right AsFlatTerm
+  s -> Left s
+
+data GenOpts = GenOpts
+  { itemName :: T.Text,
+    outputFormat :: CBOROutputFormat
   }
 
 pGenOpts :: Parser GenOpts
@@ -40,6 +67,13 @@ pGenOpts =
           <> short 'r'
           <> metavar "RULE"
           <> help "Name of the CDDL rule to generate a CBOR term for"
+      )
+    <*> option
+      pCBOROutputFormat
+      ( long "format"
+          <> short 'f'
+          <> help "Output format"
+          <> value AsCBOR
       )
 
 opts :: Parser Opts
@@ -98,7 +132,11 @@ run (Opts cmd cddlFile) = do
         Right mt -> do
           stdGen <- getStdGen
           let term = generateCBORTerm mt (Name x.itemName) stdGen
-           in print term
+           in case x.outputFormat of
+                AsTerm -> print term
+                AsFlatTerm -> print $ toFlatTerm (encodeTerm term)
+                AsCBOR -> print . toStrictByteString $ encodeTerm term
+                AsPrettyCBOR -> putStrLn . prettyHexEnc $ encodeTerm term
 
 putStrLnErr :: String -> IO ()
 putStrLnErr = hPutStrLn stderr
