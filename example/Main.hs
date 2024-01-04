@@ -3,6 +3,8 @@
 
 module Main (main) where
 
+import Codec.CBOR.Cuddle.CDDL (Name (..))
+import Codec.CBOR.Cuddle.CDDL.Resolve (asMap, buildMonoCTree, buildRefCTree, buildResolvedCTree)
 import Codec.CBOR.Cuddle.Parser (pCDDL)
 import Codec.CBOR.Cuddle.Pretty ()
 import Data.Text qualified as T
@@ -22,6 +24,22 @@ main = do
         Right res -> do
           print res
           putDocW 80 $ pretty res
+          putStrLn "\n"
+          putStrLn "--------------------------------------------------------------------------------"
+          putStrLn " As a CTree"
+          putStrLn "--------------------------------------------------------------------------------"
+          let refCTree = buildRefCTree (asMap res)
+          print refCTree
+          putStrLn "--------------------------------------------------------------------------------"
+          putStrLn " After name resolution"
+          putStrLn "--------------------------------------------------------------------------------"
+          let resolvedCTree = buildResolvedCTree refCTree
+          print resolvedCTree
+          putStrLn "--------------------------------------------------------------------------------"
+          putStrLn " After monomorphisation"
+          putStrLn "--------------------------------------------------------------------------------"
+          let monoCTree = buildMonoCTree <$> resolvedCTree
+          print monoCTree
     _ -> putStrLn "Expected filename"
 
 parseFromFile ::
