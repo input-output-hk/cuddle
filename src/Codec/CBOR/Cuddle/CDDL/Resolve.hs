@@ -31,6 +31,7 @@ module Codec.CBOR.Cuddle.CDDL.Resolve
     asMap,
     buildMonoCTree,
     MonoRef (..),
+    NameResolutionFailure (..),
   )
 where
 
