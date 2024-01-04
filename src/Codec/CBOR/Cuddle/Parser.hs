@@ -3,7 +3,8 @@
 module Codec.CBOR.Cuddle.Parser where
 
 import Codec.CBOR.Cuddle.CDDL
-import Control.Applicative (Applicative (liftA2))
+import Codec.CBOR.Cuddle.CDDL.CtlOp (CtlOp)
+import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as COp
 import Control.Applicative.Combinators.NonEmpty qualified as NE
 import Data.Functor (void, ($>))
 import Data.List.NonEmpty (NonEmpty)
@@ -146,11 +147,30 @@ pTyOp :: Parser TyOp
 pTyOp =
   choice
     [ try $ RangeOp <$> pRangeBound,
-      CtrlOp <$> (char '.' *> pName)
+      CtrlOp <$> (char '.' *> pCtlOp)
     ]
   where
     pRangeBound :: Parser RangeBound
     pRangeBound = (string ".." $> Closed) <|> (string ".." $> ClOpen)
+
+    pCtlOp :: Parser CtlOp
+    pCtlOp =
+      choice
+        [ try $ string "cbor" $> COp.Cbor,
+          try $ string "size" $> COp.Size,
+          try $ string "bits" $> COp.Bits,
+          try $ string "cborseq" $> COp.Cborseq,
+          try $ string "within" $> COp.Within,
+          try $ string "and" $> COp.And,
+          try $ string "lt" $> COp.Lt,
+          try $ string "le" $> COp.Le,
+          try $ string "gt" $> COp.Gt,
+          try $ string "ge" $> COp.Ge,
+          try $ string "eq" $> COp.Eq,
+          try $ string "ne" $> COp.Ne,
+          try $ string "default" $> COp.Default,
+          try $ string "regexp" $> COp.Regexp
+        ]
 
 pOccur :: Parser OccurrenceIndicator
 pOccur =
@@ -218,7 +238,7 @@ charInRange lb ub x = lb <= x && x <= ub
 
 -- | A variant of 'optional' for composite parsers, which will consume no input
 -- if it fails.
-optcomp :: MonadParsec e s f => f a -> f (Maybe a)
+optcomp :: (MonadParsec e s f) => f a -> f (Maybe a)
 optcomp = optional . try
 
 {-
@@ -335,7 +355,7 @@ RFC 8610                          CDDL                         June 2019
 -}
 
 -- | Variant on 'NE.sepEndBy1' which doesn't consume the separator
-sepBy1' :: MonadParsec e s m => m a -> m sep -> m (NonEmpty a)
+sepBy1' :: (MonadParsec e s m) => m a -> m sep -> m (NonEmpty a)
 sepBy1' p sep = NE.fromList <$> go
   where
     go = liftA2 (:) p (many (try $ sep *> p))
