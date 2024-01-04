@@ -1,4 +1,7 @@
-module Codec.CBOR.Cuddle.Postlude where
+module Codec.CBOR.Cuddle.CDDL.Postlude where
+
+import Data.Hashable (Hashable)
+import GHC.Generics (Generic)
 
 -- |
 --
@@ -41,7 +44,11 @@ data PTerm
   | PTInt
   | PTHalf
   | PTFloat
-  | PTDboule
+  | PTDouble
   | PTBytes
   | PTText
   | PTAny
+  | PTNil
+  deriving (Eq, Generic, Ord, Show)
+
+instance Hashable PTerm

@@ -256,3 +256,33 @@ metadata_hash         = $hash32
 scripthash            = $hash28
 
 $nonce /= [ 0 // 1, bytes .size 32 ]
+
+$hash28 /= bytes .size 28
+$hash32 /= bytes .size 32
+
+$vkey /= bytes .size 32
+
+$vrf_vkey /= bytes .size 32
+$vrf_cert /= [bytes, bytes .size 80]
+
+$kes_vkey /= bytes .size 32
+$kes_signature /= bytes .size 448
+signkeyKES = bytes .size 64
+
+$signature /= bytes .size 64
+
+finite_set<a> = [* a]
+
+;unit_interval = #6.30([uint, uint])
+unit_interval = #6.30([1, 2])
+  ; real unit_interval is: #6.30([uint, uint])
+  ; but this produces numbers outside the unit interval
+  ; and can also produce a zero in the denominator
+
+rational = #6.30([uint, uint])
+
+set<a> = [* a]
+
+address = bytes
+
+reward_account = bytes

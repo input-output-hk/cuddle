@@ -7,3 +7,9 @@ header =
   , test : coin / null
   , withComment : null ; This is a comment
   ]
+
+header_body = [
+  issuer : text
+]
+
+$kes_signature = bytes .size 32

@@ -1,5 +1,8 @@
 module Codec.CBOR.Cuddle.CDDL.CtlOp where
 
+import Data.Hashable (Hashable)
+import GHC.Generics (Generic)
+
 -- | A _control_ allows relating a _target_ type with a _controller_ type
 --  via a _control operator_.
 
@@ -27,4 +30,6 @@ data CtlOp
   | Eq
   | Ne
   | Default
-  deriving (Eq, Show)
+  deriving (Eq, Generic, Show)
+
+instance Hashable CtlOp

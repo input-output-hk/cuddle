@@ -2,12 +2,15 @@
 --   https://datatracker.ietf.org/doc/rfc8610/
 module Codec.CBOR.Cuddle.CDDL where
 
+import Codec.CBOR.Cuddle.CDDL.CtlOp (CtlOp)
 import Data.ByteString qualified as B
+import Data.Hashable (Hashable)
 import Data.List.NonEmpty qualified as NE
 import Data.Text qualified as T
+import GHC.Generics (Generic)
 
 newtype CDDL = CDDL (NE.NonEmpty Rule)
-  deriving (Eq, Show)
+  deriving (Eq, Generic, Show)
 
 -- |
 --  A name can consist of any of the characters from the set {"A" to
@@ -33,7 +36,9 @@ newtype CDDL = CDDL (NE.NonEmpty Rule)
 --  *  Rule names (types or groups) do not appear in the actual CBOR
 --      encoding, but names used as "barewords" in member keys do.
 newtype Name = Name T.Text
-  deriving (Eq, Show)
+  deriving (Eq, Generic, Ord, Show)
+
+instance Hashable Name
 
 -- |
 --   assignt = "=" / "/="
@@ -49,7 +54,7 @@ newtype Name = Name T.Text
 --   a rule name that has not yet been defined; this makes the right-hand
 --   side the first entry in the choice being created.)
 data Assign = AssignEq | AssignExt
-  deriving (Eq, Show)
+  deriving (Eq, Generic, Show)
 
 -- |
 --  Generics
@@ -68,10 +73,10 @@ data Assign = AssignEq | AssignExt
 --   Generic rules can be used for establishing names for both types and
 --   groups.
 newtype GenericParam = GenericParam (NE.NonEmpty Name)
-  deriving (Eq, Show, Semigroup)
+  deriving (Eq, Generic, Show, Semigroup)
 
 newtype GenericArg = GenericArg (NE.NonEmpty Type1)
-  deriving (Eq, Show, Semigroup)
+  deriving (Eq, Generic, Show, Semigroup)
 
 -- |
 --  rule = typename [genericparm] S assignt S type
@@ -97,7 +102,7 @@ newtype GenericArg = GenericArg (NE.NonEmpty Type1)
 --   this semantic processing may need to span several levels of rule
 --   definitions before a determination can be made.)
 data Rule = Rule Name (Maybe GenericParam) Assign TypeOrGroup
-  deriving (Eq, Show)
+  deriving (Eq, Generic, Show)
 
 -- |
 --   A range operator can be used to join two type expressions that stand
@@ -106,25 +111,83 @@ data Rule = Rule Name (Maybe GenericParam) Assign TypeOrGroup
 --   value is always included in the matching set and the second value is
 --   included for ".." and excluded for "...".
 data RangeBound = ClOpen | Closed
-  deriving (Eq, Show)
+  deriving (Eq, Generic, Show)
 
-data TyOp = RangeOp RangeBound | CtrlOp Name
-  deriving (Eq, Show)
+instance Hashable RangeBound
+
+data TyOp = RangeOp RangeBound | CtrlOp CtlOp
+  deriving (Eq, Generic, Show)
 
 data TypeOrGroup = TOGType Type0 | TOGGroup GroupEntry
-  deriving (Eq, Show)
+  deriving (Eq, Generic, Show)
+
+{-- |
+   The group that is used to define a map or an array can often be reused in the
+   definition of another map or array.  Similarly, a type defined as a tag
+   carries an internal data item that one would like to refer to.  In these
+   cases, it is expedient to simply use the name of the map, array, or tag type
+   as a handle for the group or type defined inside it.
+
+   The "unwrap" operator (written by preceding a name by a tilde character "~")
+   can be used to strip the type defined for a name by one layer, exposing the
+   underlying group (for maps and arrays) or type (for tags).
+
+   For example, an application might want to define a basic header and an
+   advanced header.  Without unwrapping, this might be done as follows:
+
+             basic-header-group = (
+               field1: int,
+               field2: text,
+             )
+
+             basic-header = [ basic-header-group ]
+
+             advanced-header = [
+               basic-header-group,
+               field3: bytes,
+               field4: number, ; as in the tagged type "time"
+             ]
+
+   Unwrapping simplifies this to:
+
+                            basic-header = [
+                              field1: int,
+                              field2: text,
+                            ]
+
+                            advanced-header = [
+                              ~basic-header,
+                              field3: bytes,
+                              field4: ~time,
+                            ]
+
+   (Note that leaving out the first unwrap operator in the latter example would
+   lead to nesting the basic-header in its own array inside the advanced-header,
+   while, with the unwrapped basic-header, the definition of the group inside
+   basic-header is essentially repeated inside advanced-header, leading to a
+   single array.  This can be used for various applications often solved by
+   inheritance in programming languages.  The effect of unwrapping can also be
+   described as "threading in" the group or type inside the referenced type,
+   which suggested the thread-like "~" character.)
+-}
+unwrap :: TypeOrGroup -> Maybe Group
+unwrap (TOGType (Type0 ((Type1 t2 Nothing) NE.:| []))) = case t2 of
+  T2Map g -> Just g
+  T2Array g -> Just g
+  _ -> Nothing
+unwrap _ = Nothing
 
 -- |
 -- A type can be given as a choice between one or more types.  The
 --   choice matches a data item if the data item matches any one of the
 --   types given in the choice.
 newtype Type0 = Type0 (NE.NonEmpty Type1)
-  deriving (Eq, Show, Semigroup)
+  deriving (Eq, Generic, Show, Semigroup)
 
 -- |
 -- Two types can be combined with a range operator (see below)
 data Type1 = Type1 Type2 (Maybe (TyOp, Type2))
-  deriving (Eq, Show)
+  deriving (Eq, Generic, Show)
 
 data Type2
   = -- | A type can be just a single value (such as 1 or "icecream" or
@@ -160,13 +223,7 @@ data Type2
     T2DataItem Int (Maybe Int)
   | -- | Any data item
     T2Any
-  deriving (Eq, Show)
-
-mkType :: Type2 -> Type0
-mkType t = Type0 $ NE.singleton $ Type1 t Nothing
-
-mkTypeRange :: Type2 -> Type2 -> RangeBound -> Type0
-mkTypeRange t t' rb = Type0 $ NE.singleton $ Type1 t (Just (RangeOp rb, t'))
+  deriving (Eq, Generic, Show)
 
 -- |
 --  An optional _occurrence_ indicator can be given in front of a group
@@ -187,13 +244,15 @@ data OccurrenceIndicator
   | OIZeroOrMore
   | OIOneOrMore
   | OIBounded (Maybe Int) (Maybe Int)
-  deriving (Eq, Show)
+  deriving (Eq, Generic, Show)
+
+instance Hashable OccurrenceIndicator
 
 -- |
 --   A group matches any sequence of key/value pairs that matches any of
 --   the choices given (again using PEG semantics).
 newtype Group = Group (NE.NonEmpty GrpChoice)
-  deriving (Eq, Show, Semigroup)
+  deriving (Eq, Generic, Show, Semigroup)
 
 type GrpChoice = [GroupEntry]
 
@@ -208,7 +267,7 @@ data GroupEntry
   = GEType (Maybe OccurrenceIndicator) (Maybe MemberKey) Type0
   | GERef (Maybe OccurrenceIndicator) Name (Maybe GenericArg)
   | GEGroup (Maybe OccurrenceIndicator) Group
-  deriving (Eq, Show)
+  deriving (Eq, Generic, Show)
 
 -- |
 --  Key types can be given by a type expression, a bareword (which stands
@@ -222,14 +281,16 @@ data MemberKey
   = MKType Type1
   | MKBareword Name
   | MKValue Value
-  deriving (Eq, Show)
+  deriving (Eq, Generic, Show)
 
 data Value
   = -- Should be bigger than just Int
     VNum Int
   | VText T.Text
   | VBytes B.ByteString
-  deriving (Eq, Show)
+  deriving (Eq, Generic, Show)
+
+instance Hashable Value
 
 newtype Comment = Comment T.Text
-  deriving (Eq, Show)
+  deriving (Eq, Generic, Show)
