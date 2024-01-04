@@ -32,6 +32,7 @@
                       ormolu
                       pkgs.haskell.compiler.${ghcver}
                       cabal-install
+                      cabal-fmt
                     ];
 
                   enterShell = ''
