@@ -3,6 +3,7 @@
 
 module Main (main) where
 
+import Codec.CBOR.Cuddle.CBOR.Gen (generateCBORTerm)
 import Codec.CBOR.Cuddle.CDDL (Name (..))
 import Codec.CBOR.Cuddle.CDDL.Resolve (asMap, buildMonoCTree, buildRefCTree, buildResolvedCTree)
 import Codec.CBOR.Cuddle.Parser (pCDDL)
@@ -12,6 +13,7 @@ import Data.Text.IO qualified as T
 import Prettyprinter (Pretty (pretty))
 import Prettyprinter.Util (putDocW)
 import System.Environment (getArgs)
+import System.Random (getStdGen)
 import Text.Megaparsec (ParseErrorBundle, Parsec, errorBundlePretty, runParser)
 
 main :: IO ()
@@ -40,6 +42,19 @@ main = do
           putStrLn "--------------------------------------------------------------------------------"
           let monoCTree = buildMonoCTree <$> resolvedCTree
           print monoCTree
+    [fn, name] -> do
+      putStrLn "--------------------------------------------------------------------------------"
+      putStrLn " Generating a term"
+      putStrLn "--------------------------------------------------------------------------------"
+      parseFromFile pCDDL fn >>= \case
+        Left err -> putStrLn $ errorBundlePretty err
+        Right res -> do
+          stdGen <- getStdGen
+          case buildMonoCTree =<< buildResolvedCTree (buildRefCTree (asMap res)) of
+            Left nre -> error $ show nre
+            Right mt ->
+              let term = generateCBORTerm mt (Name $ T.pack name) stdGen
+               in print term
     _ -> putStrLn "Expected filename"
 
 parseFromFile ::
