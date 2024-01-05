@@ -25,13 +25,14 @@ import Codec.CBOR.Cuddle.CDDL
   )
 import Codec.CBOR.Cuddle.CDDL.CTree (CTree, CTreeRoot' (..))
 import Codec.CBOR.Cuddle.CDDL.CTree qualified as CTree
+import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
 import Codec.CBOR.Cuddle.CDDL.Postlude (PTerm (..))
 import Codec.CBOR.Cuddle.CDDL.Resolve (MonoRef (..))
 import Codec.CBOR.Term (Term (..))
 import Control.Monad (replicateM, (<=<))
 import Control.Monad.Reader (Reader, runReader)
 import Control.Monad.State.Strict (StateT, runStateT)
-import Data.ByteString.Short qualified as BS
+import Data.ByteString (ByteString)
 import Data.Functor ((<&>))
 import Data.Functor.Identity (Identity (runIdentity))
 import Data.List.NonEmpty qualified as NE
@@ -47,6 +48,7 @@ import System.Random.Stateful
     UniformRange (uniformRM),
     applyRandomGenM,
     randomM,
+    uniformByteStringM,
   )
 
 --------------------------------------------------------------------------------
@@ -126,6 +128,9 @@ genUniformRM = asksM @"fakeSeed" . uniformRM
 genRandomM :: forall g a. (Random a, RandomGen g) => M g a
 genRandomM = asksM @"fakeSeed" randomM
 
+genBytes :: forall g. (RandomGen g) => Int -> M g ByteString
+genBytes n = asksM @"fakeSeed" $ uniformByteStringM n
+
 --------------------------------------------------------------------------------
 -- Combinators
 --------------------------------------------------------------------------------
@@ -171,13 +176,9 @@ genPostlude pt = case pt of
   PTDouble ->
     genRandomM
       <&> TDouble
-  PTBytes ->
-    TBytes . BS.fromShort
-      <$> asksM @"fakeSeed" (uniformShortByteString 30)
-  PTText ->
-    pure $ TString "The quick black horse jumped over the lazy dog"
-  PTAny ->
-    pure $ TString "Any"
+  PTBytes -> TBytes <$> genBytes 30
+  PTText -> TBytes <$> genBytes 30
+  PTAny -> pure $ TString "Any"
   PTNil -> pure TNull
 
 --------------------------------------------------------------------------------
@@ -266,9 +267,19 @@ genForCTree (CTree.Range from to _bounds) = do
     (S (TFloat a), S (TFloat b)) -> genUniformRM (a, b) <&> S . TFloat
     (S (TDouble a), S (TDouble b)) -> genUniformRM (a, b) <&> S . TDouble
     _ -> error "Cannot apply range operator to non-numeric types"
-genForCTree (CTree.Control _op target _controller) =
-  -- TODO Handle control operators
-  genForNode target
+genForCTree (CTree.Control op target controller) = do
+  tt <- resolveIfRef target
+  ct <- resolveIfRef controller
+  case (op, ct) of
+    (CtlOp.Size, CTree.Literal (VNum n)) -> case tt of
+      CTree.Postlude PTBytes -> S . TBytes <$> genBytes n
+      CTree.Postlude PTUInt -> S . TInteger <$> genUniformRM (0, 2 ^ n - 1)
+      _ -> error "Cannot apply size operator to target "
+    (CtlOp.Size, _) ->
+      error $
+        "Invalid controller for .size operator: "
+          <> show controller
+    _ -> genForNode target
 genForCTree (CTree.Enum node) = do
   tree <- resolveIfRef node
   case tree of

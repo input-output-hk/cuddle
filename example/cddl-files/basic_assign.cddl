@@ -13,3 +13,16 @@ header_body = [
 ]
 
 $kes_signature = bytes .size 32
+unit_interval<denominator> = [0..denominator, denominator]
+
+unit_int = unit_interval<uint>
+
+mysize = 16
+
+sz1 = bytes .size 1
+sz2 = bytes .size 2
+sz32 = bytes .size 32
+sz16 = bytes .size mysize
+
+usz4 = uint .size 4
+usz8 = uint .size 8
