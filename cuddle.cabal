@@ -29,6 +29,7 @@ library
         Codec.CBOR.Cuddle.CDDL.CTree
         Codec.CBOR.Cuddle.CDDL.Postlude
         Codec.CBOR.Cuddle.CDDL.Resolve
+        Codec.CBOR.Cuddle.Huddle
         Codec.CBOR.Cuddle.Parser
         Codec.CBOR.Cuddle.Pretty
 
@@ -41,6 +42,7 @@ library
         , capability
         , cborg
         , containers
+        , data-default-class
         , generic-optics
         , hashable
         , megaparsec
@@ -89,8 +91,8 @@ executable cuddle
 test-suite cuddle-test
     import:           warnings
     default-language: GHC2021
+    other-modules:    Test.Codec.CBOR.Cuddle.Huddle
 
-    -- other-modules:
     -- other-extensions:
     type:             exitcode-stdio-1.0
     hs-source-dirs:   test
