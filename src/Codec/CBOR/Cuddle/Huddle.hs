@@ -108,7 +108,8 @@ instance IsList MapChoice where
 type Map = Choice MapChoice
 
 data ArrayEntry = ArrayEntry
-  { -- | Arrays can have keys, but they have no semantic meaning. We add them here because they can be illustrative in the generated CDDL.
+  { -- | Arrays can have keys, but they have no semantic meaning. We add them
+    -- here because they can be illustrative in the generated CDDL.
     key :: Maybe Key,
     value :: OrRef (Choice Type0),
     quantifier :: Occurs
