@@ -6,20 +6,23 @@ import Codec.CBOR.Cuddle.CDDL
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
 import Codec.CBOR.Cuddle.Parser
 import Data.List.NonEmpty qualified as NE
+import Test.Codec.CBOR.Cuddle.Huddle (huddleSpec)
 import Test.Hspec
 import Test.Hspec.Megaparsec
 import Text.Megaparsec
 
 main :: IO ()
-main = hspec $
-  describe "cddlParser" $ do
-    valueSpec
-    occurSpec
-    nameSpec
-    type1Spec
-    type2Spec
-    grpEntrySpec
-    grpChoiceSpec
+main =
+  hspec $ do
+    describe "cddlParser" $ do
+      valueSpec
+      occurSpec
+      nameSpec
+      type1Spec
+      type2Spec
+      grpEntrySpec
+      grpChoiceSpec
+    describe "Huddle" huddleSpec
 
 valueSpec :: Spec
 valueSpec = describe "pValue" $ do
