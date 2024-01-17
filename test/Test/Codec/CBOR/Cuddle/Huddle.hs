@@ -10,6 +10,7 @@ import Data.Text qualified as T
 import Test.Hspec
 import Test.Hspec.Megaparsec
 import Text.Megaparsec
+import Prelude hiding ((/))
 
 huddleSpec :: Spec
 huddleSpec = describe "huddle" $ do
@@ -66,12 +67,18 @@ mapSpec = describe "Maps" $ do
   it "Can assign a small map" $
     toCDDL ["asl" =:= mp ["age" ==> VUInt, "sex" ==> VBool, "location" ==> VText]]
       `shouldMatchParseCDDL` "asl = { age : uint, sex : bool, location : text }"
+  it "Can quantify a lower bound" $
+    toCDDL ["age" =:= mp [0 <+ "years" ==> VUInt]]
+      `shouldMatchParseCDDL` "age = { * years : uint }"
   it "Can quantify an upper bound" $
     toCDDL ["age" =:= mp ["years" ==> VUInt +> 64]]
       `shouldMatchParseCDDL` "age = { *64 years : uint }"
   it "Can handle a choice" $
     toCDDL ["ageOrSex" =:= mp ["age" ==> VUInt] // mp ["sex" ==> VBool]]
       `shouldMatchParseCDDL` "ageOrSex = { age : uint // sex : bool }"
+  it "Can handle a choice with an entry" $
+    toCDDL ["mir" =:= arr [a (0 :: Int) / (1 :: Int), a $ mp [0 <+ "test" ==> VUInt]]]
+      `shouldMatchParseCDDL` "mir = [ 0 / 1, { * test : uint }]"
 
 nestedSpec :: Spec
 nestedSpec = describe "Nesting" $ do

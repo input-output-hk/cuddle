@@ -3,10 +3,12 @@
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE ImpredicativeTypes #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE NoFieldSelectors #-}
 
 -- | Module for building CDDL in Haskell
@@ -29,6 +31,7 @@ module Codec.CBOR.Cuddle.Huddle
     (//),
     arr,
     mp,
+    (/),
   )
 where
 
@@ -36,7 +39,7 @@ import Codec.CBOR.Cuddle.CDDL (CDDL)
 import Codec.CBOR.Cuddle.CDDL qualified as C
 import Data.ByteString (ByteString)
 import Data.Default.Class (Default (..))
-import Data.Generics.Product (field)
+import Data.Generics.Product (HasField, field)
 import Data.List.NonEmpty qualified as NE
 import Data.String (IsString (fromString))
 import Data.Text qualified as T
@@ -44,6 +47,7 @@ import Data.Void (Void)
 import GHC.Generics (Generic)
 import GHC.IsList (IsList (Item, fromList, toList))
 import Optics.Core ((%~), (&))
+import Prelude hiding ((/))
 
 data Named a = Named T.Text a
   deriving (Functor)
@@ -80,6 +84,20 @@ choiceToNE :: Choice a -> NE.NonEmpty a
 choiceToNE (NoChoice c) = NE.singleton c
 choiceToNE (ChoiceOf c cs) = c NE.:| choiceToList cs
 
+-- | Hoist choices over references. Note that this might involve inlining some
+-- references, since we don't want to deal with generating names
+hoistChoice :: OrRef (Choice a) -> Choice (OrRef a)
+hoistChoice (Val x) = go x
+  where
+    go = \case
+      NoChoice y -> NoChoice $ Val y
+      ChoiceOf y ys -> ChoiceOf (Val y) $ go ys
+hoistChoice (Ref (Named n x)) = go x
+  where
+    go = \case
+      NoChoice y -> NoChoice $ Ref (Named n y)
+      ChoiceOf y ys -> ChoiceOf (Val y) $ go ys
+
 data Key
   = LiteralKey Literal
   | TypeKey (OrRef Type0)
@@ -91,7 +109,7 @@ instance IsString Key where
 
 data MapEntry = MapEntry
   { key :: Key,
-    value :: OrRef (Choice Type0),
+    value :: Choice (OrRef Type0),
     quantifier :: Occurs
   }
   deriving (Generic, Show)
@@ -111,7 +129,7 @@ data ArrayEntry = ArrayEntry
   { -- | Arrays can have keys, but they have no semantic meaning. We add them
     -- here because they can be illustrative in the generated CDDL.
     key :: Maybe Key,
-    value :: OrRef (Choice Type0),
+    value :: Choice (OrRef Type0),
     quantifier :: Occurs
   }
   deriving (Generic, Show)
@@ -249,6 +267,10 @@ class CanQuantify a where
   -- | Apply an upper bound
   (+>) :: a -> Int -> a
 
+infixl 8 <+
+
+infixr 7 +>
+
 instance CanQuantify Occurs where
   lb <+ (Occurs _ ub) = Occurs (Just lb) ub
   (Occurs lb _) +> ub = Occurs lb (Just ub)
@@ -285,6 +307,9 @@ instance IsRefType (OrRef Type0) where
 
 instance IsRefType Constrained where
   toRefType = Val . NoChoice . T0Basic
+
+instance IsRefType MapChoice where
+  toRefType = Val . NoChoice . T0Map . NoChoice
 
 instance IsRefType Map where
   toRefType = Val . NoChoice . T0Map
@@ -335,9 +360,11 @@ k ==> gc =
   fromMapEntry
     MapEntry
       { key = k,
-        value = toRefType gc,
+        value = hoistChoice $ toRefType gc,
         quantifier = def
       }
+
+infixl 9 ==>
 
 -- | Assign a rule
 (=:=) :: (IsType0 a) => T.Text -> a -> Rule
@@ -346,7 +373,12 @@ n =:= b = Named n (NoChoice $ toType0 b)
 infixl 0 =:=
 
 a :: (IsRefType a) => a -> ArrayEntry
-a x = ArrayEntry {key = Nothing, value = toRefType x, quantifier = def}
+a x =
+  ArrayEntry
+    { key = Nothing,
+      value = hoistChoice $ toRefType x,
+      quantifier = def
+    }
 
 class IsChoosable a b | a -> b where
   toChoice :: a -> Choice b
@@ -363,6 +395,10 @@ instance IsChoosable MapChoice MapChoice where
 instance IsChoosable Type0 Type0 where
   toChoice = NoChoice
 
+instance (IsChoosable a b) => IsChoosable (OrRef a) (OrRef b) where
+  toChoice (Val x) = hoistChoice . Val $ toChoice x
+  toChoice (Ref (Named n x)) = hoistChoice . Ref . Named n $ toChoice x
+
 (//) :: (IsChoosable a c, IsChoosable b c) => a -> b -> Choice c
 x // b = go (toChoice x) (toChoice b)
   where
@@ -376,6 +412,16 @@ arr = id
 
 mp :: MapChoice -> MapChoice
 mp = id
+
+-- | Allow a choice within an array or map entry.
+(/) ::
+  ( IsRefType rt,
+    HasField "value" e e (Choice (OrRef Type0)) (Choice (OrRef Type0))
+  ) =>
+  e ->
+  rt ->
+  e
+ae / rt = ae & field @"value" %~ (// toRefType rt)
 
 --------------------------------------------------------------------------------
 -- Conversion to CDDL
@@ -437,11 +483,8 @@ toCDDL (Huddle (r : rs)) = C.CDDL . fmap toCDDLRule $ (r NE.:| rs)
     toMemberKey (LiteralKey v) = C.MKValue $ toCDDLValue v
     toMemberKey (TypeKey t) = C.MKType (toCDDLType1 t)
 
-    toCDDLType0 :: OrRef (Choice Type0) -> C.Type0
-    toCDDLType0 (Ref (Named n _)) =
-      C.Type0 . NE.singleton $
-        C.Type1 (C.T2Name (C.Name n) Nothing) Nothing
-    toCDDLType0 (Val ct0) = C.Type0 $ fmap (toCDDLType1 . Val) (choiceToNE ct0)
+    toCDDLType0 :: Choice (OrRef Type0) -> C.Type0
+    toCDDLType0 = C.Type0 . fmap toCDDLType1 . choiceToNE
 
     arrayToCDDLGroup :: Array -> C.Group
     arrayToCDDLGroup xs = C.Group $ arrayChoiceToCDDL <$> choiceToNE xs
