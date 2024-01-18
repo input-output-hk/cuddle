@@ -22,7 +22,6 @@ common warnings
 library
     import:           warnings
     exposed-modules:
-        Codec.CBOR.Cuddle.Builder
         Codec.CBOR.Cuddle.CBOR.Gen
         Codec.CBOR.Cuddle.CDDL
         Codec.CBOR.Cuddle.CDDL.CtlOp
