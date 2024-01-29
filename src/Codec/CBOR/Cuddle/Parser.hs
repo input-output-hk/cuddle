@@ -151,7 +151,7 @@ pTyOp =
     ]
   where
     pRangeBound :: Parser RangeBound
-    pRangeBound = (string ".." $> Closed) <|> (string ".." $> ClOpen)
+    pRangeBound = try (string "..." $> ClOpen) <|> (string ".." $> Closed)
 
     pCtlOp :: Parser CtlOp
     pCtlOp =
