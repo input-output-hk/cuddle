@@ -8,6 +8,7 @@ module Codec.CBOR.Cuddle.Pretty where
 import Codec.CBOR.Cuddle.CDDL
 import Codec.CBOR.Cuddle.CDDL.CtlOp (CtlOp)
 import Data.List.NonEmpty qualified as NE
+import Data.Maybe (catMaybes)
 import Data.Text qualified as T
 import Prettyprinter
 
@@ -81,8 +82,12 @@ instance Pretty Group where
       prettyGrpChoice = align . vsep . punctuate "," . fmap pretty
 
 instance Pretty GroupEntry where
-  pretty (GEType moi mmk t) = pretty moi <+> pretty mmk <+> pretty t
-  pretty (GERef moi n mga) = pretty moi <+> pretty n <+> pretty mga
+  pretty (GEType moi mmk t) =
+    hsep . catMaybes $
+      [fmap pretty moi, fmap pretty mmk, Just $ pretty t]
+  pretty (GERef moi n mga) =
+    hsep . catMaybes $
+      [fmap pretty moi, Just $ pretty n, fmap pretty mga]
   pretty (GEGroup moi g) = pretty moi <+> enclose "(" ")" (pretty g)
 
 instance Pretty MemberKey where
