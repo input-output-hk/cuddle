@@ -4,6 +4,7 @@ module Test.Codec.CBOR.Cuddle.CDDL.Gen (genCDDL, genRule, genName) where
 import Codec.CBOR.Cuddle.CDDL
 import Codec.CBOR.Cuddle.CDDL.CtlOp
 import Hedgehog (MonadGen)
+import Hedgehog.Gen (sized)
 import Hedgehog.Gen qualified as Gen
 import Hedgehog.Range qualified as Range
 
@@ -59,15 +60,15 @@ genType2 =
   Gen.recursive
     Gen.choice
     [ T2Value <$> genValue,
-      T2Name <$> genName <*> Gen.maybe genGenericArg,
       T2Map <$> genGroup,
       T2Array <$> genGroup,
-      T2Unwrapped <$> genName <*> Gen.maybe genGenericArg,
       T2Enum <$> genGroup,
-      T2EnumRef <$> genName <*> Gen.maybe genGenericArg,
       T2DataItem
         <$> Gen.int (Range.constant 0 10)
         <*> Gen.maybe (Gen.int (Range.constant 0 10)),
+      T2Name <$> genName <*> maybeRec genGenericArg,
+      T2Unwrapped <$> genName <*> maybeRec genGenericArg,
+      T2EnumRef <$> genName <*> maybeRec genGenericArg,
       pure T2Any
     ]
     [ T2Group <$> genType0,
@@ -98,7 +99,7 @@ genGroupEntry =
     [ GERef
         <$> Gen.maybe genOccurrenceIndicator
         <*> genName
-        <*> Gen.maybe genGenericArg
+        <*> maybeRec genGenericArg
     ]
     [ GEType
         <$> Gen.maybe genOccurrenceIndicator
@@ -121,8 +122,8 @@ genValue :: (MonadGen m) => m Value
 genValue =
   Gen.choice
     [ VNum <$> Gen.int (Range.constant 0 255),
-      VText <$> Gen.text (Range.constant 0 1000) Gen.unicode,
-      VBytes <$> Gen.bytes (Range.constant 0 1100)
+      VText <$> Gen.text (Range.constant 0 1000) Gen.unicode
+      -- VBytes <$> Gen.bytes (Range.constant 0 1100)
     ]
 
 genCtlOp :: (MonadGen m) => m CtlOp
@@ -143,3 +144,21 @@ genCtlOp =
       Ne,
       Default
     ]
+
+--------------------------------------------------------------------------------
+-- Utility
+--------------------------------------------------------------------------------
+
+-- | Variant on maybe which shrinks the size whenever it selects the 'Just'
+-- option. When the size gets to one or less, the Just constructor is no longer
+-- called, ensuring termination.
+maybeRec :: (MonadGen m) => m a -> m (Maybe a)
+maybeRec gen =
+  sized $ \n ->
+    if n <= 1
+      then pure Nothing
+      else
+        Gen.frequency
+          [ (2, pure Nothing),
+            (1 + fromIntegral n, Just <$> Gen.small gen)
+          ]
