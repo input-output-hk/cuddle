@@ -12,9 +12,9 @@ import Prettyprinter (Pretty, defaultLayoutOptions, layoutPretty, pretty)
 import Prettyprinter.Render.Text (renderStrict)
 import Test.Codec.CBOR.Cuddle.CDDL.Gen qualified as Gen
 import Test.Hspec
-import Test.Hspec.Hedgehog (Gen, PropertyT, failure, footnoteShow, forAll, hedgehog, (===))
+import Test.Hspec.Hedgehog (Gen, PropertyT, failure, footnote, footnoteShow, forAll, hedgehog, (===))
 import Test.Hspec.Megaparsec
-import Text.Megaparsec (parse)
+import Text.Megaparsec (errorBundlePretty, parse)
 
 parserSpec :: Spec
 parserSpec = do
@@ -26,8 +26,7 @@ parserSpec = do
   grpEntrySpec
   grpChoiceSpec
   genericSpec
-
--- roundtripSpec
+  roundtripSpec
 
 roundtripSpec :: Spec
 roundtripSpec = describe "Roundtripping should be id" $ do
@@ -42,9 +41,10 @@ roundtripSpec = describe "Roundtripping should be id" $ do
     trip g pa = hedgehog $ do
       x <- forAll g
       let printed = printText x
+      footnoteShow printed
       case parse pa "" printed of
         Left e -> do
-          footnoteShow e
+          footnote $ errorBundlePretty e
           failure
         Right parsed -> do
           footnoteShow parsed
@@ -244,6 +244,33 @@ grpEntrySpec = describe "GroupEntry" $ do
         ( Type0
             ( Type1
                 (T2Name (Name "int") Nothing)
+                Nothing
+                NE.:| []
+            )
+        )
+  it "Should parse a generic" $
+    parse pGrpEntry "" "a<0 ... #6(0)>"
+      `shouldParse` GEType
+        Nothing
+        Nothing
+        ( Type0
+            ( Type1
+                ( T2Name
+                    (Name "a")
+                    ( Just
+                        ( GenericArg
+                            ( Type1
+                                (T2Value (VNum 0))
+                                ( Just
+                                    ( RangeOp ClOpen,
+                                      T2Tag Nothing (Type0 (Type1 (T2Value (VNum 0)) Nothing NE.:| []))
+                                    )
+                                )
+                                NE.:| []
+                            )
+                        )
+                    )
+                )
                 Nothing
                 NE.:| []
             )

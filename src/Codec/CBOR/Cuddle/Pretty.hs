@@ -61,8 +61,12 @@ instance Pretty Type2 where
   pretty (T2Array g) = enclose "[" "]" $ pretty g
   pretty (T2Unwrapped n mg) = "~" <+> pretty n <> pretty mg
   pretty (T2Enum g) = "&" <+> enclose "(" ")" (pretty g)
-  pretty (T2EnumRef g mg) = "&" <+> pretty g <+> pretty mg
-  pretty (T2Tag minor t) = "#6." <> pretty minor <+> enclose "(" ")" (pretty t)
+  pretty (T2EnumRef g mg) = "&" <+> pretty g <> pretty mg
+  pretty (T2Tag minor t) = "#6" <> min' <> enclose "(" ")" (pretty t)
+    where
+      min' = case minor of
+        Nothing -> mempty
+        Just m -> "." <> pretty m
   pretty (T2DataItem major mminor) =
     "#" <> pretty major <> case mminor of
       Nothing -> mempty
@@ -83,12 +87,15 @@ instance Pretty Group where
 
 instance Pretty GroupEntry where
   pretty (GEType moi mmk t) =
-    hsep . catMaybes $
-      [fmap pretty moi, fmap pretty mmk, Just $ pretty t]
+    hsep $
+      catMaybes
+        [fmap pretty moi, fmap pretty mmk, Just $ pretty t]
   pretty (GERef moi n mga) =
-    hsep . catMaybes $
-      [fmap pretty moi, Just $ pretty n, fmap pretty mga]
-  pretty (GEGroup moi g) = pretty moi <+> enclose "(" ")" (pretty g)
+    hsep (catMaybes [fmap pretty moi, Just $ pretty n])
+      <> pretty mga
+  pretty (GEGroup moi g) =
+    hsep $
+      catMaybes [fmap pretty moi, Just $ enclose "(" ")" (pretty g)]
 
 instance Pretty MemberKey where
   pretty (MKType t1) = pretty t1 <+> "=>"
