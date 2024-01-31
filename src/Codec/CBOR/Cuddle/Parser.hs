@@ -162,7 +162,7 @@ pTyOp =
     ]
   where
     pRangeBound :: Parser RangeBound
-    pRangeBound = try (string "..." $> ClOpen) <|> (string ".." $> Closed)
+    pRangeBound = label "RangeBound" $ try (string "..." $> ClOpen) <|> (string ".." $> Closed)
 
     pCtlOp :: Parser CtlOp
     pCtlOp =
@@ -204,7 +204,9 @@ pValue =
       pText
     ]
   where
-    pNumber = VNum <$> L.decimal
+    -- Need to ensure that number values are not actually bounds on a later
+    -- value.
+    pNumber = VNum <$> L.decimal <* notFollowedBy (char '*')
     pText = VText <$> (char '"' *> pSChar <* char '"')
     -- Currently this doesn't allow string escaping
     pSChar :: Parser Text

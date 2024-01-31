@@ -275,6 +275,12 @@ grpEntrySpec = describe "GroupEntry" $ do
                 NE.:| []
             )
         )
+  it "Parses a GEType with an Occurrence Indicator" $
+    parse pGrpEntry "" "0* a"
+      `shouldParse` GEType
+        (Just (OIBounded (Just 0) Nothing))
+        Nothing
+        (Type0 (Type1 (T2Name (Name "a") Nothing) Nothing NE.:| []))
 
 grpChoiceSpec :: SpecWith ()
 grpChoiceSpec = describe "GroupChoice" $ do

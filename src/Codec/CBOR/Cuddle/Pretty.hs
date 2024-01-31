@@ -31,10 +31,10 @@ instance Pretty Rule where
         AssignExt -> "//="
 
 instance Pretty GenericArg where
-  pretty (GenericArg (NE.toList -> l)) = encloseSep "<" ">" ", " $ fmap pretty l
+  pretty (GenericArg (NE.toList -> l)) = align . encloseSep "<" ">" ", " $ fmap pretty l
 
 instance Pretty GenericParam where
-  pretty (GenericParam (NE.toList -> l)) = encloseSep "<" ">" ", " $ fmap pretty l
+  pretty (GenericParam (NE.toList -> l)) = align . encloseSep "<" ">" ", " $ fmap pretty l
 
 instance Pretty Type0 where
   pretty (Type0 (NE.toList -> l)) = align . encloseSep mempty mempty " / " $ fmap pretty l
