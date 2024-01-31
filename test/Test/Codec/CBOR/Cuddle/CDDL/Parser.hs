@@ -31,6 +31,7 @@ parserSpec = do
 roundtripSpec :: Spec
 roundtripSpec = describe "Roundtripping should be id" $ do
   it "Trip Name" $ trip Gen.genName pName
+  it "Trip Value" $ trip Gen.genValue pValue
   it "Trip Rule" $ trip Gen.genRule pRule
   where
     -- We show that, for a printed CDDL document p, print (parse p) == p. Note

@@ -1,5 +1,11 @@
 -- | Hedgehog generators for CDDL
-module Test.Codec.CBOR.Cuddle.CDDL.Gen (genCDDL, genRule, genName) where
+module Test.Codec.CBOR.Cuddle.CDDL.Gen
+  ( genCDDL,
+    genRule,
+    genName,
+    genValue,
+  )
+where
 
 import Codec.CBOR.Cuddle.CDDL
 import Codec.CBOR.Cuddle.CDDL.CtlOp
@@ -7,23 +13,22 @@ import Hedgehog (MonadGen)
 import Hedgehog.Gen (sized)
 import Hedgehog.Gen qualified as Gen
 import Hedgehog.Range qualified as Range
-import Text.Megaparsec.Byte qualified as Gen
 
 genCDDL :: (MonadGen m) => m CDDL
-genCDDL = CDDL <$> Gen.nonEmpty (Range.constant 1 15) genRule
+genCDDL = CDDL <$> Gen.nonEmpty (Range.linear 1 15) genRule
 
 -- TODO Expand the range of names generated
 genName :: (MonadGen m) => m Name
-genName = Name <$> Gen.text (Range.constant 1 10) Gen.alpha
+genName = Name <$> Gen.text (Range.linear 1 10) Gen.alpha
 
 genAssign :: (MonadGen m) => m Assign
 genAssign = Gen.element [AssignEq, AssignExt]
 
 genGenericParams :: (MonadGen m) => m GenericParam
-genGenericParams = GenericParam <$> Gen.nonEmpty (Range.constant 1 5) genName
+genGenericParams = GenericParam <$> Gen.nonEmpty (Range.linear 1 5) genName
 
 genGenericArg :: (MonadGen m) => m GenericArg
-genGenericArg = GenericArg <$> Gen.nonEmpty (Range.constant 1 5) genType1
+genGenericArg = GenericArg <$> Gen.nonEmpty (Range.linear 1 5) genType1
 
 genRule :: (MonadGen m) => m Rule
 genRule =
@@ -51,7 +56,7 @@ genTypeOrGroup =
     ]
 
 genType0 :: (MonadGen m) => m Type0
-genType0 = Type0 <$> Gen.nonEmpty (Range.constant 1 4) genType1
+genType0 = Type0 <$> Gen.nonEmpty (Range.linear 1 4) genType1
 
 genType1 :: (MonadGen m) => m Type1
 genType1 = Type1 <$> genType2 <*> Gen.maybe ((,) <$> genTyOp <*> genType2)
@@ -65,15 +70,15 @@ genType2 =
       T2Array <$> genGroup,
       T2Enum <$> genGroup,
       T2DataItem
-        <$> Gen.int (Range.constant 0 10)
-        <*> Gen.maybe (Gen.int (Range.constant 0 10)),
+        <$> Gen.int (Range.linear 0 10)
+        <*> Gen.maybe (Gen.int (Range.linear 0 10)),
       T2Name <$> genName <*> maybeRec genGenericArg,
       T2Unwrapped <$> genName <*> maybeRec genGenericArg,
       T2EnumRef <$> genName <*> maybeRec genGenericArg,
       pure T2Any
     ]
     [ T2Group <$> genType0,
-      T2Tag <$> Gen.maybe (Gen.int (Range.constant 0 10)) <*> genType0
+      T2Tag <$> Gen.maybe (Gen.int (Range.linear 0 10)) <*> genType0
     ]
 
 genOccurrenceIndicator :: (MonadGen m) => m OccurrenceIndicator
@@ -83,15 +88,15 @@ genOccurrenceIndicator =
       pure OIZeroOrMore,
       pure OIOneOrMore,
       OIBounded
-        <$> Gen.maybe (Gen.int (Range.constant 0 5))
-        <*> Gen.maybe (Gen.int (Range.constant 5 10))
+        <$> Gen.maybe (Gen.int (Range.linear 0 5))
+        <*> Gen.maybe (Gen.int (Range.linear 5 10))
     ]
 
 genGroup :: (MonadGen m) => m Group
-genGroup = Group <$> Gen.nonEmpty (Range.constant 1 10) genGrpChoice
+genGroup = Group <$> Gen.nonEmpty (Range.linear 1 5) genGrpChoice
 
 genGrpChoice :: (MonadGen m) => m GrpChoice
-genGrpChoice = Gen.list (Range.constant 1 10) genGroupEntry
+genGrpChoice = Gen.list (Range.linear 1 10) genGroupEntry
 
 genGroupEntry :: (MonadGen m) => m GroupEntry
 genGroupEntry =
@@ -122,9 +127,9 @@ genMemberKey =
 genValue :: (MonadGen m) => m Value
 genValue =
   Gen.choice
-    [ VNum <$> Gen.int (Range.constant 0 255),
-      VText <$> Gen.text (Range.constant 0 1000) Gen.alphaNum
-      -- VBytes <$> Gen.bytes (Range.constant 0 1100)
+    [ VNum <$> Gen.int (Range.linear 0 255),
+      VText <$> Gen.text (Range.linear 0 1000) Gen.alphaNum
+      -- VBytes <$> Gen.bytes (Range.linear 0 1100)
     ]
 
 genCtlOp :: (MonadGen m) => m CtlOp
