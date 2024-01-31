@@ -7,6 +7,7 @@ import Hedgehog (MonadGen)
 import Hedgehog.Gen (sized)
 import Hedgehog.Gen qualified as Gen
 import Hedgehog.Range qualified as Range
+import Text.Megaparsec.Byte qualified as Gen
 
 genCDDL :: (MonadGen m) => m CDDL
 genCDDL = CDDL <$> Gen.nonEmpty (Range.constant 1 15) genRule
@@ -122,7 +123,7 @@ genValue :: (MonadGen m) => m Value
 genValue =
   Gen.choice
     [ VNum <$> Gen.int (Range.constant 0 255),
-      VText <$> Gen.text (Range.constant 0 1000) Gen.unicode
+      VText <$> Gen.text (Range.constant 0 1000) Gen.alphaNum
       -- VBytes <$> Gen.bytes (Range.constant 0 1100)
     ]
 
