@@ -8,6 +8,7 @@ module Codec.CBOR.Cuddle.Pretty where
 import Codec.CBOR.Cuddle.CDDL
 import Codec.CBOR.Cuddle.CDDL.CtlOp (CtlOp)
 import Data.List.NonEmpty qualified as NE
+import Data.Maybe (catMaybes)
 import Data.Text qualified as T
 import Prettyprinter
 
@@ -30,10 +31,10 @@ instance Pretty Rule where
         AssignExt -> "//="
 
 instance Pretty GenericArg where
-  pretty (GenericArg (NE.toList -> l)) = encloseSep "<" ">" ", " $ fmap pretty l
+  pretty (GenericArg (NE.toList -> l)) = align . encloseSep "<" ">" ", " $ fmap pretty l
 
 instance Pretty GenericParam where
-  pretty (GenericParam (NE.toList -> l)) = encloseSep "<" ">" ", " $ fmap pretty l
+  pretty (GenericParam (NE.toList -> l)) = align . encloseSep "<" ">" ", " $ fmap pretty l
 
 instance Pretty Type0 where
   pretty (Type0 (NE.toList -> l)) = align . encloseSep mempty mempty " / " $ fmap pretty l
@@ -60,8 +61,12 @@ instance Pretty Type2 where
   pretty (T2Array g) = enclose "[" "]" $ pretty g
   pretty (T2Unwrapped n mg) = "~" <+> pretty n <> pretty mg
   pretty (T2Enum g) = "&" <+> enclose "(" ")" (pretty g)
-  pretty (T2EnumRef g mg) = "&" <+> pretty g <+> pretty mg
-  pretty (T2Tag minor t) = "#6." <> pretty minor <+> enclose "(" ")" (pretty t)
+  pretty (T2EnumRef g mg) = "&" <+> pretty g <> pretty mg
+  pretty (T2Tag minor t) = "#6" <> min' <> enclose "(" ")" (pretty t)
+    where
+      min' = case minor of
+        Nothing -> mempty
+        Just m -> "." <> pretty m
   pretty (T2DataItem major mminor) =
     "#" <> pretty major <> case mminor of
       Nothing -> mempty
@@ -81,9 +86,16 @@ instance Pretty Group where
       prettyGrpChoice = align . vsep . punctuate "," . fmap pretty
 
 instance Pretty GroupEntry where
-  pretty (GEType moi mmk t) = pretty moi <+> pretty mmk <+> pretty t
-  pretty (GERef moi n mga) = pretty moi <+> pretty n <+> pretty mga
-  pretty (GEGroup moi g) = pretty moi <+> enclose "(" ")" (pretty g)
+  pretty (GEType moi mmk t) =
+    hsep $
+      catMaybes
+        [fmap pretty moi, fmap pretty mmk, Just $ pretty t]
+  pretty (GERef moi n mga) =
+    hsep (catMaybes [fmap pretty moi, Just $ pretty n])
+      <> pretty mga
+  pretty (GEGroup moi g) =
+    hsep $
+      catMaybes [fmap pretty moi, Just $ enclose "(" ")" (pretty g)]
 
 instance Pretty MemberKey where
   pretty (MKType t1) = pretty t1 <+> "=>"

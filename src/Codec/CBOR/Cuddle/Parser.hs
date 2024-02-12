@@ -93,11 +93,11 @@ pType2 :: Parser Type2
 pType2 =
   choice
     [ try $ T2Value <$> pValue,
-      try $ T2Name <$> pName <*> optcomp pGenericArg,
+      try $ T2Name <$> pName <*> optional pGenericArg,
       try $ T2Group <$> between (char '(') (char ')') (space *> pType0 <* space),
       try $ T2Map <$> between (char '{') (char '}') (space *> pGroup <* space),
       try $ T2Array <$> between (char '[') (char ']') (space *> pGroup <* space),
-      try $ T2Unwrapped <$> (char '~' *> space *> pName) <*> optcomp pGenericArg,
+      try $ T2Unwrapped <$> (char '~' *> space *> pName) <*> optional pGenericArg,
       try $
         T2Enum
           <$> ( char '&'
@@ -107,7 +107,7 @@ pType2 =
                     (char ')')
                     (space *> pGroup <* space)
               ),
-      try $ T2EnumRef <$> (char '&' *> space *> pName) <*> optcomp pGenericArg,
+      try $ T2EnumRef <$> (char '&' *> space *> pName) <*> optional pGenericArg,
       try $
         T2Tag
           <$> (string "#6" *> optcomp (char '.' *> L.decimal))
@@ -125,8 +125,19 @@ pGrpChoice = many ((space *> pGrpEntry <* space) <* optional (char ','))
 pGrpEntry :: Parser GroupEntry
 pGrpEntry =
   choice
-    [ try $ GEType <$> optcomp (pOccur <* space) <*> optcomp (pMemberKey <* space) <*> pType0,
-      try $ GERef <$> optcomp (pOccur <* space) <*> pName <*> optcomp pGenericArg,
+    [ try $
+        GEType
+          <$> optcomp (pOccur <* space)
+          <*> optcomp (pMemberKey <* space)
+          <*> pType0,
+      try $
+        GERef
+          <$> optcomp (pOccur <* space)
+          <*> pName
+          -- We use optional here since we should not backtrack once we start
+          -- consuming a generic argument - the opening '<' will not be anything
+          -- else.
+          <*> optional pGenericArg,
       GEGroup
         <$> optcomp (pOccur <* space)
         <*> between
@@ -151,34 +162,36 @@ pTyOp =
     ]
   where
     pRangeBound :: Parser RangeBound
-    pRangeBound = (string ".." $> Closed) <|> (string ".." $> ClOpen)
+    pRangeBound = label "RangeBound" $ try (string "..." $> ClOpen) <|> (string ".." $> Closed)
 
     pCtlOp :: Parser CtlOp
     pCtlOp =
-      choice
-        [ try $ string "cbor" $> COp.Cbor,
-          try $ string "size" $> COp.Size,
-          try $ string "bits" $> COp.Bits,
-          try $ string "cborseq" $> COp.Cborseq,
-          try $ string "within" $> COp.Within,
-          try $ string "and" $> COp.And,
-          try $ string "lt" $> COp.Lt,
-          try $ string "le" $> COp.Le,
-          try $ string "gt" $> COp.Gt,
-          try $ string "ge" $> COp.Ge,
-          try $ string "eq" $> COp.Eq,
-          try $ string "ne" $> COp.Ne,
-          try $ string "default" $> COp.Default,
-          try $ string "regexp" $> COp.Regexp
-        ]
+      label "CtlOp" $
+        choice
+          [ try $ string "cborseq" $> COp.Cborseq,
+            try $ string "cbor" $> COp.Cbor,
+            try $ string "size" $> COp.Size,
+            try $ string "bits" $> COp.Bits,
+            try $ string "within" $> COp.Within,
+            try $ string "and" $> COp.And,
+            try $ string "lt" $> COp.Lt,
+            try $ string "le" $> COp.Le,
+            try $ string "gt" $> COp.Gt,
+            try $ string "ge" $> COp.Ge,
+            try $ string "eq" $> COp.Eq,
+            try $ string "ne" $> COp.Ne,
+            try $ string "default" $> COp.Default,
+            try $ string "regexp" $> COp.Regexp
+          ]
 
 pOccur :: Parser OccurrenceIndicator
 pOccur =
-  choice
-    [ char '+' $> OIOneOrMore,
-      char '?' $> OIOptional,
-      mkBounded <$> optional L.decimal <*> (char '*' *> optional L.decimal)
-    ]
+  label "OccurrenceIndicator" $
+    choice
+      [ char '+' $> OIOneOrMore,
+        char '?' $> OIOptional,
+        mkBounded <$> optional L.decimal <*> (char '*' *> optional L.decimal)
+      ]
   where
     mkBounded mlb mub = case (mlb, mub) of
       (Nothing, Nothing) -> OIZeroOrMore
@@ -191,7 +204,9 @@ pValue =
       pText
     ]
   where
-    pNumber = VNum <$> L.decimal
+    -- Need to ensure that number values are not actually bounds on a later
+    -- value.
+    pNumber = VNum <$> L.decimal <* notFollowedBy (char '*')
     pText = VText <$> (char '"' *> pSChar <* char '"')
     -- Currently this doesn't allow string escaping
     pSChar :: Parser Text

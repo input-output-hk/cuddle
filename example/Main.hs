@@ -5,7 +5,12 @@ module Main (main) where
 
 import Codec.CBOR.Cuddle.CBOR.Gen (generateCBORTerm)
 import Codec.CBOR.Cuddle.CDDL (Name (..))
-import Codec.CBOR.Cuddle.CDDL.Resolve (asMap, buildMonoCTree, buildRefCTree, buildResolvedCTree)
+import Codec.CBOR.Cuddle.CDDL.Resolve
+  ( asMap,
+    buildMonoCTree,
+    buildRefCTree,
+    buildResolvedCTree,
+  )
 import Codec.CBOR.Cuddle.Parser (pCDDL)
 import Codec.CBOR.Cuddle.Pretty ()
 import Data.Text qualified as T

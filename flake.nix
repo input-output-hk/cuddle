@@ -33,6 +33,7 @@
                       pkgs.haskell.compiler.${ghcver}
                       cabal-install
                       cabal-fmt
+                      pkgs.cddl
                     ];
 
                   enterShell = ''
