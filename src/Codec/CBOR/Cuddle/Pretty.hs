@@ -7,8 +7,10 @@ module Codec.CBOR.Cuddle.Pretty where
 
 import Codec.CBOR.Cuddle.CDDL
 import Codec.CBOR.Cuddle.CDDL.CtlOp (CtlOp)
+import Data.ByteString.Char8 qualified as BS
 import Data.List.NonEmpty qualified as NE
 import Data.Maybe (catMaybes)
+import Data.String (fromString)
 import Data.Text qualified as T
 import Prettyprinter
 
@@ -83,7 +85,7 @@ instance Pretty Group where
   pretty (Group (NE.toList -> xs)) =
     align . encloseSep mempty mempty " // " $ fmap prettyGrpChoice xs
     where
-      prettyGrpChoice = align . vsep . punctuate "," . fmap pretty
+      prettyGrpChoice = align . encloseSep mempty mempty ", " . fmap pretty
 
 instance Pretty GroupEntry where
   pretty (GEType moi mmk t) =
@@ -105,4 +107,4 @@ instance Pretty MemberKey where
 instance Pretty Value where
   pretty (VNum i) = pretty i
   pretty (VText t) = enclose "\"" "\"" $ pretty t
-  pretty (VBytes _b) = "some bytes"
+  pretty (VBytes b) = fromString $ "h" <> "'" <> BS.unpack b <> "'"
