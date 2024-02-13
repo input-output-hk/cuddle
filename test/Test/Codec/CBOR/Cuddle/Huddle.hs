@@ -1,5 +1,8 @@
 {-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+
+{-# HLINT ignore "Redundant bracket" #-}
 
 module Test.Codec.CBOR.Cuddle.Huddle where
 
@@ -25,7 +28,7 @@ basicAssign = describe "basic assignment" $ do
     toCDDL ["port" =:= VUInt]
       `shouldMatchParseCDDL` "port = uint"
   it "Can assign an int" $
-    toCDDL ["one" =:= (1 :: Int)]
+    toCDDL ["one" =:= (int 1)]
       `shouldMatchParseCDDL` "one = 1"
   -- it "Can assign a float" $
   --   toCDDL ["onepointone" =:= (1.1 :: Float)]
@@ -43,10 +46,10 @@ arraySpec = describe "Arrays" $ do
     toCDDL ["asl" =:= arr [a VUInt, a VBool, a VText]]
       `shouldMatchParseCDDL` "asl = [ uint, bool, text ]"
   it "Can quantify an upper bound" $
-    toCDDL ["age" =:= ([a VUInt +> 64] :: ArrayChoice)]
+    toCDDL ["age" =:= arr [a VUInt +> 64]]
       `shouldMatchParseCDDL` "age = [ *64 uint ]"
   it "Can quantify an optional" $
-    toCDDL ["age" =:= ([0 <+ a VUInt +> 1] :: ArrayChoice)]
+    toCDDL ["age" =:= arr [0 <+ a VUInt +> 1]]
       `shouldMatchParseCDDL` "age = [ ? uint ]"
   it "Can handle a choice" $
     toCDDL ["ageOrSex" =:= arr [a VUInt] // arr [a VBool]]
@@ -56,7 +59,7 @@ arraySpec = describe "Arrays" $ do
       [ "asl"
           =:= arr [a VUInt, a VBool, a VText]
           // arr
-            [ a (1 :: Int),
+            [ a (int 1),
               a ("Hello" :: T.Text)
             ]
       ]
@@ -77,18 +80,19 @@ mapSpec = describe "Maps" $ do
     toCDDL ["ageOrSex" =:= mp ["age" ==> VUInt] // mp ["sex" ==> VBool]]
       `shouldMatchParseCDDL` "ageOrSex = { age : uint // sex : bool }"
   it "Can handle a choice with an entry" $
-    toCDDL ["mir" =:= arr [a (0 :: Int) / (1 :: Int), a $ mp [0 <+ "test" ==> VUInt]]]
+    toCDDL ["mir" =:= arr [a (int 0) / int 1, a $ mp [0 <+ "test" ==> VUInt]]]
       `shouldMatchParseCDDL` "mir = [ 0 / 1, { * test : uint }]"
 
 nestedSpec :: Spec
-nestedSpec = describe "Nesting" $ do
-  it "Handles references" $
-    let headerBody = "header_body" =:= arr ["block_number" ==> VUInt, "slot" ==> VUInt]
-     in toCDDL
-          [ headerBody,
-            "header" =:= arr [a (Ref headerBody), "body_signature" ==> VBytes]
-          ]
-          `shouldMatchParseCDDL` "header_body = [block_number : uint, slot : uint]\n header = [header_body, body_signature : bytes]"
+nestedSpec =
+  describe "Nesting" $
+    it "Handles references" $
+      let headerBody = "header_body" =:= arr ["block_number" ==> VUInt, "slot" ==> VUInt]
+       in toCDDL
+            [ headerBody,
+              "header" =:= arr [a headerBody, "body_signature" ==> VBytes]
+            ]
+            `shouldMatchParseCDDL` "header_body = [block_number : uint, slot : uint]\n header = [header_body, body_signature : bytes]"
 
 --------------------------------------------------------------------------------
 -- Helper functions

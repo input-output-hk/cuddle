@@ -11,8 +11,10 @@ import Codec.CBOR.Cuddle.CDDL.Resolve
     buildRefCTree,
     buildResolvedCTree,
   )
+import Codec.CBOR.Cuddle.Huddle (toCDDL)
 import Codec.CBOR.Cuddle.Parser (pCDDL)
 import Codec.CBOR.Cuddle.Pretty ()
+import Conway (conway)
 import Data.Text qualified as T
 import Data.Text.IO qualified as T
 import Prettyprinter (Pretty (pretty))
@@ -60,6 +62,9 @@ main = do
             Right mt ->
               let term = generateCBORTerm mt (Name $ T.pack name) stdGen
                in print term
+    [] -> do
+      let cw = toCDDL conway
+      putDocW 80 $ pretty cw
     _ -> putStrLn "Expected filename"
 
 parseFromFile ::

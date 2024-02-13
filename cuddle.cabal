@@ -59,8 +59,8 @@ library
 executable example
     import:           warnings
     default-language: GHC2021
+    other-modules:    Conway
 
-    -- other-modules:
     -- other-extensions:
     hs-source-dirs:   example
     main-is:          Main.hs
