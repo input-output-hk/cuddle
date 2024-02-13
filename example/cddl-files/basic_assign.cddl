@@ -26,3 +26,5 @@ sz16 = bytes .size mysize
 
 usz4 = uint .size 4
 usz8 = uint .size 8
+
+group = (usz4, usz8 / mysize, header_body, { * uint => coin })
