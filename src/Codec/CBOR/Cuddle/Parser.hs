@@ -19,7 +19,7 @@ import Text.Megaparsec.Char.Lexer qualified as L
 type Parser = Parsec Void Text
 
 pCDDL :: Parser CDDL
-pCDDL = CDDL <$> (space *> NE.some (pRule <* space) <* eof)
+pCDDL = CDDL . fmap noComment <$> (space *> NE.some (pRule <* space) <* eof)
 
 pRule :: Parser Rule
 pRule =

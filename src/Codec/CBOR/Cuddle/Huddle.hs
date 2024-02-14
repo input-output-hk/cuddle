@@ -28,6 +28,7 @@ module Codec.CBOR.Cuddle.Huddle
     -- * Rules and assignment
     (=:=),
     (=:~),
+    comment,
 
     -- * Maps
     (==>),
@@ -100,14 +101,22 @@ import Data.Tuple.Optics (Field1 (..), Field2 (..), Field3 (..))
 import Data.Void (Void)
 import GHC.Generics (Generic)
 import GHC.IsList (IsList (Item, fromList, toList))
-import Optics.Core (over, (%~), (&))
+import Optics.Core (over, view, (%~), (&), (.~))
 import Prelude hiding ((/))
 
-data Named a = Named {name :: T.Text, value :: a}
-  deriving (Functor)
+data Named a = Named
+  { name :: T.Text,
+    value :: a,
+    description :: Maybe T.Text
+  }
+  deriving (Functor, Generic)
+
+-- | Add a description to a rule, to be included as a comment.
+comment :: T.Text -> Named a -> Named a
+comment desc n = n & field @"description" .~ Just desc
 
 instance Show (Named a) where
-  show (Named n _) = T.unpack n
+  show (Named n _ _) = T.unpack n
 
 type Rule = Named Type0
 
@@ -368,7 +377,7 @@ sized v sz =
       }
 
 cbor :: Value ByteString -> Rule -> Constrained
-cbor v (Named n _) =
+cbor v (Named n _ _) =
   Constrained v $
     ValueConstraint
       { applyConstraint = \t2 ->
@@ -536,14 +545,14 @@ infixl 9 ==>
 
 -- | Assign a rule
 (=:=) :: (IsType0 a) => T.Text -> a -> Rule
-n =:= b = Named n $ toType0 b
+n =:= b = Named n (toType0 b) Nothing
 
-infixl 0 =:=
+infixl 1 =:=
 
 (=:~) :: T.Text -> Group -> Named Group
-n =:~ b = Named n b
+n =:~ b = Named n b Nothing
 
-infixl 0 =:~
+infixl 1 =:~
 
 class IsGroupOrArrayEntry a where
   toGroupOrArrayEntry :: (IsType0 x) => x -> a
@@ -732,6 +741,7 @@ binding fRule t0 =
       { args = NE.singleton t2,
         body = rule.value
       }
+    Nothing
   where
     rule = fRule (freshName 0)
     t2 = case toType0 t0 of
@@ -747,6 +757,7 @@ binding2 fRule t0 t1 =
       { args = t02 NE.:| [t12],
         body = rule.value
       }
+    Nothing
   where
     rule = fRule (freshName 0) (freshName 1)
     t02 = case toType0 t0 of
@@ -770,14 +781,14 @@ collectFrom topR =
   where
     toHuddle (rules, groups, gRules) =
       Huddle
-        { rules = NE.fromList $ uncurry Named <$> HaskMap.toList rules,
-          groups = uncurry Named <$> HaskMap.toList groups,
-          gRules = uncurry Named <$> HaskMap.toList gRules
+        { rules = NE.fromList $ view _2 <$> HaskMap.toList rules,
+          groups = view _2 <$> HaskMap.toList groups,
+          gRules = view _2 <$> HaskMap.toList gRules
         }
-    goRule (Named n t0) = do
+    goRule r@(Named n t0 _) = do
       (rules, _, _) <- get
       when (HaskMap.notMember n rules) $ do
-        modify (over _1 $ HaskMap.insert n t0)
+        modify (over _1 $ HaskMap.insert n r)
         goT0 t0
     goChoice f (NoChoice x) = f x
     goChoice f (ChoiceOf x xs) = f x >> goChoice f xs
@@ -786,15 +797,15 @@ collectFrom topR =
     goT2 (T2Array m) = goChoice (mapM_ goArrayEntry . (.unArrayChoice)) m
     goT2 (T2Tagged (Tagged _ t0)) = goT0 t0
     goT2 (T2Ref n) = goRule n
-    goT2 (T2Group (Named n g)) = do
+    goT2 (T2Group r@(Named n g _)) = do
       (_, groups, _) <- get
       when (HaskMap.notMember n groups) $ do
-        modify (over _2 $ HaskMap.insert n g)
+        modify (over _2 $ HaskMap.insert n r)
         goGroup g
-    goT2 (T2Generic (Named n g)) = do
+    goT2 (T2Generic r@(Named n g _)) = do
       (_, _, gRules) <- get
       when (HaskMap.notMember n gRules) $ do
-        modify (over _3 $ HaskMap.insert n (callToDef g))
+        modify (over _3 $ HaskMap.insert n (fmap callToDef r))
         goT0 g.body
     goT2 _ = pure ()
     goArrayEntry (ArrayEntry (Just k) t0 _) = goKey k >> goT0 t0
@@ -816,12 +827,15 @@ toCDDL hdl =
       `NE.appendList` fmap toCDDLGroup hdl.groups
       `NE.appendList` fmap toGenRuleDef hdl.gRules
   where
-    toCDDLRule :: Rule -> C.Rule
-    toCDDLRule (Named n t0) =
-      C.Rule (C.Name n) Nothing C.AssignEq
-        . C.TOGType
-        . C.Type0
-        $ toCDDLType1 <$> choiceToNE t0
+    toCDDLRule :: Rule -> C.WithComments C.Rule
+    toCDDLRule (Named n t0 c) =
+      C.WithComments
+        ( C.Rule (C.Name n) Nothing C.AssignEq
+            . C.TOGType
+            . C.Type0
+            $ toCDDLType1 <$> choiceToNE t0
+        )
+        (fmap C.Comment c)
     toCDDLValue :: Literal -> C.Value
     toCDDLValue (LInt i) = C.VNum $ fromIntegral i
     toCDDLValue (LText t) = C.VText t
@@ -861,8 +875,8 @@ toCDDL hdl =
       T2Array x -> C.Type1 (C.T2Array $ arrayToCDDLGroup x) Nothing
       T2Tagged (Tagged mmin x) ->
         C.Type1 (C.T2Tag mmin $ toCDDLType0 x) Nothing
-      T2Ref (Named n _) -> C.Type1 (C.T2Name (C.Name n) Nothing) Nothing
-      T2Group (Named n _) -> C.Type1 (C.T2Name (C.Name n) Nothing) Nothing
+      T2Ref (Named n _ _) -> C.Type1 (C.T2Name (C.Name n) Nothing) Nothing
+      T2Group (Named n _ _) -> C.Type1 (C.T2Name (C.Name n) Nothing) Nothing
       T2Generic g -> C.Type1 (toGenericCall g) Nothing
       T2GenericRef (GRef n) -> C.Type1 (C.T2Name (C.Name n) Nothing) Nothing
 
@@ -908,27 +922,33 @@ toCDDL hdl =
         (C.T2Value $ toCDDLValue lb)
         (Just (C.RangeOp rop, C.T2Value $ toCDDLValue ub))
 
-    toCDDLGroup :: Named Group -> C.Rule
-    toCDDLGroup (Named n (Group t0s)) =
-      C.Rule (C.Name n) Nothing C.AssignEq
-        . C.TOGGroup
-        . C.GEGroup Nothing
-        . C.Group
-        . NE.singleton
-        $ fmap (C.GEType Nothing Nothing . toCDDLType0) t0s
+    toCDDLGroup :: Named Group -> C.WithComments C.Rule
+    toCDDLGroup (Named n (Group t0s) c) =
+      C.WithComments
+        ( C.Rule (C.Name n) Nothing C.AssignEq
+            . C.TOGGroup
+            . C.GEGroup Nothing
+            . C.Group
+            . NE.singleton
+            $ fmap (C.GEType Nothing Nothing . toCDDLType0) t0s
+        )
+        (fmap C.Comment c)
 
     toGenericCall :: GRuleCall -> C.Type2
-    toGenericCall (Named n gr) =
+    toGenericCall (Named n gr _) =
       C.T2Name
         (C.Name n)
         (Just . C.GenericArg $ fmap toCDDLType1 gr.args)
 
-    toGenRuleDef :: GRuleDef -> C.Rule
-    toGenRuleDef (Named n gr) =
-      C.Rule (C.Name n) (Just gps) C.AssignEq
-        . C.TOGType
-        . C.Type0
-        $ toCDDLType1 <$> choiceToNE gr.body
+    toGenRuleDef :: GRuleDef -> C.WithComments C.Rule
+    toGenRuleDef (Named n gr c) =
+      C.WithComments
+        ( C.Rule (C.Name n) (Just gps) C.AssignEq
+            . C.TOGType
+            . C.Type0
+            $ toCDDLType1 <$> choiceToNE gr.body
+        )
+        (fmap C.Comment c)
       where
         gps =
           C.GenericParam $ fmap (\(GRef t) -> C.Name t) gr.args
