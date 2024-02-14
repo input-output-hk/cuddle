@@ -572,19 +572,18 @@ big_VUInt = "big_VUInt" =:= tag 2 bounded_bytes
 big_nint :: Rule
 big_nint = "big_nint" =:= tag 3 bounded_bytes
 
-constr :: (IsType0 x, Show x) => x -> Rule
-constr x =
-  "constr_"
-    <> T.pack (show x)
-      =:= tag 1 (arr [0 <+ a x])
-      // tag 2 (arr [0 <+ a x])
-      // tag 3 (arr [0 <+ a x])
-      // tag 4 (arr [0 <+ a x])
-      // tag 5 (arr [0 <+ a x])
-      // tag 6 (arr [0 <+ a x])
-      // tag 7 (arr [0 <+ a x])
-      -- similarly for tag range: 6.1280 .. 6.1400 inclusive
-      // tag 2 (arr [a VUInt, a $ arr [0 <+ a x]])
+constr :: (IsType0 x) => x -> GRuleCall
+constr = binding $ \x ->
+  "constr"
+    =:= tag 1 (arr [0 <+ a x])
+    // tag 2 (arr [0 <+ a x])
+    // tag 3 (arr [0 <+ a x])
+    // tag 4 (arr [0 <+ a x])
+    // tag 5 (arr [0 <+ a x])
+    // tag 6 (arr [0 <+ a x])
+    // tag 7 (arr [0 <+ a x])
+    -- similarly for tag range: 6.1280 .. 6.1400 inclusive
+    // tag 2 (arr [a VUInt, a $ arr [0 <+ a x]])
 
 redeemers :: Rule
 redeemers =
@@ -863,14 +862,14 @@ signature = "signature" =:= VBytes `sized` (64 :: Int)
 -- second era after Conway. We recommend all the tooling to account for this future breaking
 -- change sooner rather than later, in order to provide a smooth transition for their users.
 
-set :: (IsType0 t, Show t) => t -> Rule
-set x = "set_" <> T.pack (show x) =:= arr [0 <+ a x]
+set :: (IsType0 t0) => t0 -> GRuleCall
+set = binding $ \x -> "set" =:= arr [0 <+ a x]
 
-nonempty_set :: (IsType0 t, Show t) => t -> Rule
-nonempty_set x = "set_" <> T.pack (show x) =:= arr [1 <+ a x]
+nonempty_set :: (IsType0 t0) => t0 -> GRuleCall
+nonempty_set = binding $ \x -> "nonempty_set" =:= set x
 
 -- TODO Should we give this a name?
-nonempty_oset :: (IsType0 t, Show t) => t -> Rule
+nonempty_oset :: (IsType0 t0) => t0 -> GRuleCall
 nonempty_oset = nonempty_set
 
 positive_int :: Rule
