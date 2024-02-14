@@ -21,6 +21,7 @@ huddleSpec = describe "huddle" $ do
   arraySpec
   mapSpec
   nestedSpec
+  genericSpec
 
 basicAssign :: Spec
 basicAssign = describe "basic assignment" $ do
@@ -93,6 +94,22 @@ nestedSpec =
               "header" =:= arr [a headerBody, "body_signature" ==> VBytes]
             ]
             `shouldMatchParseCDDL` "header_body = [block_number : uint, slot : uint]\n header = [header_body, body_signature : bytes]"
+
+genericSpec :: Spec
+genericSpec =
+  describe "Generics" $
+    let set :: (IsType0 t0) => t0 -> GRuleCall
+        set = binding $ \x -> "set" =:= arr [0 <+ a x]
+
+        dict :: (IsType0 t0, IsType0 t1) => t0 -> t1 -> GRuleCall
+        dict = binding2 $ \k v -> "dict" =:= mp [0 <+ asKey k ==> v]
+     in do
+          it "Should bind a single parameter" $
+            toCDDL (collectFrom ("intset" =:= set VUInt))
+              `shouldMatchParseCDDL` "intset = set<uint>\n set<a0> = [* a0]"
+          it "Should bind two parameters" $
+            toCDDL (collectFrom ("mymap" =:= dict VUInt VText))
+              `shouldMatchParseCDDL` "mymap = dict<uint, text>\n dict<a0, b0> = {* a0 => b0}"
 
 --------------------------------------------------------------------------------
 -- Helper functions

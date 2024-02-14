@@ -72,6 +72,11 @@ module Codec.CBOR.Cuddle.Huddle
     -- * Tagging
     tag,
 
+    -- * Generics
+    GRuleCall,
+    binding,
+    binding2,
+
     -- * Conversion to CDDL
     collectFrom,
     toCDDL,
@@ -81,7 +86,6 @@ where
 import Codec.CBOR.Cuddle.CDDL (CDDL)
 import Codec.CBOR.Cuddle.CDDL qualified as C
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
-import Control.Arrow (Arrow (first), second)
 import Control.Monad (when)
 import Control.Monad.State (MonadState (get), execState, modify)
 import Data.ByteString (ByteString)
@@ -92,13 +96,14 @@ import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as HaskMap
 import Data.String (IsString (fromString))
 import Data.Text qualified as T
+import Data.Tuple.Optics (Field1 (..), Field2 (..), Field3 (..))
 import Data.Void (Void)
 import GHC.Generics (Generic)
 import GHC.IsList (IsList (Item, fromList, toList))
-import Optics.Core ((%~), (&))
+import Optics.Core (over, (%~), (&))
 import Prelude hiding ((/))
 
-data Named a = Named T.Text a
+data Named a = Named {name :: T.Text, value :: a}
   deriving (Functor)
 
 instance Show (Named a) where
@@ -109,7 +114,8 @@ type Rule = Named Type0
 -- | Top-level Huddle type is a list of rules.
 data Huddle = Huddle
   { rules :: NE.NonEmpty Rule,
-    groups :: [Named Group]
+    groups :: [Named Group],
+    gRules :: [GRuleDef]
   }
   deriving (Show)
 
@@ -117,7 +123,7 @@ data Huddle = Huddle
 instance IsList Huddle where
   type Item Huddle = Rule
   fromList [] = error "Huddle: Cannot have empty ruleset"
-  fromList (x : xs) = Huddle (x NE.:| xs) mempty
+  fromList (x : xs) = Huddle (x NE.:| xs) mempty mempty
 
   toList = NE.toList . (.rules)
 
@@ -219,6 +225,10 @@ data Type2
   | T2Tagged (Tagged Type0)
   | T2Ref (Named Type0)
   | T2Group (Named Group)
+  | -- | Call to a generic rule, binding arguments
+    T2Generic GRuleCall
+  | -- | Reference to a generic parameter within the body of the definition
+    T2GenericRef GRef
   deriving (Show)
 
 type Type0 = Choice Type2
@@ -455,6 +465,12 @@ instance IsType0 (Value a) where
 instance IsType0 (Named Group) where
   toType0 = NoChoice . T2Group
 
+instance IsType0 GRuleCall where
+  toType0 = NoChoice . T2Generic
+
+instance IsType0 GRef where
+  toType0 = NoChoice . T2GenericRef
+
 instance (IsType0 a) => IsType0 (Tagged a) where
   toType0 = NoChoice . T2Tagged . fmap toType0
 
@@ -568,6 +584,12 @@ instance IsChoosable Type2 Type2 where
 instance IsChoosable Rule Type2 where
   toChoice = toChoice . T2Ref
 
+instance IsChoosable GRuleCall Type2 where
+  toChoice = toChoice . T2Generic
+
+instance IsChoosable GRef Type2 where
+  toChoice = toChoice . T2GenericRef
+
 instance IsChoosable ByteString Type2 where
   toChoice = toChoice . T2Literal . Unranged . LBytes
 
@@ -667,23 +689,95 @@ tag :: Int -> a -> Tagged a
 tag mi = Tagged (Just mi)
 
 --------------------------------------------------------------------------------
+-- Generics
+--------------------------------------------------------------------------------
+
+newtype GRef = GRef T.Text
+  deriving (Show)
+
+freshName :: Int -> GRef
+freshName ix =
+  GRef $
+    T.singleton (['a' .. 'z'] !! (ix `rem` 26))
+      <> T.pack (show $ ix `quot` 26)
+
+data GRule a = GRule
+  { args :: NE.NonEmpty a,
+    body :: Type0
+  }
+  deriving (Show)
+
+type GRuleCall = Named (GRule Type2)
+
+type GRuleDef = Named (GRule GRef)
+
+callToDef :: GRule Type2 -> GRule GRef
+callToDef gr = gr {args = refs}
+  where
+    refs =
+      NE.unfoldr
+        ( \ix ->
+            ( freshName ix,
+              if ix < NE.length gr.args - 1 then Just (ix + 1) else Nothing
+            )
+        )
+        0
+
+-- | Bind a single variable into a generic call
+binding :: (IsType0 t0) => (GRef -> Rule) -> t0 -> GRuleCall
+binding fRule t0 =
+  Named
+    rule.name
+    GRule
+      { args = NE.singleton t2,
+        body = rule.value
+      }
+  where
+    rule = fRule (freshName 0)
+    t2 = case toType0 t0 of
+      NoChoice x -> x
+      _ -> error "Cannot use a choice of types as a generic argument"
+
+-- | Bind two variables as a generic call
+binding2 :: (IsType0 t0, IsType0 t1) => (GRef -> GRef -> Rule) -> t0 -> t1 -> GRuleCall
+binding2 fRule t0 t1 =
+  Named
+    rule.name
+    GRule
+      { args = t02 NE.:| [t12],
+        body = rule.value
+      }
+  where
+    rule = fRule (freshName 0) (freshName 1)
+    t02 = case toType0 t0 of
+      NoChoice x -> x
+      _ -> error "Cannot use a choice of types as a generic argument"
+    t12 = case toType0 t1 of
+      NoChoice x -> x
+      _ -> error "Cannot use a choice of types as a generic argument"
+
+--------------------------------------------------------------------------------
 -- Collecting all top-level rules
 --------------------------------------------------------------------------------
 
 -- | Collect all rules starting from a given point.
--- TODO Make sure we have no infinite loops here!
 collectFrom :: Rule -> Huddle
-collectFrom topR = toHuddle $ execState (goRule topR) (HaskMap.empty, HaskMap.empty)
+collectFrom topR =
+  toHuddle $
+    execState
+      (goRule topR)
+      (HaskMap.empty, HaskMap.empty, HaskMap.empty)
   where
-    toHuddle (rules, groups) =
+    toHuddle (rules, groups, gRules) =
       Huddle
         { rules = NE.fromList $ uncurry Named <$> HaskMap.toList rules,
-          groups = uncurry Named <$> HaskMap.toList groups
+          groups = uncurry Named <$> HaskMap.toList groups,
+          gRules = uncurry Named <$> HaskMap.toList gRules
         }
     goRule (Named n t0) = do
-      (rules, _) <- get
+      (rules, _, _) <- get
       when (HaskMap.notMember n rules) $ do
-        modify (first $ HaskMap.insert n t0)
+        modify (over _1 $ HaskMap.insert n t0)
         goT0 t0
     goChoice f (NoChoice x) = f x
     goChoice f (ChoiceOf x xs) = f x >> goChoice f xs
@@ -693,10 +787,15 @@ collectFrom topR = toHuddle $ execState (goRule topR) (HaskMap.empty, HaskMap.em
     goT2 (T2Tagged (Tagged _ t0)) = goT0 t0
     goT2 (T2Ref n) = goRule n
     goT2 (T2Group (Named n g)) = do
-      (_, groups) <- get
+      (_, groups, _) <- get
       when (HaskMap.notMember n groups) $ do
-        modify (second $ HaskMap.insert n g)
+        modify (over _2 $ HaskMap.insert n g)
         goGroup g
+    goT2 (T2Generic (Named n g)) = do
+      (_, _, gRules) <- get
+      when (HaskMap.notMember n gRules) $ do
+        modify (over _3 $ HaskMap.insert n (callToDef g))
+        goT0 g.body
     goT2 _ = pure ()
     goArrayEntry (ArrayEntry (Just k) t0 _) = goKey k >> goT0 t0
     goArrayEntry (ArrayEntry Nothing t0 _) = goT0 t0
@@ -711,7 +810,11 @@ collectFrom topR = toHuddle $ execState (goRule topR) (HaskMap.empty, HaskMap.em
 
 -- | Convert from Huddle to CDDL for the purpose of pretty-printing.
 toCDDL :: Huddle -> CDDL
-toCDDL hdl = C.CDDL $ fmap toCDDLRule hdl.rules `NE.appendList` fmap toCDDLGroup hdl.groups
+toCDDL hdl =
+  C.CDDL $
+    fmap toCDDLRule hdl.rules
+      `NE.appendList` fmap toCDDLGroup hdl.groups
+      `NE.appendList` fmap toGenRuleDef hdl.gRules
   where
     toCDDLRule :: Rule -> C.Rule
     toCDDLRule (Named n t0) =
@@ -760,6 +863,8 @@ toCDDL hdl = C.CDDL $ fmap toCDDLRule hdl.rules `NE.appendList` fmap toCDDLGroup
         C.Type1 (C.T2Tag mmin $ toCDDLType0 x) Nothing
       T2Ref (Named n _) -> C.Type1 (C.T2Name (C.Name n) Nothing) Nothing
       T2Group (Named n _) -> C.Type1 (C.T2Name (C.Name n) Nothing) Nothing
+      T2Generic g -> C.Type1 (toGenericCall g) Nothing
+      T2GenericRef (GRef n) -> C.Type1 (C.T2Name (C.Name n) Nothing) Nothing
 
     toMemberKey :: Key -> C.MemberKey
     toMemberKey (LiteralKey (LText t)) = C.MKBareword (C.Name t)
@@ -811,3 +916,19 @@ toCDDL hdl = C.CDDL $ fmap toCDDLRule hdl.rules `NE.appendList` fmap toCDDLGroup
         . C.Group
         . NE.singleton
         $ fmap (C.GEType Nothing Nothing . toCDDLType0) t0s
+
+    toGenericCall :: GRuleCall -> C.Type2
+    toGenericCall (Named n gr) =
+      C.T2Name
+        (C.Name n)
+        (Just . C.GenericArg $ fmap toCDDLType1 gr.args)
+
+    toGenRuleDef :: GRuleDef -> C.Rule
+    toGenRuleDef (Named n gr) =
+      C.Rule (C.Name n) (Just gps) C.AssignEq
+        . C.TOGType
+        . C.Type0
+        $ toCDDLType1 <$> choiceToNE gr.body
+      where
+        gps =
+          C.GenericParam $ fmap (\(GRef t) -> C.Name t) gr.args
