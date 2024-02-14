@@ -15,7 +15,7 @@ import Hedgehog.Gen qualified as Gen
 import Hedgehog.Range qualified as Range
 
 genCDDL :: (MonadGen m) => m CDDL
-genCDDL = CDDL <$> Gen.nonEmpty (Range.linear 1 15) genRule
+genCDDL = CDDL . fmap noComment <$> Gen.nonEmpty (Range.linear 1 15) genRule
 
 -- TODO Expand the range of names generated
 genName :: (MonadGen m) => m Name

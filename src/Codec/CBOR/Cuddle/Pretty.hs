@@ -19,6 +19,15 @@ instance Pretty CDDL where
 
 deriving newtype instance Pretty Name
 
+instance (Pretty a) => Pretty (WithComments a) where
+  pretty (WithComments a Nothing) = pretty a
+  pretty (WithComments a (Just cmt)) = pretty cmt <> hardline <> pretty a
+
+instance Pretty Comment where
+  pretty (Comment t) =
+    let clines = T.splitOn "\n" t
+     in vsep $ fmap (("; " <>) . pretty) clines
+
 instance Pretty Rule where
   pretty (Rule n mgen assign tog) =
     pretty n <> pretty mgen <+> case tog of

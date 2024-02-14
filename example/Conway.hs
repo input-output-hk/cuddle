@@ -546,7 +546,14 @@ transaction_witness_set =
 -- we need to hack around for tests in order to avoid generating duplicates,
 -- since the cddl tool we use for roundtrip testing doesn't generate distinct collections.
 plutus_v1_script :: Rule
-plutus_v1_script = "plutus_v1_script" =:= distinct VBytes
+plutus_v1_script =
+  comment
+    ( "The real type of  plutus_v1_script, plutus_v2_script and plutus_v3_script is bytes.\n"
+        <> "However, because we enforce uniqueness when many scripts are supplied,\n"
+        <> "we need to hack around for tests in order to avoid generating duplicates,\n"
+        <> "since the cddl tool we use for roundtrip testing doesn't generate distinct collections.\n"
+    )
+    $ "plutus_v1_script" =:= distinct VBytes
 
 plutus_v2_script :: Rule
 plutus_v2_script = "plutus_v2_script" =:= distinct VBytes
@@ -641,13 +648,14 @@ potential_languages = "potential_languages" =:= 0 ... 255
 --
 costmdls :: Rule
 costmdls =
-  "costmdls"
-    =:= mp
-      [ opt $ idx 0 ==> arr [166 <+ a VInt], -- Plutus v1, only 166 integers are used, but more are accepted (and ignored)
-        opt $ idx 1 ==> arr [175 <+ a VInt], -- Plutus v2, only 175 integers are used, but more are accepted (and ignored)
-        opt $ idx 2 ==> arr [223 <+ a VInt], -- Plutus v3, only 223 integers are used, but more are accepted (and ignored)
-        opt $ idx 3 ==> arr [a VInt] -- Any 8-bit unsigned number can be used as a key.
-      ]
+  comment "The format for costmdls is flexible enough to allow adding Plutus\n built-ins and language versions in the future." $
+    "costmdls"
+      =:= mp
+        [ opt $ idx 0 ==> arr [166 <+ a VInt], -- Plutus v1, only 166 integers are used, but more are accepted (and ignored)
+          opt $ idx 1 ==> arr [175 <+ a VInt], -- Plutus v2, only 175 integers are used, but more are accepted (and ignored)
+          opt $ idx 2 ==> arr [223 <+ a VInt], -- Plutus v3, only 223 integers are used, but more are accepted (and ignored)
+          opt $ idx 3 ==> arr [a VInt] -- Any 8-bit unsigned number can be used as a key.
+        ]
 
 transaction_metadatum :: Rule
 transaction_metadatum =
@@ -801,7 +809,18 @@ pool_metadata_hash = "pool_metadata_hash" =:= hash32
 --   "\x02" for Plutus V2 scripts
 --   "\x03" for Plutus V3 scripts
 scripthash :: Rule
-scripthash = "scripthash" =:= hash28
+scripthash =
+  comment
+    ( "To compute a script hash, note that you must prepend\n"
+        <> "a tag to the bytes of the script before hashing.\n"
+        <> "The tag is determined by the language.\n"
+        <> "The tags in the Conway era are:\n"
+        <> "\"\x00\" for multisig scripts\n"
+        <> "\"\x01\" for Plutus V1 scripts\n"
+        <> "\"\x02\" for Plutus V2 scripts\n"
+        <> "\"\x03\" for Plutus V3 scripts\n"
+    )
+    $ "scripthash" =:= hash28
 
 datum_hash :: Rule
 datum_hash = "datum_hash" =:= hash32

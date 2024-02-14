@@ -9,8 +9,17 @@ import Data.List.NonEmpty qualified as NE
 import Data.Text qualified as T
 import GHC.Generics (Generic)
 
-newtype CDDL = CDDL (NE.NonEmpty Rule)
+newtype CDDL = CDDL (NE.NonEmpty (WithComments Rule))
   deriving (Eq, Generic, Show)
+
+data WithComments a = WithComments a (Maybe Comment)
+  deriving (Eq, Show, Generic)
+
+stripComment :: WithComments a -> a
+stripComment (WithComments a _) = a
+
+noComment :: a -> WithComments a
+noComment a = WithComments a Nothing
 
 -- |
 --  A name can consist of any of the characters from the set {"A" to
