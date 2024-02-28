@@ -9,6 +9,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE NoFieldSelectors #-}
+{-# LANGUAGE CPP #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
 -- | Module for building CDDL in Haskell
@@ -100,7 +101,11 @@ import Data.Text qualified as T
 import Data.Tuple.Optics (Field1 (..), Field2 (..), Field3 (..))
 import Data.Void (Void)
 import GHC.Generics (Generic)
+#if __GLASGOW_HASKELL__ < 941
+import GHC.Exts (IsList (Item, fromList, toList))
+#else
 import GHC.IsList (IsList (Item, fromList, toList))
+#endif
 import Optics.Core (over, view, (%~), (&), (.~))
 import Prelude hiding ((/))
 
