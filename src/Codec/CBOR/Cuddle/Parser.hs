@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE CPP #-}
 
 module Codec.CBOR.Cuddle.Parser where
 
@@ -15,6 +16,9 @@ import Data.Void (Void)
 import Text.Megaparsec
 import Text.Megaparsec.Char hiding (space)
 import Text.Megaparsec.Char.Lexer qualified as L
+#if __GLASGOW_HASKELL__ < 961
+import Control.Applicative (Applicative(..))
+#endif
 
 type Parser = Parsec Void Text
 
