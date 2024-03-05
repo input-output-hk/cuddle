@@ -1,10 +1,12 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# OPTIONS_GHC -Wno-unused-imports #-}
 
 module Codec.CBOR.Cuddle.Parser where
 
 import Codec.CBOR.Cuddle.CDDL
 import Codec.CBOR.Cuddle.CDDL.CtlOp (CtlOp)
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as COp
+import Control.Applicative (liftA2)
 import Control.Applicative.Combinators.NonEmpty qualified as NE
 import Data.Functor (void, ($>))
 import Data.List.NonEmpty (NonEmpty)

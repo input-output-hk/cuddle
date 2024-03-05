@@ -1,0 +1,58 @@
+name: Cuddle CI
+run-name: ${{ github.actor }} CI testing
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "**"]
+
+# Cancel running actions when a new action on the same PR is started
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        ghc: ["9.2.8", "9.6.3", "9.8.1"]
+        os: [ubuntu-latest]
+    steps:
+    - uses: actions/checkout@v3
+    - name: Install Haskell
+      uses: input-output-hk/setup-haskell@v1
+      id: setup-haskell
+      with:
+        ghc-version: ${{ matrix.ghc }}
+        cabal-version: latest
+    - name: Cabal update
+      run: cabal update
+
+    - name: Cabal Configure
+      run: cabal configure --enable-tests --enable-benchmarks --write-ghc-environment-files=always
+
+    - uses: actions/cache@v3
+      if: matrix.os != 'macos-latest'
+      name: Cache cabal store
+      with:
+        path: |
+          ${{ steps.setup-haskell.outputs.cabal-store }}
+          dist-newstyle
+        # cache is invalidated upon a change to cabal.project (and/or cabal.project.local), a bump to
+        # CABAL_CACHE_VERSION or after a week of inactivity
+        key: cache-${{ runner.os }}-${{ matrix.ghc }}-${{ env.CABAL_CACHE_VERSION }}-${{ hashFiles('cabal.project*') }}
+        # Restoring attempts are from current branch then master
+        restore-keys: |
+          cache-${{ runner.os }}-${{ matrix.ghc }}-${{ env.CABAL_CACHE_VERSION }}-${{ hashFiles('cabal.project*') }}
+
+    - name: Install dependencies
+      run: cabal build all --only-dependencies
+
+    - name: Build
+      run: cabal build all
+
+    - name: Run tests
+      run: |
+        cabal test all

@@ -36,7 +36,7 @@ library
 
     -- other-extensions:
     build-depends:
-        , base                ^>=4.16.3.0 || ^>=4.18.1.0
+        , base                ^>=4.16.3.0 || ^>=4.18.1.0 || ^>=4.19.0.0
         , bytestring
         , capability
         , cborg
@@ -65,7 +65,7 @@ executable example
     hs-source-dirs:   example
     main-is:          Main.hs
     build-depends:
-        , base           ^>=4.16.3.0 || ^>=4.18.1.0
+        , base           ^>=4.16.3.0 || ^>=4.18.1.0 || ^>=4.19.0.0
         , cuddle
         , megaparsec
         , prettyprinter
@@ -78,7 +78,7 @@ executable cuddle
     hs-source-dirs:   ./bin/
     main-is:          Main.hs
     build-depends:
-        , base                  ^>=4.16.3.0 || ^>=4.18.1.0
+        , base                  ^>=4.16.3.0 || ^>=4.18.1.0 || ^>=4.19.0.0
         , cborg
         , cuddle
         , megaparsec
@@ -100,7 +100,7 @@ test-suite cuddle-test
     hs-source-dirs:   test
     main-is:          Main.hs
     build-depends:
-        , base              ^>=4.16.3.0 || ^>=4.18.1.0
+        , base              ^>=4.16.3.0 || ^>=4.18.1.0 || ^>=4.19.0.0
         , cuddle
         , hedgehog
         , hspec
