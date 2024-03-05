@@ -10,14 +10,14 @@ module Conway where
 
 import Codec.CBOR.Cuddle.Huddle
 import Data.Function (($))
-import Data.Int (Int, Int64)
 import Data.Semigroup ((<>))
 import Data.Text qualified as T
+import Data.Word (Word64)
 import GHC.Float (Double)
-import GHC.Num ()
+import GHC.Num (Integer)
 import GHC.Show (Show (show))
 
-default (Int, Double)
+default (Integer, Double)
 
 conway :: Huddle
 conway = collectFrom block
@@ -46,7 +46,7 @@ transaction =
       ]
 
 transaction_index :: Rule
-transaction_index = "transaction_index" =:= VUInt `sized` (2 :: Int)
+transaction_index = "transaction_index" =:= VUInt `sized` (2 :: Word64)
 
 header :: Rule
 header = "header" =:= arr [a header_body, "body_signature" ==> kes_signature]
@@ -81,10 +81,10 @@ protocol_version :: Named Group
 protocol_version = "protocol_version" =:~ grp [a major_protocol_version, a VUInt]
 
 next_major_protocol_version :: Rule
-next_major_protocol_version = "next_major_protocol_version" =:= (10 :: Int64)
+next_major_protocol_version = "next_major_protocol_version" =:= (10 :: Integer)
 
 major_protocol_version :: Rule
-major_protocol_version = "major_protocol_version" =:= (1 :: Int64)
+major_protocol_version = "major_protocol_version" =:= (1 :: Integer)
 
 transaction_body :: Rule
 transaction_body =
@@ -412,13 +412,13 @@ port :: Rule
 port = "port" =:= VUInt `le` 65535
 
 ipv4 :: Rule
-ipv4 = "ipv4" =:= VBytes `sized` (4 :: Int)
+ipv4 = "ipv4" =:= VBytes `sized` (4 :: Word64)
 
 ipv6 :: Rule
-ipv6 = "ipv6" =:= VBytes `sized` (16 :: Int)
+ipv6 = "ipv6" =:= VBytes `sized` (16 :: Word64)
 
 dns_name :: Rule
-dns_name = "dns_name" =:= VText `sized` (0 :: Int, 128 :: Int)
+dns_name = "dns_name" =:= VText `sized` (0 :: Word64, 128 :: Word64)
 
 single_host_addr :: Named Group
 single_host_addr =
@@ -460,7 +460,7 @@ pool_metadata :: Rule
 pool_metadata = "pool_metadata" =:= arr [a url, a pool_metadata_hash]
 
 url :: Rule
-url = "url" =:= VText `sized` (0 :: Int, 128 :: Int)
+url = "url" =:= VText `sized` (0 :: Word64, 128 :: Word64)
 
 withdrawals :: Rule
 withdrawals = "withdrawals" =:= mp [1 <+ asKey reward_account ==> coin]
@@ -663,8 +663,8 @@ transaction_metadatum =
     =:= smp [0 <+ asKey transaction_metadatum ==> transaction_metadatum]
     // sarr [0 <+ a transaction_metadatum]
     // VInt
-    // (VBytes `sized` (0 :: Int, 64 :: Int))
-    // (VText `sized` (0 :: Int, 64 :: Int))
+    // (VBytes `sized` (0 :: Word64, 64 :: Word64))
+    // (VText `sized` (0 :: Word64, 64 :: Word64))
 
 transaction_metadatum_label :: Rule
 transaction_metadatum_label = "transaction_metadatum_label" =:= VUInt
@@ -703,7 +703,7 @@ bootstrap_witness =
     =:= arr
       [ "public_key" ==> vkey,
         "signature" ==> signature,
-        "chain_code" ==> (VBytes `sized` (32 :: Int)),
+        "chain_code" ==> (VBytes `sized` (32 :: Word64)),
         "attributes" ==> VBytes
       ]
 
@@ -756,7 +756,7 @@ policy_id :: Rule
 policy_id = "policy_id" =:= scripthash
 
 asset_name :: Rule
-asset_name = "asset_name" =:= VBytes `sized` (0 :: Int, 32 :: Int)
+asset_name = "asset_name" =:= VBytes `sized` (0 :: Word64, 32 :: Word64)
 
 negInt64 :: Rule
 negInt64 = "negInt64" =:= (-9223372036854775808) ... (-1)
@@ -847,31 +847,31 @@ script =
 --------------------------------------------------------------------------------
 
 hash28 :: Rule
-hash28 = "hash28" =:= VBytes `sized` (28 :: Int)
+hash28 = "hash28" =:= VBytes `sized` (28 :: Word64)
 
 hash32 :: Rule
-hash32 = "hash32" =:= VBytes `sized` (32 :: Int)
+hash32 = "hash32" =:= VBytes `sized` (32 :: Word64)
 
 vkey :: Rule
-vkey = "vkey" =:= VBytes `sized` (32 :: Int)
+vkey = "vkey" =:= VBytes `sized` (32 :: Word64)
 
 vrf_vkey :: Rule
-vrf_vkey = "vrf_vkey" =:= VBytes `sized` (32 :: Int)
+vrf_vkey = "vrf_vkey" =:= VBytes `sized` (32 :: Word64)
 
 vrf_cert :: Rule
-vrf_cert = "vrf_cert" =:= arr [a VBytes, a (VBytes `sized` (80 :: Int))]
+vrf_cert = "vrf_cert" =:= arr [a VBytes, a (VBytes `sized` (80 :: Word64))]
 
 kes_vkey :: Rule
-kes_vkey = "kes_vkey" =:= VBytes `sized` (32 :: Int)
+kes_vkey = "kes_vkey" =:= VBytes `sized` (32 :: Word64)
 
 kes_signature :: Rule
-kes_signature = "kes_signature" =:= VBytes `sized` (448 :: Int)
+kes_signature = "kes_signature" =:= VBytes `sized` (448 :: Word64)
 
 signkeyKES :: Rule
-signkeyKES = "signkeyKES" =:= VBytes `sized` (64 :: Int)
+signkeyKES = "signkeyKES" =:= VBytes `sized` (64 :: Word64)
 
 signature :: Rule
-signature = "signature" =:= VBytes `sized` (64 :: Int)
+signature = "signature" =:= VBytes `sized` (64 :: Word64)
 
 --------------------------------------------------------------------------------
 -- Extras
@@ -934,7 +934,7 @@ reward_account =
     // bstr "F0A0000000000000000000000000000000000000000000000000000000"
 
 bounded_bytes :: Rule
-bounded_bytes = "bounded_bytes" =:= VBytes `sized` (0 :: Int, 64 :: Int)
+bounded_bytes = "bounded_bytes" =:= VBytes `sized` (0 :: Word64, 64 :: Word64)
 
 -- the real bounded_bytes does not have this limit. it instead has a different
 -- limit which cannot be expressed in CDDL.
@@ -952,9 +952,9 @@ distinct :: (IsSizeable s) => Value s -> Rule
 distinct x =
   "distinct_"
     <> T.pack (show x)
-      =:= (x `sized` (8 :: Int))
-      // (x `sized` (16 :: Int))
-      // (x `sized` (20 :: Int))
-      // (x `sized` (24 :: Int))
-      // (x `sized` (30 :: Int))
-      // (x `sized` (32 :: Int))
+      =:= (x `sized` (8 :: Word64))
+      // (x `sized` (16 :: Word64))
+      // (x `sized` (20 :: Word64))
+      // (x `sized` (24 :: Word64))
+      // (x `sized` (30 :: Word64))
+      // (x `sized` (32 :: Word64))

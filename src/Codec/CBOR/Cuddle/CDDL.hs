@@ -7,6 +7,7 @@ import Data.ByteString qualified as B
 import Data.Hashable (Hashable)
 import Data.List.NonEmpty qualified as NE
 import Data.Text qualified as T
+import Data.Word (Word64)
 import GHC.Generics (Generic)
 
 newtype CDDL = CDDL (NE.NonEmpty (WithComments Rule))
@@ -293,8 +294,12 @@ data MemberKey
   deriving (Eq, Generic, Show)
 
 data Value
-  = -- Should be bigger than just Int
-    VNum Int
+  = VUInt Word64
+  | VNInt Word64
+  | VBignum Integer
+  | VFloat16 Float
+  | VFloat32 Float
+  | VFloat64 Double
   | VText T.Text
   | VBytes B.ByteString
   deriving (Eq, Generic, Show)

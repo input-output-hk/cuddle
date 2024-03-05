@@ -92,7 +92,6 @@ import Control.Monad.State (MonadState (get), execState, modify)
 import Data.ByteString (ByteString)
 import Data.Default.Class (Default (..))
 import Data.Generics.Product (HasField, field)
-import Data.Int (Int64)
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as HaskMap
 import Data.String (IsString (fromString))
@@ -100,6 +99,7 @@ import Data.Text qualified as T
 import Data.Tuple.Optics (Field1 (..), Field2 (..), Field3 (..))
 import Data.Void (Void)
 import GHC.Exts (IsList (Item, fromList, toList))
+import Data.Word (Word64)
 import GHC.Generics (Generic)
 import Optics.Core (over, view, (%~), (&), (.~))
 import Prelude hiding ((/))
@@ -159,7 +159,7 @@ instance IsString Key where
   fromString = LiteralKey . LText . T.pack
 
 -- | Use a number as a key
-idx :: Int64 -> Key
+idx :: Word64 -> Key
 idx = LiteralKey . LInt
 
 asKey :: (IsType0 r) => r -> Key
@@ -282,21 +282,31 @@ deriving instance Show (Value a)
 --------------------------------------------------------------------------------
 
 data Literal where
-  LInt :: Int64 -> Literal
+  -- | We store both int and nint as a Word64, since the sign is indicated in
+  -- the type.
+  LInt :: Word64 -> Literal
+  LNInt :: Word64 -> Literal
+  LBignum :: Integer -> Literal
   LText :: T.Text -> Literal
   LFloat :: Float -> Literal
   LDouble :: Double -> Literal
   LBytes :: ByteString -> Literal
   deriving (Show)
 
-int :: Int64 -> Literal
-int = LInt
+int :: Integer -> Literal
+int = inferInteger
 
 bstr :: ByteString -> Literal
 bstr = LBytes
 
 text :: T.Text -> Literal
 text = LText
+
+inferInteger :: Integer -> Literal
+inferInteger i
+  | i >= 0 && i < fromIntegral (maxBound @Word64) = LInt (fromInteger i)
+  | i < 0 && (-i) < fromIntegral (maxBound @Word64) = LNInt (fromInteger (-i))
+  | otherwise = LBignum i
 
 --------------------------------------------------------------------------------
 -- Constraints and Ranges
@@ -348,17 +358,17 @@ class IsSize a where
   sizeAsCDDL :: a -> C.Type2
   sizeAsString :: a -> String
 
-instance IsSize Int where
-  sizeAsCDDL = C.T2Value . C.VNum
+instance IsSize Word64 where
+  sizeAsCDDL = C.T2Value . C.VUInt
   sizeAsString = show
 
-instance IsSize (Int, Int) where
+instance IsSize (Word64, Word64) where
   sizeAsCDDL (x, y) =
     C.T2Group
       ( C.Type0
           ( C.Type1
-              (C.T2Value (C.VNum x))
-              (Just (C.RangeOp C.Closed, C.T2Value (C.VNum y)))
+              (C.T2Value (C.VUInt x))
+              (Just (C.RangeOp C.Closed, C.T2Value (C.VUInt y)))
               NE.:| []
           )
       )
@@ -387,14 +397,14 @@ cbor v (Named n _ _) =
         showConstraint = ".cbor " <> T.unpack n
       }
 
-le :: Value Int -> Int64 -> Constrained
+le :: Value Int -> Word64 -> Constrained
 le v bound =
   Constrained v $
     ValueConstraint
       { applyConstraint = \t2 ->
           C.Type1
             t2
-            (Just (C.CtrlOp CtlOp.Le, C.T2Value (C.VNum $ fromIntegral bound))),
+            (Just (C.CtrlOp CtlOp.Le, C.T2Value (C.VUInt $ fromIntegral bound))),
         showConstraint = ".le " <> show bound
       }
 
@@ -412,8 +422,8 @@ data Ranged where
 
 -- | Establish a closed range bound. Currently specialised to Int for type
 -- inference purposes.
-(...) :: Int64 -> Int64 -> Ranged
-l ... u = Ranged (LInt l) (LInt u) C.Closed
+(...) :: Integer -> Integer -> Ranged
+l ... u = Ranged (inferInteger l) (inferInteger u) C.Closed
 
 infixl 9 ...
 
@@ -452,8 +462,8 @@ instance IsType0 Literal where
   toType0 = NoChoice . T2Literal . Unranged
 
 -- We also allow going directly from primitive types to Type2
-instance IsType0 Int64 where
-  toType0 = NoChoice . T2Literal . Unranged . LInt
+instance IsType0 Integer where
+  toType0 = NoChoice . T2Literal . Unranged . inferInteger
 
 instance IsType0 T.Text where
   toType0 :: T.Text -> Type0
@@ -837,10 +847,13 @@ toCDDL hdl =
         )
         (fmap C.Comment c)
     toCDDLValue :: Literal -> C.Value
-    toCDDLValue (LInt i) = C.VNum $ fromIntegral i
+    toCDDLValue (LInt i) = C.VUInt i
+    toCDDLValue (LNInt i) = C.VNInt i
+    toCDDLValue (LBignum i) = C.VBignum i
+    toCDDLValue (LFloat i) = C.VFloat32 i
+    toCDDLValue (LDouble d) = C.VFloat64 d
     toCDDLValue (LText t) = C.VText t
     toCDDLValue (LBytes b) = C.VBytes b
-    toCDDLValue _ = error "I haven't done this bit yet"
 
     mapToCDDLGroup :: Map -> C.Group
     mapToCDDLGroup xs = C.Group $ mapChoiceToCDDL <$> choiceToNE xs

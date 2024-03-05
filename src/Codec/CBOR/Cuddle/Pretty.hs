@@ -114,6 +114,11 @@ instance Pretty MemberKey where
   pretty (MKValue v) = pretty v <+> ":"
 
 instance Pretty Value where
-  pretty (VNum i) = pretty i
+  pretty (VUInt i) = pretty i
+  pretty (VNInt i) = "-" <> pretty i
+  pretty (VBignum i) = pretty i
+  pretty (VFloat16 i) = pretty i
+  pretty (VFloat32 i) = pretty i
+  pretty (VFloat64 i) = pretty i
   pretty (VText t) = enclose "\"" "\"" $ pretty t
   pretty (VBytes b) = fromString $ "h" <> "'" <> BS.unpack b <> "'"
