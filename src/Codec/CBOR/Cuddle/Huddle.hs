@@ -99,8 +99,8 @@ import Data.String (IsString (fromString))
 import Data.Text qualified as T
 import Data.Tuple.Optics (Field1 (..), Field2 (..), Field3 (..))
 import Data.Void (Void)
+import GHC.Exts (IsList (Item, fromList, toList))
 import GHC.Generics (Generic)
-import GHC.IsList (IsList (Item, fromList, toList))
 import Optics.Core (over, view, (%~), (&), (.~))
 import Prelude hiding ((/))
 
