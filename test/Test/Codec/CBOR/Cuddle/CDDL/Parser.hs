@@ -56,7 +56,11 @@ roundtripSpec = describe "Roundtripping should be id" $ do
 valueSpec :: Spec
 valueSpec = describe "pValue" $ do
   it "Parses integer" $
-    parse pValue "" "123" `shouldParse` VNum 123
+    parse pValue "" "123" `shouldParse` VUInt 123
+  it "Parses negative integer" $
+    parse pValue "" "-123" `shouldParse` VNInt 123
+  it "Parses float" $
+    parse pValue "" "3.1415" `shouldParse` VFloat64 3.1415
   it "Parses text" $
     parse pValue "" "\"Hello World\"" `shouldParse` VText "Hello World"
 
@@ -105,7 +109,7 @@ genericSpec = describe "generics" $ do
                         ( Just
                             ( GenericArg
                                 ( Type1
-                                    (T2Value (VNum 0))
+                                    (T2Value (VUInt 0))
                                     Nothing
                                     NE.:| []
                                 )
@@ -131,8 +135,8 @@ genericSpec = describe "generics" $ do
                         ( Just
                             ( GenericArg
                                 ( Type1
-                                    (T2Value (VNum 0))
-                                    (Just (RangeOp ClOpen, T2Value (VNum 1)))
+                                    (T2Value (VUInt 0))
+                                    (Just (RangeOp ClOpen, T2Value (VUInt 1)))
                                     NE.:| []
                                 )
                             )
@@ -148,7 +152,7 @@ type2Spec :: SpecWith ()
 type2Spec = describe "type2" $ do
   describe "Value" $ do
     it "Parses a value" $
-      parse pType2 "" "123" `shouldParse` T2Value (VNum 123)
+      parse pType2 "" "123" `shouldParse` T2Value (VUInt 123)
   describe "Map" $ do
     it "Parses a basic group" $
       parse pType2 "" "{ int => string }"
@@ -212,12 +216,12 @@ type2Spec = describe "type2" $ do
               ( [ GEType
                     Nothing
                     Nothing
-                    (Type0 (NE.singleton (Type1 (T2Value (VNum 0)) Nothing)))
+                    (Type0 (NE.singleton (Type1 (T2Value (VUInt 0)) Nothing)))
                 ]
                   NE.:| [ [ GEType
                               Nothing
                               Nothing
-                              (Type0 (NE.singleton (Type1 (T2Value (VNum 1)) Nothing)))
+                              (Type0 (NE.singleton (Type1 (T2Value (VUInt 1)) Nothing)))
                           ]
                         ]
               )
@@ -261,10 +265,10 @@ grpEntrySpec = describe "GroupEntry" $ do
                     ( Just
                         ( GenericArg
                             ( Type1
-                                (T2Value (VNum 0))
+                                (T2Value (VUInt 0))
                                 ( Just
                                     ( RangeOp ClOpen,
-                                      T2Tag Nothing (Type0 (Type1 (T2Value (VNum 0)) Nothing NE.:| []))
+                                      T2Tag Nothing (Type0 (Type1 (T2Value (VUInt 0)) Nothing NE.:| []))
                                     )
                                 )
                                 NE.:| []
@@ -306,15 +310,15 @@ type1Spec = describe "Type1" $ do
       parse pType1 "" "uint .size 3"
         `shouldParse` Type1
           (T2Name (Name "uint") Nothing)
-          (Just (CtrlOp CtlOp.Size, T2Value (VNum 3)))
+          (Just (CtrlOp CtlOp.Size, T2Value (VUInt 3)))
   describe "RangeOp" $ do
     it "Should parse a closed range operator" $
       parse pType1 "" "0 .. 3"
         `shouldParse` Type1
-          (T2Value (VNum 0))
-          (Just (RangeOp Closed, T2Value (VNum 3)))
+          (T2Value (VUInt 0))
+          (Just (RangeOp Closed, T2Value (VUInt 3)))
     it "Should parse a clopen range operator" $
       parse pType1 "" "0 ... 3"
         `shouldParse` Type1
-          (T2Value (VNum 0))
-          (Just (RangeOp ClOpen, T2Value (VNum 3)))
+          (T2Value (VUInt 0))
+          (Just (RangeOp ClOpen, T2Value (VUInt 3)))

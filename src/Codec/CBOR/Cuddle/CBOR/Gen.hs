@@ -271,8 +271,8 @@ genForCTree (CTree.Control op target controller) = do
   tt <- resolveIfRef target
   ct <- resolveIfRef controller
   case (op, ct) of
-    (CtlOp.Size, CTree.Literal (VNum n)) -> case tt of
-      CTree.Postlude PTBytes -> S . TBytes <$> genBytes n
+    (CtlOp.Size, CTree.Literal (VUInt n)) -> case tt of
+      CTree.Postlude PTBytes -> S . TBytes <$> genBytes (fromIntegral n)
       CTree.Postlude PTUInt -> S . TInteger <$> genUniformRM (0, 2 ^ n - 1)
       _ -> error "Cannot apply size operator to target "
     (CtlOp.Size, _) ->
@@ -344,7 +344,12 @@ applyOccurenceIndicator (OIBounded mlb mub) oldGen =
     >>= \i -> G <$> replicateM i oldGen
 
 genValue :: Value -> Gen Term
-genValue (VNum i) = pure . TInteger $ fromIntegral i
+genValue (VUInt i) = pure . TInt $ fromIntegral i
+genValue (VNInt i) = pure . TInt $ fromIntegral (-i)
+genValue (VBignum i) = pure $ TInteger i
+genValue (VFloat16 i) = pure . THalf $ i
+genValue (VFloat32 i) = pure . TFloat $ i
+genValue (VFloat64 i) = pure . TDouble $ i
 genValue (VText t) = pure $ TString t
 genValue (VBytes b) = pure $ TBytes b
 

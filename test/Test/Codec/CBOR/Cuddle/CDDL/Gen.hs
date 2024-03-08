@@ -127,7 +127,11 @@ genMemberKey =
 genValue :: (MonadGen m) => m Value
 genValue =
   Gen.choice
-    [ VNum <$> Gen.int (Range.linear 0 255),
+    [ VUInt <$> Gen.word64 (Range.linear 0 255),
+      VNInt <$> Gen.word64 (Range.linear 0 255),
+      VFloat16 <$> Gen.float (Range.linearFrac 0.0 10.0),
+      VFloat32 <$> Gen.float (Range.linearFrac 0.0 10.0),
+      VFloat64 <$> Gen.double (Range.linearFrac 0.0 200),
       VText <$> Gen.text (Range.linear 0 1000) Gen.alphaNum
       -- VBytes <$> Gen.bytes (Range.linear 0 1100)
     ]

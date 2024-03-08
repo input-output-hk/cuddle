@@ -202,13 +202,17 @@ pOccur =
 pValue :: Parser Value
 pValue =
   choice
-    [ pNumber,
+    [ try pUInt,
+      try pNInt,
+      pFloat,
       pText
     ]
   where
     -- Need to ensure that number values are not actually bounds on a later
     -- value.
-    pNumber = VNum <$> L.decimal <* notFollowedBy (char '*')
+    pUInt = VUInt <$> L.decimal <* notFollowedBy (oneOf ['*', '.'])
+    pNInt = VNInt <$> (char '-' *> L.decimal <* notFollowedBy (oneOf ['*', '.']))
+    pFloat = VFloat64 <$> L.float
     pText = VText <$> (char '"' *> pSChar <* char '"')
     -- Currently this doesn't allow string escaping
     pSChar :: Parser Text
