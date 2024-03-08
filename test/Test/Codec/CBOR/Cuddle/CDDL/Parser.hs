@@ -12,8 +12,8 @@ import Prettyprinter (Pretty, defaultLayoutOptions, layoutPretty, pretty)
 import Prettyprinter.Render.Text (renderStrict)
 import Test.Codec.CBOR.Cuddle.CDDL.Gen qualified as Gen
 import Test.Hspec
-import Test.Hspec.Hedgehog (Gen, PropertyT, failure, footnote, footnoteShow, forAll, hedgehog, (===))
 import Test.Hspec.Megaparsec
+import Test.QuickCheck
 import Text.Megaparsec (errorBundlePretty, parse)
 
 parserSpec :: Spec
@@ -38,18 +38,15 @@ roundtripSpec = describe "Roundtripping should be id" $ do
     -- that we do not show that parse (print p) is p for a given generated
     -- 'CDDL' doc, since CDDL contains some statements that allow multiple
     -- parsings.
-    trip :: (Show a, Pretty a) => Gen a -> Parser a -> PropertyT IO ()
-    trip g pa = hedgehog $ do
-      x <- forAll g
+    trip :: (Show a, Pretty a) => Gen a -> Parser a -> Property
+    trip g pa = property . forAll g $ \x -> do
       let printed = printText x
-      footnoteShow printed
       case parse pa "" printed of
-        Left e -> do
-          footnote $ errorBundlePretty e
-          failure
-        Right parsed -> do
-          footnoteShow parsed
-          printed === printText parsed
+        Left e ->
+          counterexample (errorBundlePretty e) $ property False
+        Right parsed ->
+          counterexample (show parsed) $
+            printed === printText parsed
     printText :: (Pretty a) => a -> T.Text
     printText = renderStrict . layoutPretty defaultLayoutOptions . pretty
 
