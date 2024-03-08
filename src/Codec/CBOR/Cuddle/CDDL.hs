@@ -253,7 +253,7 @@ data OccurrenceIndicator
   = OIOptional
   | OIZeroOrMore
   | OIOneOrMore
-  | OIBounded (Maybe Int) (Maybe Int)
+  | OIBounded (Maybe Word64) (Maybe Word64)
   deriving (Eq, Generic, Show)
 
 instance Hashable OccurrenceIndicator
