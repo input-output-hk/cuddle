@@ -699,12 +699,12 @@ ae / rt = ae & field @"value" %~ (// toType0 rt)
 --------------------------------------------------------------------------------
 
 -- | A tagged type carries an optional tag
-data Tagged a = Tagged (Maybe Int) a
+data Tagged a = Tagged (Maybe Word64) a
   deriving (Show, Functor)
 
 -- | Tag a CBOR item with a CDDL minor type. Thus, `tag n x` is equivalent to
 -- `#6.n(x)` in CDDL.
-tag :: Int -> a -> Tagged a
+tag :: Word64 -> a -> Tagged a
 tag mi = Tagged (Just mi)
 
 --------------------------------------------------------------------------------

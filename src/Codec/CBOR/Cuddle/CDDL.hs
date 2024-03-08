@@ -7,7 +7,7 @@ import Data.ByteString qualified as B
 import Data.Hashable (Hashable)
 import Data.List.NonEmpty qualified as NE
 import Data.Text qualified as T
-import Data.Word (Word64)
+import Data.Word (Word64, Word8)
 import GHC.Generics (Generic)
 
 newtype CDDL = CDDL (NE.NonEmpty (WithComments Rule))
@@ -227,10 +227,10 @@ data Type2
   | T2EnumRef Name (Maybe GenericArg)
   | -- | a tagged data item, tagged with the "uint" given and containing the
     --  type given as the tagged value, or
-    T2Tag (Maybe Int) Type0
+    T2Tag (Maybe Word64) Type0
   | -- | a data item of a major type (given by the DIGIT), optionally
     --  constrained to the additional information given by the uint, or
-    T2DataItem Int (Maybe Int)
+    T2DataItem Word8 (Maybe Word64)
   | -- | Any data item
     T2Any
   deriving (Eq, Generic, Show)
