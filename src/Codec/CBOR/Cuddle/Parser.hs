@@ -212,7 +212,7 @@ pValue =
     -- value.
     pUInt = VUInt <$> L.decimal <* notFollowedBy (oneOf ['*', '.'])
     pNInt = VNInt <$> (char '-' *> L.decimal <* notFollowedBy (oneOf ['*', '.']))
-    pFloat = VFloat64 <$> L.float
+    pFloat = VFloat64 <$> L.signed hspace L.float
     pText = VText <$> (char '"' *> pSChar <* char '"')
     -- Currently this doesn't allow string escaping
     pSChar :: Parser Text
