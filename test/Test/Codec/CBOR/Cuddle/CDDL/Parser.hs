@@ -10,7 +10,7 @@ import Data.List.NonEmpty qualified as NE
 import Data.Text qualified as T
 import Prettyprinter (Pretty, defaultLayoutOptions, layoutPretty, pretty)
 import Prettyprinter.Render.Text (renderStrict)
-import Test.Codec.CBOR.Cuddle.CDDL.Gen qualified as Gen
+import Test.Codec.CBOR.Cuddle.CDDL.Gen qualified as Gen ()
 import Test.Hspec
 import Test.Hspec.Megaparsec
 import Test.QuickCheck
@@ -27,23 +27,28 @@ parserSpec = do
   grpChoiceSpec
   genericSpec
   roundtripSpec
+  qcFoundSpec
 
 roundtripSpec :: Spec
 roundtripSpec = describe "Roundtripping should be id" $ do
-  it "Trip Name" $ trip Gen.genName pName
-  it "Trip Value" $ trip Gen.genValue pValue
-  it "Trip Rule" $ trip Gen.genRule pRule
+  it "Trip Name" $ trip pName
+  it "Trip Value" $ trip pValue
+  it "Trip Type0" $ trip pType0
+  it "Trip GroupEntry" $ trip pGrpEntry
+  it "Trip Rule" $ trip pRule
   where
     -- We show that, for a printed CDDL document p, print (parse p) == p. Note
     -- that we do not show that parse (print p) is p for a given generated
     -- 'CDDL' doc, since CDDL contains some statements that allow multiple
     -- parsings.
-    trip :: (Show a, Pretty a) => Gen a -> Parser a -> Property
-    trip g pa = property . forAll g $ \x -> do
+    trip :: forall a. (Show a, Pretty a, Arbitrary a) => Parser a -> Property
+    trip pa = property $ \(x :: a) -> do
       let printed = printText x
       case parse pa "" printed of
         Left e ->
-          counterexample (errorBundlePretty e) $ property False
+          counterexample (show printed) $
+            counterexample (errorBundlePretty e) $
+              property False
         Right parsed ->
           counterexample (show parsed) $
             printed === printText parsed
@@ -319,3 +324,27 @@ type1Spec = describe "Type1" $ do
         `shouldParse` Type1
           (T2Value (VUInt 0))
           (Just (RangeOp ClOpen, T2Value (VUInt 3)))
+
+-- | A bunch of cases found by hedgehog/QC
+qcFoundSpec :: Spec
+qcFoundSpec =
+  describe "Generated test cases" $
+    it "1083150867" $
+      parse pType1 "" "{} .ge & i<{}, 3>"
+        `shouldParse` Type1
+          (T2Map (Group ([] NE.:| [])))
+          ( Just
+              ( CtrlOp CtlOp.Ge,
+                T2EnumRef
+                  (Name "i")
+                  ( Just
+                      ( GenericArg
+                          ( Type1
+                              (T2Map (Group ([] NE.:| [])))
+                              Nothing
+                              NE.:| [Type1 (T2Value (VUInt 3)) Nothing]
+                          )
+                      )
+                  )
+              )
+          )
