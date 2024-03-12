@@ -30,10 +30,10 @@ genName :: Gen Name
 genName =
   let endChars = ['a' .. 'z'] <> ['A' .. 'Z'] <> ['@', '_', '$']
       midChars = ['1' .. '9'] <> ['-', '.']
-      shortListOf = resize 3 . listOf
+      veryShortListOf = resize 3 . listOf
    in do
         fstChar <- elements endChars
-        midChar <- shortListOf . elements $ endChars <> midChars
+        midChar <- veryShortListOf . elements $ endChars <> midChars
         lastChar <- elements $ endChars <> ['1' .. '9']
         pure $ Name . T.pack $ fstChar : midChar <> [lastChar]
 
@@ -167,7 +167,7 @@ instance Arbitrary Group where
   shrink (Group gr) = Group <$> shrinkNE gr
 
 genGrpChoice :: Gen GrpChoice
-genGrpChoice = Gen.listOf genGroupEntry
+genGrpChoice = listOf' genGroupEntry
 
 genGroupEntry :: Gen GroupEntry
 genGroupEntry =
@@ -245,14 +245,14 @@ instance Arbitrary CtlOp where
 -- Utility
 --------------------------------------------------------------------------------
 
--- | Generate a non-empty list, whose maximum length depends on the size
--- parameter.
+-- | Generate a non-empty list. This function applies similar recursive scaling
+-- to @listOf'@ - see the comment there for details.
 nonEmpty :: Gen a -> Gen (NE.NonEmpty a)
 nonEmpty f = do
   sing <- f
   n <- getSize
   k <- choose (0, n)
-  (sing NE.:|) <$> vectorOf k f
+  (sing NE.:|) <$> vectorOf k (scale (scaleBy k) f)
 
 -- | Generates 'Nothing' some of the time
 maybe :: Gen a -> Gen (Maybe a)
@@ -262,8 +262,8 @@ maybe f = Gen.oneof [Just <$> f, pure Nothing]
 -- option. When the size gets to five or less, the Just constructor is no longer
 -- called, ensuring termination.
 maybeRec :: Gen a -> Gen (Maybe a)
-maybeRec gen =
-  sized $ \n ->
+maybeRec gen = sized $
+  \n ->
     if n <= 5
       then pure Nothing
       else
@@ -284,5 +284,19 @@ recursive f nonrec rec = sized $ \n ->
 golden :: Int -> Int
 golden x = round (fromIntegral x * 0.61803398875 :: Double)
 
+scaleBy :: Int -> Int -> Int
+scaleBy k x = round (fromIntegral x * ((1 :: Double) / fromIntegral k))
+
 shrinkNE :: (Arbitrary a) => NE.NonEmpty a -> [NE.NonEmpty a]
 shrinkNE (NE.toList -> l) = mapMaybe NE.nonEmpty (shrink l)
+
+-- | Variant on 'listOf' that tries to constrain the ultimate size of the
+-- generated tree by scaling recursive generators according to the size of the
+-- generated list - that is, short lists will result in minimal size scaling,
+-- whereas long lists will give significant scaling. Overall, the flattened size
+-- should therefore remain roughly constant.
+listOf' :: Gen a -> Gen [a]
+listOf' f = do
+  n <- getSize
+  k <- choose (0, n)
+  vectorOf k $ scale (scaleBy k) f

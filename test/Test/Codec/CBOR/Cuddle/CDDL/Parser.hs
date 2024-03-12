@@ -41,8 +41,8 @@ roundtripSpec = describe "Roundtripping should be id" $ do
     -- that we do not show that parse (print p) is p for a given generated
     -- 'CDDL' doc, since CDDL contains some statements that allow multiple
     -- parsings.
-    trip :: forall a. (Show a, Pretty a, Arbitrary a) => Parser a -> Property
-    trip pa = property $ \(x :: a) -> do
+    trip :: forall a. (Eq a, Show a, Pretty a, Arbitrary a) => Parser a -> Property
+    trip pa = property $ \(x :: a) -> within 1000000 $ do
       let printed = printText x
       case parse pa "" printed of
         Left e ->
