@@ -98,8 +98,8 @@ import Data.String (IsString (fromString))
 import Data.Text qualified as T
 import Data.Tuple.Optics (Field1 (..), Field2 (..), Field3 (..))
 import Data.Void (Void)
-import GHC.Exts (IsList (Item, fromList, toList))
 import Data.Word (Word64)
+import GHC.Exts (IsList (Item, fromList, toList))
 import GHC.Generics (Generic)
 import Optics.Core (over, view, (%~), (&), (.~))
 import Prelude hiding ((/))
@@ -252,8 +252,8 @@ instance Num Type0 where
 
 -- | Occurrence bounds.
 data Occurs = Occurs
-  { lb :: Maybe Int,
-    ub :: Maybe Int
+  { lb :: Maybe Word64,
+    ub :: Maybe Word64
   }
   deriving (Eq, Generic, Show)
 
@@ -495,10 +495,10 @@ instance (IsType0 a) => IsType0 (Tagged a) where
 
 class CanQuantify a where
   -- | Apply a lower bound
-  (<+) :: Int -> a -> a
+  (<+) :: Word64 -> a -> a
 
   -- | Apply an upper bound
-  (+>) :: a -> Int -> a
+  (+>) :: a -> Word64 -> a
 
 infixl 8 <+
 
@@ -699,12 +699,12 @@ ae / rt = ae & field @"value" %~ (// toType0 rt)
 --------------------------------------------------------------------------------
 
 -- | A tagged type carries an optional tag
-data Tagged a = Tagged (Maybe Int) a
+data Tagged a = Tagged (Maybe Word64) a
   deriving (Show, Functor)
 
 -- | Tag a CBOR item with a CDDL minor type. Thus, `tag n x` is equivalent to
 -- `#6.n(x)` in CDDL.
-tag :: Int -> a -> Tagged a
+tag :: Word64 -> a -> Tagged a
 tag mi = Tagged (Just mi)
 
 --------------------------------------------------------------------------------
