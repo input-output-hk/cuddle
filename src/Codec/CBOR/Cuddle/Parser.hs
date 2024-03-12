@@ -73,20 +73,20 @@ pGenericParam :: Parser GenericParam
 pGenericParam =
   GenericParam
     <$> between
-      (char '<')
+      (char '<' <* space)
       (char '>')
-      (NE.sepBy1 (space *> pName <* space) (char ','))
+      (NE.sepBy1 (pName <* space) (char ',' <* space))
 
 pGenericArg :: Parser GenericArg
 pGenericArg =
   GenericArg
     <$> between
-      (char '<')
+      (char '<' <* space)
       (char '>')
-      (NE.sepBy1 (space *> pType1 <* space) (char ','))
+      (NE.sepBy1 (pType1 <* space) (char ',' <* space))
 
 pType0 :: Parser Type0
-pType0 = Type0 <$> sepBy1' (space *> pType1 <* space) (char '/')
+pType0 = Type0 <$> sepBy1' (pType1 <* space) (char '/' <* space)
 
 pType1 :: Parser Type1
 pType1 = Type1 <$> pType2 <*> optcomp ((,) <$> (space *> pTyOp <* space) <*> pType2)
@@ -96,24 +96,24 @@ pType2 =
   choice
     [ try $ T2Value <$> pValue,
       try $ T2Name <$> pName <*> optional pGenericArg,
-      try $ T2Group <$> between (char '(') (char ')') (space *> pType0 <* space),
-      try $ T2Map <$> between (char '{') (char '}') (space *> pGroup <* space),
-      try $ T2Array <$> between (char '[') (char ']') (space *> pGroup <* space),
+      try $ T2Group <$> between (char '(' <* space) (char ')' <* space) (pType0 <* space),
+      try $ T2Map <$> between (char '{' <* space) (char '}' <* space) (pGroup <* space),
+      try $ T2Array <$> between (char '[' <* space) (char ']' <* space) (pGroup <* space),
       try $ T2Unwrapped <$> (char '~' *> space *> pName) <*> optional pGenericArg,
       try $
         T2Enum
           <$> ( char '&'
                   *> space
                   *> between
-                    (char '(')
+                    (char '(' <* space)
                     (char ')')
-                    (space *> pGroup <* space)
+                    (pGroup <* space)
               ),
       try $ T2EnumRef <$> (char '&' *> space *> pName) <*> optional pGenericArg,
       try $
         T2Tag
           <$> (string "#6" *> optcomp (char '.' *> L.decimal))
-          <*> between (char '(') (char ')') (space *> pType0 <* space),
+          <*> between (char '(' <* space) (char ')') (pType0 <* space),
       try $ T2DataItem <$> (char '#' *> L.decimal) <*> optcomp (char '.' *> L.decimal),
       T2Any <$ char '#'
     ]
