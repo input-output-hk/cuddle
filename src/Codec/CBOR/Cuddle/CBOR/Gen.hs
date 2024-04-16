@@ -38,6 +38,7 @@ import Data.Functor.Identity (Identity (runIdentity))
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
+import Data.Word (Word64)
 import GHC.Generics (Generic)
 import System.Random.Stateful
   ( Random,
@@ -340,8 +341,8 @@ applyOccurenceIndicator OIOneOrMore oldGen =
   genUniformRM (0 :: Int, 10) >>= \i ->
     G <$> replicateM i oldGen
 applyOccurenceIndicator (OIBounded mlb mub) oldGen =
-  genUniformRM (fromMaybe 0 mlb :: Int, fromMaybe 10 mub)
-    >>= \i -> G <$> replicateM i oldGen
+  genUniformRM (fromMaybe 0 mlb :: Word64, fromMaybe 10 mub)
+    >>= \i -> G <$> replicateM (fromIntegral i) oldGen
 
 genValue :: Value -> Gen Term
 genValue (VUInt i) = pure . TInt $ fromIntegral i
