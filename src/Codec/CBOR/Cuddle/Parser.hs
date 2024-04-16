@@ -31,7 +31,7 @@ pRule =
           <$> pName
           <*> optcomp pGenericParam
           <*> (space *> pAssignT <* space)
-          <*> (TOGType <$> pType0),
+          <*> (TOGType <$> pType0 <* notFollowedBy (void (char ':') <|> void (string "=>"))),
       Rule
         <$> pName
         <*> optcomp pGenericParam
