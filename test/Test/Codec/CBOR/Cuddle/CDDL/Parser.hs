@@ -160,11 +160,11 @@ type2Spec = describe "type2" $ do
       parse pType2 "" "{ int => string }"
         `shouldParse` T2Map
           ( Group
-              ( NE.singleton
+              ( (NE.:| [])
                   [ GEType
                       Nothing
                       (Just (MKType (Type1 (T2Name (Name "int") Nothing) Nothing)))
-                      (Type0 (NE.singleton (Type1 (T2Name (Name "string") Nothing) Nothing)))
+                      (Type0 ((NE.:| []) (Type1 (T2Name (Name "string") Nothing) Nothing)))
                   ]
               )
           )
@@ -172,11 +172,11 @@ type2Spec = describe "type2" $ do
       parse pType2 "" "{ * int => string }"
         `shouldParse` T2Map
           ( Group
-              ( NE.singleton
+              ( (NE.:| [])
                   [ GEType
                       (Just OIZeroOrMore)
                       (Just (MKType (Type1 (T2Name (Name "int") Nothing) Nothing)))
-                      (Type0 (NE.singleton (Type1 (T2Name (Name "string") Nothing) Nothing)))
+                      (Type0 ((NE.:| []) (Type1 (T2Name (Name "string") Nothing) Nothing)))
                   ]
               )
           )
@@ -218,12 +218,12 @@ type2Spec = describe "type2" $ do
               ( [ GEType
                     Nothing
                     Nothing
-                    (Type0 (NE.singleton (Type1 (T2Value (VUInt 0)) Nothing)))
+                    (Type0 ((NE.:| []) (Type1 (T2Value (VUInt 0)) Nothing)))
                 ]
                   NE.:| [ [ GEType
                               Nothing
                               Nothing
-                              (Type0 (NE.singleton (Type1 (T2Value (VUInt 1)) Nothing)))
+                              (Type0 ((NE.:| []) (Type1 (T2Value (VUInt 1)) Nothing)))
                           ]
                         ]
               )

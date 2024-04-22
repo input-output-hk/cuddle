@@ -19,8 +19,29 @@ extra-doc-files: CHANGELOG.md
 common warnings
     ghc-options: -Wall
 
+common ghc2021
+    -- These options are all on by default in GHC2021, so once we drop GHC8 we
+    -- can remove this section.
+    default-extensions:
+        DataKinds
+        DeriveGeneric
+        DeriveTraversable
+        FlexibleContexts
+        FlexibleInstances
+        GeneralizedNewtypeDeriving
+        ImportQualifiedPost
+        InstanceSigs
+        MultiParamTypeClasses
+        NamedFieldPuns
+        PolyKinds
+        RankNTypes
+        ScopedTypeVariables
+        StandaloneDeriving
+        TypeApplications
+        TypeSynonymInstances
+
 library
-    import:           warnings
+    import:           warnings, ghc2021
     exposed-modules:
         Codec.CBOR.Cuddle.CBOR.Gen
         Codec.CBOR.Cuddle.CDDL
@@ -36,7 +57,7 @@ library
 
     -- other-extensions:
     build-depends:
-        , base                ^>=4.16.3.0 || ^>=4.18.1.0 || ^>=4.19.0.0
+        , base                ^>=4.14.3.0 || ^>=4.16.3.0 || ^>=4.18.1.0 || ^>=4.19.0.0
         , bytestring
         , capability
         , cborg
@@ -54,18 +75,18 @@ library
         , text
 
     hs-source-dirs:   src
-    default-language: GHC2021
+    default-language: Haskell2010
 
 executable example
-    import:           warnings
-    default-language: GHC2021
+    import:           warnings, ghc2021
+    default-language: Haskell2010
     other-modules:    Conway
 
     -- other-extensions:
     hs-source-dirs:   example
     main-is:          Main.hs
     build-depends:
-        , base           ^>=4.16.3.0 || ^>=4.18.1.0 || ^>=4.19.0.0
+        , base           ^>=4.14.3.0 || ^>=4.16.3.0 || ^>=4.18.1.0 || ^>=4.19.0.0
         , cuddle
         , megaparsec
         , prettyprinter
@@ -73,12 +94,12 @@ executable example
         , text
 
 executable cuddle
-    import:           warnings
-    default-language: GHC2021
+    import:           warnings, ghc2021
+    default-language: Haskell2010
     hs-source-dirs:   ./bin/
     main-is:          Main.hs
     build-depends:
-        , base                  ^>=4.16.3.0 || ^>=4.18.1.0 || ^>=4.19.0.0
+        , base                  ^>=4.14.3.0 || ^>=4.16.3.0 || ^>=4.18.1.0 || ^>=4.19.0.0
         , cborg
         , cuddle
         , megaparsec
@@ -88,8 +109,8 @@ executable cuddle
         , text
 
 test-suite cuddle-test
-    import:           warnings
-    default-language: GHC2021
+    import:           warnings, ghc2021
+    default-language: Haskell2010
     other-modules:
         Test.Codec.CBOR.Cuddle.CDDL.Gen
         Test.Codec.CBOR.Cuddle.CDDL.Parser
@@ -100,7 +121,7 @@ test-suite cuddle-test
     hs-source-dirs:   test
     main-is:          Main.hs
     build-depends:
-        , base              ^>=4.16.3.0 || ^>=4.18.1.0 || ^>=4.19.0.0
+        , base              ^>=4.14.3.0 || ^>=4.16.3.0 || ^>=4.18.1.0 || ^>=4.19.0.0
         , cuddle
         , hspec
         , hspec-megaparsec

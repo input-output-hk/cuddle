@@ -1,11 +1,10 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE OverloadedRecordDot #-}
+-- {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE ViewPatterns #-}
-{-# LANGUAGE NoFieldSelectors #-}
 
 -- | Module containing tools for 'resolving' CDDL
 --
@@ -37,7 +36,8 @@ where
 
 import Capability.Accessors (Field (..), Lift (..))
 import Capability.Error (HasThrow, MonadError (..), throw)
-import Capability.Reader (HasReader, MonadReader (..), ask, local)
+import Capability.Reader (HasReader, MonadReader (..), ask)
+import qualified Capability.Reader as Reader (local)
 import Capability.Sink (HasSink)
 import Capability.Source (HasSource)
 import Capability.State (HasState, MonadState (..), modify)
@@ -94,14 +94,14 @@ asMap (CDDL rules) = foldl' assignOrExtend Map.empty (stripComment <$> rules)
       Maybe GenericParam ->
       Maybe (Parametrised TypeOrGroup) ->
       Maybe (Parametrised TypeOrGroup)
-    extend tog _gps (Just existing) = case (existing.underlying, tog) of
+    extend tog _gps (Just existing) = case (underlying existing, tog) of
       (TOGType _, TOGType (Type0 new)) ->
         Just $
           existing
             & field @"underlying"
             % _Ctor @"TOGType"
             % _Ctor @"Type0"
-            %~ (`NE.append` new)
+            %~ (<> new)
       -- From the CDDL spec, I don't see how one is meant to extend a group.
       -- According to the description, it's meant to add a group choice, but the
       -- assignment to a group takes a 'GrpEntry', not a Group, and there is no
@@ -334,15 +334,15 @@ resolveRef env (Ref n args) = case Map.lookup n postludeBinding of
   Just pterm -> case args of
     [] -> Right . DIt $ CTree.Postlude pterm
     xs -> Left $ ArgsToPostlude pterm xs
-  Nothing -> case Map.lookup n env.global of
-    Just (parameters -> params) ->
-      if length params == length args
+  Nothing -> case Map.lookup n (global env) of
+    Just (parameters -> params') ->
+      if length params' == length args
         then
-          let localBinds = Map.fromList $ zip params args
+          let localBinds = Map.fromList $ zip params' args
               newEnv = env & field @"local" %~ Map.union localBinds
            in RuleRef n <$> traverse (resolveRef newEnv) args
-        else Left $ MismatchingArgs n params
-    Nothing -> case Map.lookup n env.local of
+        else Left $ MismatchingArgs n params'
+    Nothing -> case Map.lookup n (local env) of
       Just _ -> Right $ GenericRef n
       Nothing -> Left $ UnboundReference n
 
@@ -460,14 +460,14 @@ synthMono n@(Name origName) args =
         globalBinds <- ask @"global"
         case Map.lookup n globalBinds of
           Just (Unparametrised _) -> throwNR $ MismatchingArgs n []
-          Just (Parametrised r params) ->
-            if length params == length args
+          Just (Parametrised r params') ->
+            if length params' == length args
               then
-                let localBinds = Map.fromList $ zip params args
-                 in local @"local" (Map.union localBinds) $ do
+                let localBinds = Map.fromList $ zip params' args
+                 in Reader.local @"local" (Map.union localBinds) $ do
                       foo <- resolveGenericRef r
                       modify @"synth" $ Map.insert fresh foo
-              else throwNR $ MismatchingArgs n params
+              else throwNR $ MismatchingArgs n params'
           Nothing -> throwNR $ UnboundReference n
         pure fresh
 
@@ -508,7 +508,7 @@ buildMonoCTree ::
   CTreeRoot DistRef ->
   Either NameResolutionFailure (CTreeRoot' Identity MonoRef)
 buildMonoCTree (CTreeRoot ct) = do
-  let a1 = runExceptT (monoCTree monoC).runMonoM
+  let a1 = runExceptT $ runMonoM (monoCTree monoC)
       a2 = runStateT a1 mempty
       (er, newBindings) = runReader a2 initBindingEnv
   CTreeRoot r <- er

@@ -1,14 +1,11 @@
-{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE NoFieldSelectors #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
 -- | Module for building CDDL in Haskell
@@ -91,7 +88,7 @@ import Control.Monad (when)
 import Control.Monad.State (MonadState (get), execState, modify)
 import Data.ByteString (ByteString)
 import Data.Default.Class (Default (..))
-import Data.Generics.Product (HasField, field)
+import Data.Generics.Product (HasField, field, getField)
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as HaskMap
 import Data.String (IsString (fromString))
@@ -134,7 +131,7 @@ instance IsList Huddle where
   fromList [] = error "Huddle: Cannot have empty ruleset"
   fromList (x : xs) = Huddle (x NE.:| xs) mempty mempty
 
-  toList = NE.toList . (.rules)
+  toList = NE.toList . rules
 
 data Choice a
   = NoChoice a
@@ -146,7 +143,7 @@ choiceToList (NoChoice x) = [x]
 choiceToList (ChoiceOf x xs) = x : choiceToList xs
 
 choiceToNE :: Choice a -> NE.NonEmpty a
-choiceToNE (NoChoice c) = NE.singleton c
+choiceToNE (NoChoice c) = c NE.:| []
 choiceToNE (ChoiceOf c cs) = c NE.:| choiceToList cs
 
 data Key
@@ -334,7 +331,7 @@ data ValueConstraint a = ValueConstraint
   }
 
 instance Show (ValueConstraint a) where
-  show x = x.showConstraint
+  show = showConstraint
 
 instance Default (ValueConstraint a) where
   def =
@@ -533,14 +530,14 @@ instance IsEntryLike MapEntry where
 instance IsEntryLike ArrayEntry where
   fromMapEntry me =
     ArrayEntry
-      { key = Just me.key,
+      { key = Just $ getField @"key" me,
         value =
-          me.value,
-        quantifier = me.quantifier
+          getField @"value" me,
+        quantifier = getField @"quantifier" me
       }
 
 instance IsEntryLike Type0 where
-  fromMapEntry = (.value)
+  fromMapEntry = getField @"value"
 
 (==>) :: (IsType0 a, IsEntryLike me) => Key -> a -> me
 k ==> gc =
@@ -737,7 +734,7 @@ callToDef gr = gr {args = refs}
       NE.unfoldr
         ( \ix ->
             ( freshName ix,
-              if ix < NE.length gr.args - 1 then Just (ix + 1) else Nothing
+              if ix < NE.length (args gr) - 1 then Just (ix + 1) else Nothing
             )
         )
         0
@@ -746,10 +743,10 @@ callToDef gr = gr {args = refs}
 binding :: (IsType0 t0) => (GRef -> Rule) -> t0 -> GRuleCall
 binding fRule t0 =
   Named
-    rule.name
+    (name rule)
     GRule
-      { args = NE.singleton t2,
-        body = rule.value
+      { args = t2 NE.:| [],
+        body = getField @"value" rule
       }
     Nothing
   where
@@ -762,10 +759,10 @@ binding fRule t0 =
 binding2 :: (IsType0 t0, IsType0 t1) => (GRef -> GRef -> Rule) -> t0 -> t1 -> GRuleCall
 binding2 fRule t0 t1 =
   Named
-    rule.name
+    (name rule)
     GRule
       { args = t02 NE.:| [t12],
-        body = rule.value
+        body = getField @"value" rule
       }
     Nothing
   where
@@ -803,8 +800,8 @@ collectFrom topR =
     goChoice f (NoChoice x) = f x
     goChoice f (ChoiceOf x xs) = f x >> goChoice f xs
     goT0 = goChoice goT2
-    goT2 (T2Map m) = goChoice (mapM_ goMapEntry . (.unMapChoice)) m
-    goT2 (T2Array m) = goChoice (mapM_ goArrayEntry . (.unArrayChoice)) m
+    goT2 (T2Map m) = goChoice (mapM_ goMapEntry . unMapChoice) m
+    goT2 (T2Array m) = goChoice (mapM_ goArrayEntry . unArrayChoice) m
     goT2 (T2Tagged (Tagged _ t0)) = goT0 t0
     goT2 (T2Ref n) = goRule n
     goT2 (T2Group r@(Named n g _)) = do
@@ -816,7 +813,7 @@ collectFrom topR =
       (_, _, gRules) <- get
       when (HaskMap.notMember n gRules) $ do
         modify (over _3 $ HaskMap.insert n (fmap callToDef r))
-        goT0 g.body
+        goT0 (body g)
     goT2 _ = pure ()
     goArrayEntry (ArrayEntry (Just k) t0 _) = goKey k >> goT0 t0
     goArrayEntry (ArrayEntry Nothing t0 _) = goT0 t0
@@ -833,10 +830,14 @@ collectFrom topR =
 toCDDL :: Huddle -> CDDL
 toCDDL hdl =
   C.CDDL $
-    fmap toCDDLRule hdl.rules
-      `NE.appendList` fmap toCDDLGroup hdl.groups
-      `NE.appendList` fmap toGenRuleDef hdl.gRules
+    fmap toCDDLRule (rules hdl)
+      `appendList` fmap toCDDLGroup (groups hdl)
+      `appendList` fmap toGenRuleDef (gRules hdl)
   where
+    -- This function is missing from NonEmpty prior to 4.16, so we temporarily
+    -- add it here.
+    appendList :: NE.NonEmpty a -> [a] -> NE.NonEmpty a
+    appendList (x NE.:| xs) ys = x NE.:| xs <> ys
     toCDDLRule :: Rule -> C.WithComments C.Rule
     toCDDLRule (Named n t0 c) =
       C.WithComments
@@ -879,7 +880,7 @@ toCDDL hdl =
     toCDDLType1 = \case
       T2Basic (Constrained x constr) ->
         -- TODO Need to handle choices at the top level
-        constr.applyConstraint (C.T2Name (toCDDLPostlude x) Nothing)
+        applyConstraint constr (C.T2Name (toCDDLPostlude x) Nothing)
       T2Literal l -> toCDDLRanged l
       T2Map m ->
         C.Type1
@@ -942,7 +943,7 @@ toCDDL hdl =
             . C.TOGGroup
             . C.GEGroup Nothing
             . C.Group
-            . NE.singleton
+            . (NE.:| [])
             $ fmap (C.GEType Nothing Nothing . toCDDLType0) t0s
         )
         (fmap C.Comment c)
@@ -951,7 +952,7 @@ toCDDL hdl =
     toGenericCall (Named n gr _) =
       C.T2Name
         (C.Name n)
-        (Just . C.GenericArg $ fmap toCDDLType1 gr.args)
+        (Just . C.GenericArg $ fmap toCDDLType1 (args gr))
 
     toGenRuleDef :: GRuleDef -> C.WithComments C.Rule
     toGenRuleDef (Named n gr c) =
@@ -959,9 +960,9 @@ toCDDL hdl =
         ( C.Rule (C.Name n) (Just gps) C.AssignEq
             . C.TOGType
             . C.Type0
-            $ toCDDLType1 <$> choiceToNE gr.body
+            $ toCDDLType1 <$> choiceToNE (body gr)
         )
         (fmap C.Comment c)
       where
         gps =
-          C.GenericParam $ fmap (\(GRef t) -> C.Name t) gr.args
+          C.GenericParam $ fmap (\(GRef t) -> C.Name t) (args gr)
