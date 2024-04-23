@@ -1,6 +1,4 @@
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE OverloadedRecordDot #-}
-{-# LANGUAGE NoFieldSelectors #-}
 
 module Main (main) where
 
@@ -131,8 +129,8 @@ run (Opts cmd cddlFile) = do
         Left err -> putStrLnErr (show err) >> exitFailure
         Right mt -> do
           stdGen <- getStdGen
-          let term = generateCBORTerm mt (Name x.itemName) stdGen
-           in case x.outputFormat of
+          let term = generateCBORTerm mt (Name $ itemName x) stdGen
+           in case outputFormat x of
                 AsTerm -> print term
                 AsFlatTerm -> print $ toFlatTerm (encodeTerm term)
                 AsCBOR -> print . toStrictByteString $ encodeTerm term

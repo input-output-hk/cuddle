@@ -8,7 +8,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE ViewPatterns #-}
-{-# LANGUAGE NoFieldSelectors #-}
 {-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
 
 -- | Generate example CBOR given a CDDL specification

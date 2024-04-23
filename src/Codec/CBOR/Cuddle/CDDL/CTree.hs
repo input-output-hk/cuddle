@@ -1,5 +1,4 @@
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE NoFieldSelectors #-}
 
 module Codec.CBOR.Cuddle.CDDL.CTree where
 
@@ -53,19 +52,19 @@ traverseCTree atNode (Map xs) = Map <$> traverse atNode xs
 traverseCTree atNode (Array xs) = Array <$> traverse atNode xs
 traverseCTree atNode (Group xs) = Group <$> traverse atNode xs
 traverseCTree atNode (Choice xs) = Choice <$> traverse atNode xs
-traverseCTree atNode (KV k v cut) = do
+traverseCTree atNode (KV k v c) = do
   k' <- atNode k
   v' <- atNode v
-  pure $ KV k' v' cut
+  pure $ KV k' v' c
 traverseCTree atNode (Occur i occ) = flip Occur occ <$> atNode i
 traverseCTree atNode (Range f t inc) = do
   f' <- atNode f
   t' <- atNode t
   pure $ Range f' t' inc
-traverseCTree atNode (Control op t c) = do
+traverseCTree atNode (Control o t c) = do
   t' <- atNode t
   c' <- atNode c
-  pure $ Control op t' c'
+  pure $ Control o t' c'
 traverseCTree atNode (Enum ref) = Enum <$> atNode ref
 traverseCTree atNode (Unwrap ref) = Unwrap <$> atNode ref
 
