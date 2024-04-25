@@ -8,7 +8,7 @@ import Codec.CBOR.Cuddle.CDDL
     RangeBound,
     Value,
   )
-import Codec.CBOR.Cuddle.CDDL.CtlOp
+import Codec.CBOR.Cuddle.CDDL.CtlOp (CtlOp)
 import Codec.CBOR.Cuddle.CDDL.Postlude (PTerm)
 import Data.Hashable (Hashable)
 import Data.List.NonEmpty qualified as NE

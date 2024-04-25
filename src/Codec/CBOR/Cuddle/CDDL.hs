@@ -258,6 +258,14 @@ data OccurrenceIndicator
 
 instance Hashable OccurrenceIndicator
 
+-- | Get the lower bound of an occurrence indicator
+oiLowerBound :: OccurrenceIndicator -> Word64
+oiLowerBound OIOptional = 0
+oiLowerBound OIZeroOrMore = 0
+oiLowerBound OIOneOrMore = 1
+oiLowerBound (OIBounded Nothing _) = 0
+oiLowerBound (OIBounded (Just i) _) = i
+
 -- |
 --   A group matches any sequence of key/value pairs that matches any of
 --   the choices given (again using PEG semantics).

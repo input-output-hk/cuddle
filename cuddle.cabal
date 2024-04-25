@@ -28,6 +28,7 @@ common ghc2021
         DeriveTraversable
         FlexibleContexts
         FlexibleInstances
+        GADTSyntax
         GeneralizedNewtypeDeriving
         ImportQualifiedPost
         InstanceSigs
@@ -44,6 +45,7 @@ library
     import:           warnings, ghc2021
     exposed-modules:
         Codec.CBOR.Cuddle.CBOR.Gen
+        Codec.CBOR.Cuddle.CBOR.Validate
         Codec.CBOR.Cuddle.CDDL
         Codec.CBOR.Cuddle.CDDL.CtlOp
         Codec.CBOR.Cuddle.CDDL.CTree
