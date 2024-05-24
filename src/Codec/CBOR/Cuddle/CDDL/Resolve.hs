@@ -29,6 +29,7 @@ module Codec.CBOR.Cuddle.CDDL.Resolve
     buildRefCTree,
     asMap,
     buildMonoCTree,
+    fullResolveCDDL,
     MonoRef (..),
     NameResolutionFailure (..),
   )
@@ -37,7 +38,7 @@ where
 import Capability.Accessors (Field (..), Lift (..))
 import Capability.Error (HasThrow, MonadError (..), throw)
 import Capability.Reader (HasReader, MonadReader (..), ask)
-import qualified Capability.Reader as Reader (local)
+import Capability.Reader qualified as Reader (local)
 import Capability.Sink (HasSink)
 import Capability.Source (HasSource)
 import Capability.State (HasState, MonadState (..), modify)
@@ -523,3 +524,13 @@ buildMonoCTree (CTreeRoot ct) = do
               Parametrised _ _ -> Nothing
           )
           ct
+
+--------------------------------------------------------------------------------
+-- Combined resolution
+--------------------------------------------------------------------------------
+
+fullResolveCDDL :: CDDL -> Either NameResolutionFailure (CTreeRoot' Identity MonoRef)
+fullResolveCDDL cddl = do
+  let refCTree = buildRefCTree (asMap cddl)
+  rCTree <- buildResolvedCTree refCTree
+  buildMonoCTree rCTree
