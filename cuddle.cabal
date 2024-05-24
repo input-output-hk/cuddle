@@ -114,6 +114,7 @@ test-suite cuddle-test
     import:           warnings, ghc2021
     default-language: Haskell2010
     other-modules:
+        Test.Codec.CBOR.Cuddle.CBOR.Validate
         Test.Codec.CBOR.Cuddle.CDDL.Gen
         Test.Codec.CBOR.Cuddle.CDDL.Parser
         Test.Codec.CBOR.Cuddle.Huddle
