@@ -3,15 +3,9 @@
 module Main (main) where
 
 import Codec.CBOR.Cuddle.CBOR.Gen (generateCBORTerm)
-import Codec.CBOR.Cuddle.CDDL (CDDL, Name (..))
-import Codec.CBOR.Cuddle.CDDL.CTree (CTreeRoot')
+import Codec.CBOR.Cuddle.CDDL (Name (..))
 import Codec.CBOR.Cuddle.CDDL.Resolve
-  ( MonoRef,
-    NameResolutionFailure,
-    asMap,
-    buildMonoCTree,
-    buildRefCTree,
-    buildResolvedCTree,
+  ( fullResolveCDDL,
   )
 import Codec.CBOR.Cuddle.Parser (pCDDL)
 import Codec.CBOR.Cuddle.Pretty ()
@@ -19,7 +13,6 @@ import Codec.CBOR.FlatTerm (toFlatTerm)
 import Codec.CBOR.Pretty (prettyHexEnc)
 import Codec.CBOR.Term (encodeTerm)
 import Codec.CBOR.Write (toStrictByteString)
-import Data.Functor.Identity (Identity)
 import Data.Text qualified as T
 import Data.Text.IO qualified as T
 import Options.Applicative
@@ -144,9 +137,3 @@ parseFromFile ::
   String ->
   IO (Either (ParseErrorBundle T.Text e) a)
 parseFromFile p file = runParser p file <$> T.readFile file
-
-fullResolveCDDL :: CDDL -> Either NameResolutionFailure (CTreeRoot' Identity MonoRef)
-fullResolveCDDL cddl = do
-  let refCTree = buildRefCTree (asMap cddl)
-  rCTree <- buildResolvedCTree refCTree
-  buildMonoCTree rCTree
