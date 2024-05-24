@@ -124,8 +124,10 @@ test-suite cuddle-test
     hs-source-dirs:   test
     main-is:          Main.hs
     build-depends:
-        , base              ^>=4.14.3.0 || ^>=4.16.3.0 || ^>=4.18.1.0 || ^>=4.19.0.0
+        , base                ^>=4.14.3.0 || ^>=4.16.3.0 || ^>=4.18.1.0 || ^>=4.19.0.0
+        , cborg
         , cuddle
+        , data-default-class
         , hspec
         , hspec-megaparsec
         , megaparsec

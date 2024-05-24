@@ -5,6 +5,10 @@ module Codec.CBOR.Cuddle.CBOR.Validate
   ( toAnnTerm,
     validateAnnTerm,
     validateRule,
+    AnnTerm (..),
+    PrimTerm (..),
+    ValidatedWith (..),
+    AnnotationContext (..),
   )
 where
 
@@ -54,16 +58,41 @@ data PrimTerm
   | PFloat !Float
   | PDouble !Double
   | PNull
+  deriving (Eq, Show)
 
 newtype ListTerm f = ListTerm (f [AnnTerm f])
 
+deriving instance Eq (ListTerm Identity)
+
+deriving instance Show (ListTerm Identity)
+
+deriving instance Eq (ListTerm ValidatedWith)
+
+deriving instance Show (ListTerm ValidatedWith)
+
 newtype MapTerm f = MapTerm (f [(AnnTerm f, AnnTerm f)])
+
+deriving instance Eq (MapTerm Identity)
+
+deriving instance Show (MapTerm Identity)
+
+deriving instance Eq (MapTerm ValidatedWith)
+
+deriving instance Show (MapTerm ValidatedWith)
 
 data AnnTerm f where
   Prim :: PrimTerm -> AnnTerm f
   List :: ListTerm f -> AnnTerm f
   Map :: MapTerm f -> AnnTerm f
   Tagged :: Word64 -> AnnTerm f -> AnnTerm f
+
+deriving instance Eq (AnnTerm Identity)
+
+deriving instance Show (AnnTerm Identity)
+
+deriving instance Eq (AnnTerm ValidatedWith)
+
+deriving instance Show (AnnTerm ValidatedWith)
 
 toAnnTerm :: Term -> AnnTerm Identity
 toAnnTerm (TInt i) = Prim $ PInt i
@@ -186,15 +215,10 @@ data AnnotationContext = AnnotationContext
     -- | Type of the current thing being processed.
     ruleType :: T.Text
   }
-  deriving (Generic)
+  deriving (Eq, Generic, Show)
 
 instance Default AnnotationContext where
   def = AnnotationContext T.empty T.empty T.empty
-
--- | The container context. This governs the semantics of how to process group
--- entries - in a list, they must be processed in order, whereas a map allows
--- intermixing.
-data ContainerContext = CCMap | CCArray
 
 data ValidateState = ValidateState
   { validationStack :: NE.NonEmpty (CTree MonoRef),
@@ -251,8 +275,9 @@ newtype ValidateM a = ValidateM
 
 data ValidationFailure
   = PrimTypeValidationFailed
-  | MissingRequiredEntry (CTree MonoRef)
+  | MissingRequiredEntry
   | MultipleFailures [ValidationFailure]
+  deriving (Eq, Show)
 
 instance Semigroup ValidationFailure where
   (MultipleFailures xs) <> (MultipleFailures ys) = MultipleFailures (xs <> ys)
@@ -269,6 +294,7 @@ data ValidatedWith a
   | -- | Indicates that the subtree was not validated, probably because a
     --   higher-level node did not validate.
     Unvalidated a
+  deriving (Eq, Show)
 
 type VTerm = ValidatedWith (AnnTerm ValidatedWith)
 
