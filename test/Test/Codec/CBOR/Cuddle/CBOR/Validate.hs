@@ -15,7 +15,11 @@ import Data.Functor.Identity (Identity)
 import Test.Hspec (Spec, describe, it, shouldBe)
 
 simpleSchema :: Huddle
-simpleSchema = ["port" =:= VUInt]
+simpleSchema = collectFrom manyPorts
+
+port, manyPorts :: Rule
+port = "port" =:= VUInt
+manyPorts = "manyPorts" =:= arr [0 <+ a port]
 
 simpleCTree :: CTreeRoot' Identity MonoRef
 simpleCTree =
@@ -27,6 +31,7 @@ simpleCTree =
 validateSpec :: Spec
 validateSpec = describe "validate-cbor" $ do
   primSpec
+  arraySpec
 
 -- | Validate primitives
 primSpec :: Spec
@@ -36,4 +41,13 @@ primSpec = describe "primitives" $ do
       (toAnnTerm $ Cborg.TInt 0)
       simpleCTree
       (Name "port")
+      `shouldBe` Valid (Prim (PInt 0)) (def {ruleName = "port"})
+
+arraySpec :: Spec
+arraySpec = describe "arrays" $ do
+  it "Can validate a repeat array" $
+    validateRule
+      (toAnnTerm $ Cborg.TList [Cborg.TInt 0, Cborg.TInt 1])
+      simpleCTree
+      (Name "manyPorts")
       `shouldBe` Valid (Prim (PInt 0)) (def {ruleName = "port"})

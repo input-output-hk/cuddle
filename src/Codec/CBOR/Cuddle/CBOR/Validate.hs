@@ -1,5 +1,7 @@
 {-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
 module Codec.CBOR.Cuddle.CBOR.Validate
   ( toAnnTerm,
@@ -15,7 +17,7 @@ where
 import Capability.Reader
 import Capability.Sink (HasSink)
 import Capability.Source
-import Capability.State (HasState, get, gets, put)
+import Capability.State (HasState, get, gets, modify, put)
 import Codec.CBOR.Cuddle.CDDL
 import Codec.CBOR.Cuddle.CDDL qualified as CDDL
 import Codec.CBOR.Cuddle.CDDL.CTree (CTree, CTreeRoot')
@@ -23,13 +25,16 @@ import Codec.CBOR.Cuddle.CDDL.CTree qualified as CTree
 import Codec.CBOR.Cuddle.CDDL.Postlude (PTerm (..))
 import Codec.CBOR.Cuddle.CDDL.Resolve (MonoRef (..))
 import Codec.CBOR.Term (Term (..))
+import Control.Monad (void)
 import Control.Monad.Reader (Reader, runReader)
 import Control.Monad.State (StateT, evalStateT)
 import Data.Bifunctor (bimap)
 import Data.ByteString (ByteString)
 import Data.ByteString.Lazy qualified as BL
 import Data.Default.Class (Default (def))
-import Data.Functor.Identity (Identity (Identity))
+import Data.Functor (($>))
+import Data.Functor.Identity (Identity (Identity, runIdentity))
+import Data.Generics.Product.Fields (HasField (..))
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as M
 import Data.Text (Text)
@@ -37,6 +42,7 @@ import Data.Text qualified as T
 import Data.Text.Lazy qualified as TL
 import Data.Word (Word64, Word8)
 import GHC.Generics (Generic)
+import Optics.Core ((.~))
 
 --------------------------------------------------------------------------------
 -- Slightly modified term tree
@@ -60,7 +66,7 @@ data PrimTerm
   | PNull
   deriving (Eq, Show)
 
-newtype ListTerm f = ListTerm (f [AnnTerm f])
+newtype ListTerm f = ListTerm [f (AnnTerm f)]
 
 deriving instance Eq (ListTerm Identity)
 
@@ -70,7 +76,7 @@ deriving instance Eq (ListTerm ValidatedWith)
 
 deriving instance Show (ListTerm ValidatedWith)
 
-newtype MapTerm f = MapTerm (f [(AnnTerm f, AnnTerm f)])
+newtype MapTerm f = MapTerm [(f (AnnTerm f), f (AnnTerm f))]
 
 deriving instance Eq (MapTerm Identity)
 
@@ -101,10 +107,10 @@ toAnnTerm (TBytes b) = Prim $ PBytes b
 toAnnTerm (TBytesI b) = Prim $ PBytes (BL.toStrict b)
 toAnnTerm (TString b) = Prim $ PString b
 toAnnTerm (TStringI b) = Prim $ PString (TL.toStrict b)
-toAnnTerm (TList l) = List . ListTerm . Identity $ fmap toAnnTerm l
-toAnnTerm (TListI l) = List . ListTerm . Identity $ fmap toAnnTerm l
-toAnnTerm (TMap m) = Map . MapTerm . Identity $ fmap (bimap toAnnTerm toAnnTerm) m
-toAnnTerm (TMapI m) = Map . MapTerm . Identity $ fmap (bimap toAnnTerm toAnnTerm) m
+toAnnTerm (TList l) = List . ListTerm $ fmap (Identity . toAnnTerm) l
+toAnnTerm (TListI l) = List . ListTerm $ fmap (Identity . toAnnTerm) l
+toAnnTerm (TMap m) = Map . MapTerm $ fmap (bimap (Identity . toAnnTerm) (Identity . toAnnTerm)) m
+toAnnTerm (TMapI m) = Map . MapTerm $ fmap (bimap (Identity . toAnnTerm) (Identity . toAnnTerm)) m
 toAnnTerm (TTagged w t) = Tagged w $ toAnnTerm t
 toAnnTerm (TBool b) = Prim $ PBool b
 toAnnTerm TNull = Prim PNull
@@ -274,9 +280,12 @@ newtype ValidateM a = ValidateM
           )
 
 data ValidationFailure
-  = PrimTypeValidationFailed
+  = PrimTypeValidationFailed T.Text
   | MissingRequiredEntry
   | MultipleFailures [ValidationFailure]
+  | TypeMismatch
+  | -- | Fails to validate because some component fails to validate
+    FailureBelow
   deriving (Eq, Show)
 
 instance Semigroup ValidationFailure where
@@ -296,15 +305,21 @@ data ValidatedWith a
     Unvalidated a
   deriving (Eq, Show)
 
+isValid :: ValidatedWith a -> Bool
+isValid (Valid _ _) = True
+isValid _ = False
+
 type VTerm = ValidatedWith (AnnTerm ValidatedWith)
 
 -- | Mark a subtree as being unvalidated, due to a higher-level match failing
 unvalidated :: AnnTerm Identity -> AnnTerm ValidatedWith
 unvalidated (Prim p) = Prim p
-unvalidated (List (ListTerm (Identity xs))) =
-  List . ListTerm . Unvalidated $ unvalidated <$> xs
-unvalidated (Map (MapTerm (Identity xs))) =
-  Map . MapTerm . Unvalidated $ bimap unvalidated unvalidated <$> xs
+unvalidated (List (ListTerm xs)) =
+  List . ListTerm $ Unvalidated . unvalidated . runIdentity <$> xs
+unvalidated (Map (MapTerm xs)) =
+  Map . MapTerm $ bimap uur uur <$> xs
+  where
+    uur = Unvalidated . unvalidated . runIdentity
 unvalidated (Tagged x p) = Tagged x $ unvalidated p
 
 validateRule ::
@@ -323,17 +338,37 @@ validateRule at ctr@(CTree.CTreeRoot m) n@(Name name) = case M.lookup n m of
         a2 = evalStateT a1 vs
         a3 = runReader a2 (ValidateEnv ctr)
      in a3
+  -- TODO This case is actually fine, just annoying
   Just _ -> error "Top-level rule defined by indirection!"
   Nothing -> error $ "Rule not defined: " <> show n
 
 validateAnnTerm :: AnnTerm Identity -> ValidateM VTerm
 validateAnnTerm at = do
   ct <- gets @"validationStack" NE.head
-  case at of
-    Prim pt ->
-      if validatePrimTerm pt ct
-        then succeedMatch $ Prim pt
-        else failMatch at PrimTypeValidationFailed
+  isControlNode ct >>= \case
+    Just ct' -> do
+      pushStack ct'
+      validateAnnTerm at
+    Nothing ->
+      case at of
+        Prim pt ->
+          if validatePrimTerm pt ct
+            then succeedMatch $ Prim pt
+            else failMatch (unvalidated at) (PrimTypeValidationFailed $ T.pack $ show ct)
+        List (ListTerm ls) -> case ct of
+          CTree.Array [] -> case ls of
+            [] -> succeedMatch $ List (ListTerm [])
+          CTree.Array (x : _) -> do
+            xUnref <- resolveRef x
+            pushStack xUnref
+            -- We use traverse along the elements; important therefore is that each
+            -- one lines up the next validator on the stack
+            xs' <- traverse (validateAnnTerm . runIdentity) ls
+            -- When the list is all valid, the result is valid
+            if all isValid xs'
+              then succeedMatch . List $ ListTerm xs'
+              else failMatch (List $ ListTerm xs') FailureBelow
+          _ -> failMatch (unvalidated at) TypeMismatch
 
 succeedMatch ::
   AnnTerm ValidatedWith ->
@@ -345,14 +380,18 @@ succeedMatch at = do
 
 -- | Mark that validation failed with the given reason
 failMatch ::
-  AnnTerm Identity ->
+  AnnTerm ValidatedWith ->
   ValidationFailure ->
   ValidateM VTerm
 failMatch at failReason = do
   popStack False
-  pure $ Invalid uat failReason
-  where
-    uat = unvalidated at
+  pure $ Invalid at failReason
+
+-- | Push an item onto the validation stack
+--
+--   We call this as we traverse the tree downwards.
+pushStack :: CTree MonoRef -> ValidateM ()
+pushStack ct = modify @"validationStack" (ct NE.<|)
 
 -- | Pop an item off of the top of the parsing stack.
 --
@@ -389,10 +428,12 @@ popStack vres = do
         -- Array which has completed validation
         CTree.Array [] ->
           popStack vres
-        -- Remaining elements in the array to parse
-        CTree.Array xs ->
+        -- Remaining elements in the array to parse. We push the first one onto
+        -- the stack
+        CTree.Array (x : xs) -> do
+          x' <- resolveRef x
           put @"validationStack" $
-            CTree.Array xs NE.:| restStack
+            x' NE.<| CTree.Array xs NE.:| restStack
         CTree.Choice (x NE.:| []) -> do
           x' <- resolveRef x
           -- Final option. We replace the choice constructor with the option
@@ -443,10 +484,25 @@ decBounds (OIBounded mlb mub) = case mub of
         mub' = fmap (\x -> min 1 (x - 1)) mub
      in Just $ OIBounded mlb' mub'
 
+-- | Resolve a reference, and set the name of the resolved reference in the
+-- context.
 resolveRef :: CTree.Node MonoRef -> ValidateM (CTree MonoRef)
 resolveRef (MIt it) = pure it
-resolveRef (MRuleRef n) = do
+resolveRef (MRuleRef n@(Name txt)) = do
+  modify @"annCtx" (field @"ruleName" .~ txt)
   CTree.CTreeRoot cddl <- ask @"cddl"
   case M.lookup n cddl of
     Just (Identity node) -> resolveRef node
     Nothing -> error $ "Missing reference " <> show n
+
+-- | We denote some CTree nodes as "control nodes" - that is, they do not
+-- correspond themselves to a CBOR production, but instead control the parsing
+-- of child nodes. We push control nodes onto the stack, but do not directly
+-- match them against CBOR terms. Instead, they are considered when we pop
+-- elements off of the stack.
+--
+-- TODO Better story for range and control nodes
+isControlNode :: CTree MonoRef -> ValidateM (Maybe (CTree MonoRef))
+isControlNode (CTree.Choice (x NE.:| _)) = Just <$> resolveRef x
+isControlNode (CTree.Occur x _) = Just <$> resolveRef x
+isControlNode _ = pure Nothing
