@@ -314,14 +314,18 @@ data Constrained where
   Constrained ::
     forall a.
     { value :: Value a,
-      constraint :: ValueConstraint a
+      constraint :: ValueConstraint a,
+      -- | Sometimes constraints reference rules. In this case we need to
+      -- collect the references in order to traverse them when collecting all
+      -- relevant rules.
+      refs :: [Rule]
     } ->
     Constrained
 
 deriving instance Show Constrained
 
 unconstrained :: Value a -> Constrained
-unconstrained v = Constrained v def
+unconstrained v = Constrained v def []
 
 -- | A constraint on a 'Value' is something applied via CtlOp or RangeOp on a
 -- Type2, forming a Type1.
@@ -374,7 +378,8 @@ instance IsSize (Word64, Word64) where
 -- | Declare a size constraint on an int-style type.
 sized :: (IsSizeable a, IsSize s) => Value a -> s -> Constrained
 sized v sz =
-  Constrained v $
+  Constrained
+    v
     ValueConstraint
       { applyConstraint = \t2 ->
           C.Type1
@@ -382,10 +387,12 @@ sized v sz =
             (Just (C.CtrlOp CtlOp.Size, sizeAsCDDL sz)),
         showConstraint = ".size " <> sizeAsString sz
       }
+    []
 
 cbor :: Value ByteString -> Rule -> Constrained
-cbor v (Named n _ _) =
-  Constrained v $
+cbor v r@(Named n _ _) =
+  Constrained
+    v
     ValueConstraint
       { applyConstraint = \t2 ->
           C.Type1
@@ -393,10 +400,12 @@ cbor v (Named n _ _) =
             (Just (C.CtrlOp CtlOp.Cbor, C.T2Name (C.Name n) Nothing)),
         showConstraint = ".cbor " <> T.unpack n
       }
+    [r]
 
 le :: Value Int -> Word64 -> Constrained
 le v bound =
-  Constrained v $
+  Constrained
+    v
     ValueConstraint
       { applyConstraint = \t2 ->
           C.Type1
@@ -404,6 +413,7 @@ le v bound =
             (Just (C.CtrlOp CtlOp.Le, C.T2Value (C.VUInt $ fromIntegral bound))),
         showConstraint = ".le " <> show bound
       }
+    []
 
 -- Ranges
 
@@ -817,6 +827,7 @@ collectFrom topR =
       -- Note that the parameters here may be different, so this doesn't live
       -- under the guard
       mapM_ goT2 $ args g
+    goT2 (T2Basic (Constrained _ _ refs)) = mapM_ goRule refs
     goT2 _ = pure ()
     goArrayEntry (ArrayEntry (Just k) t0 _) = goKey k >> goT0 t0
     goArrayEntry (ArrayEntry Nothing t0 _) = goT0 t0
@@ -881,7 +892,7 @@ toCDDL hdl =
 
     toCDDLType1 :: Type2 -> C.Type1
     toCDDLType1 = \case
-      T2Basic (Constrained x constr) ->
+      T2Basic (Constrained x constr _) ->
         -- TODO Need to handle choices at the top level
         applyConstraint constr (C.T2Name (toCDDLPostlude x) Nothing)
       T2Literal l -> toCDDLRanged l
