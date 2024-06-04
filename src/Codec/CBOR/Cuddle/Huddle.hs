@@ -814,7 +814,9 @@ collectFrom topR =
       when (HaskMap.notMember n gRules) $ do
         modify (over _3 $ HaskMap.insert n (fmap callToDef r))
         goT0 (body g)
-        mapM_ goT2 $ args g
+      -- Note that the parameters here may be different, so this doesn't live
+      -- under the guard
+      mapM_ goT2 $ args g
     goT2 _ = pure ()
     goArrayEntry (ArrayEntry (Just k) t0 _) = goKey k >> goT0 t0
     goArrayEntry (ArrayEntry Nothing t0 _) = goT0 t0
