@@ -37,6 +37,8 @@ import Data.Functor.Identity (Identity (runIdentity))
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
+import Data.Text (Text)
+import Data.Text qualified as T
 import Data.Word (Word64)
 import GHC.Generics (Generic)
 import System.Random.Stateful
@@ -130,6 +132,9 @@ genRandomM = asksM @"fakeSeed" randomM
 
 genBytes :: forall g. (RandomGen g) => Int -> M g ByteString
 genBytes n = asksM @"fakeSeed" $ uniformByteStringM n
+
+genText :: forall g. (RandomGen g) => Int -> M g Text
+genText n = pure $ T.pack $ take n ['a' ..]
 
 --------------------------------------------------------------------------------
 -- Combinators
@@ -274,6 +279,7 @@ genForCTree (CTree.Control op target controller) = do
   ct <- resolveIfRef controller
   case (op, ct) of
     (CtlOp.Size, CTree.Literal (VUInt n)) -> case tt of
+      CTree.Postlude PTText -> S . TString <$> genText (fromIntegral n)
       CTree.Postlude PTBytes -> S . TBytes <$> genBytes (fromIntegral n)
       CTree.Postlude PTUInt -> S . TInteger <$> genUniformRM (0, 2 ^ n - 1)
       _ -> error "Cannot apply size operator to target "
@@ -282,6 +288,9 @@ genForCTree (CTree.Control op target controller) = do
       t <- resolveIfRef to
       case (f, t) of
         (CTree.Literal (VUInt f1), CTree.Literal (VUInt t1)) -> case tt of
+          CTree.Postlude PTText ->
+            genUniformRM (fromIntegral f1, fromIntegral t1)
+              >>= (fmap (S . TString) . genText)
           CTree.Postlude PTBytes ->
             genUniformRM (fromIntegral f1, fromIntegral t1)
               >>= (fmap (S . TBytes) . genBytes)
