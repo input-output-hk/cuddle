@@ -11,7 +11,7 @@
 {-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
 
 -- | Generate example CBOR given a CDDL specification
-module Codec.CBOR.Cuddle.CBOR.Gen where
+module Codec.CBOR.Cuddle.CBOR.Gen (generateCBORTerm) where
 
 import Capability.Reader
 import Capability.Sink (HasSink)
@@ -28,6 +28,8 @@ import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
 import Codec.CBOR.Cuddle.CDDL.Postlude (PTerm (..))
 import Codec.CBOR.Cuddle.CDDL.Resolve (MonoRef (..))
 import Codec.CBOR.Term (Term (..))
+import Codec.CBOR.Term qualified as CBOR
+import Codec.CBOR.Write qualified as CBOR
 import Control.Monad (replicateM, (<=<))
 import Control.Monad.Reader (Reader, runReader)
 import Control.Monad.State.Strict (StateT, runStateT)
@@ -56,8 +58,6 @@ import System.Random.Stateful
 --------------------------------------------------------------------------------
 -- Generator infrastructure
 --------------------------------------------------------------------------------
-
-type TypeMap = Map.Map Name (Gen Term)
 
 -- | Generator context, parametrised over the type of the random seed
 data GenEnv g = GenEnv
@@ -306,6 +306,11 @@ genForCTree (CTree.Control op target controller) = do
       error $
         "Invalid controller for .size operator: "
           <> show controller
+    (CtlOp.Cbor, _) -> do
+      enc <- genForCTree ct
+      case enc of
+        S x -> pure . S . TBytes . CBOR.toStrictByteString $ CBOR.encodeTerm x
+        _ -> error "Controller does not correspond to a single term"
     _ -> genForNode target
 genForCTree (CTree.Enum node) = do
   tree <- resolveIfRef node
