@@ -262,11 +262,13 @@ genForCTree (CTree.Range from to _bounds) = do
   term1 <- genForNode from
   term2 <- genForNode to
   case (term1, term2) of
+    (S (TInt a), S (TInt b)) -> genUniformRM (a, b) <&> S . TInt
+    (S (TInt a), S (TInteger b)) -> genUniformRM (fromIntegral a, b) <&> S . TInteger
     (S (TInteger a), S (TInteger b)) -> genUniformRM (a, b) <&> S . TInteger
     (S (THalf a), S (THalf b)) -> genUniformRM (a, b) <&> S . THalf
     (S (TFloat a), S (TFloat b)) -> genUniformRM (a, b) <&> S . TFloat
     (S (TDouble a), S (TDouble b)) -> genUniformRM (a, b) <&> S . TDouble
-    _ -> error "Cannot apply range operator to non-numeric types"
+    x -> error $ "Cannot apply range operator to non-numeric types: " <> show x
 genForCTree (CTree.Control op target controller) = do
   tt <- resolveIfRef target
   ct <- resolveIfRef controller
