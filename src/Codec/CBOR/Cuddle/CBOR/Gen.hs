@@ -277,6 +277,22 @@ genForCTree (CTree.Control op target controller) = do
       CTree.Postlude PTBytes -> S . TBytes <$> genBytes (fromIntegral n)
       CTree.Postlude PTUInt -> S . TInteger <$> genUniformRM (0, 2 ^ n - 1)
       _ -> error "Cannot apply size operator to target "
+    (CtlOp.Size, CTree.Range {CTree.from, CTree.to}) -> do
+      f <- resolveIfRef from
+      t <- resolveIfRef to
+      case (f, t) of
+        (CTree.Literal (VUInt f1), CTree.Literal (VUInt t1)) -> case tt of
+          CTree.Postlude PTBytes ->
+            genUniformRM (fromIntegral f1, fromIntegral t1)
+              >>= (fmap (S . TBytes) . genBytes)
+          CTree.Postlude PTUInt ->
+            S . TInteger
+              <$> genUniformRM (fromIntegral f1, fromIntegral t1)
+          _ -> error $ "Cannot apply size operator to target: " <> show tt
+        _ ->
+          error $
+            "Invalid controller for .size operator: "
+              <> show controller
     (CtlOp.Size, _) ->
       error $
         "Invalid controller for .size operator: "
