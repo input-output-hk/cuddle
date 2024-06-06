@@ -54,6 +54,7 @@ import System.Random.Stateful
     randomM,
     uniformByteStringM,
   )
+import qualified Data.ByteString.Base16 as Base16
 
 --------------------------------------------------------------------------------
 -- Generator infrastructure
@@ -383,7 +384,9 @@ genValue (VFloat16 i) = pure . THalf $ i
 genValue (VFloat32 i) = pure . TFloat $ i
 genValue (VFloat64 i) = pure . TDouble $ i
 genValue (VText t) = pure $ TString t
-genValue (VBytes b) = pure $ TBytes b
+genValue (VBytes b) = case Base16.decode b of 
+  Right bHex -> pure $ TBytes bHex
+  Left err -> error $ "Unable to parse hex encoded bytestring: " <> err
 
 --------------------------------------------------------------------------------
 -- Generator functions
