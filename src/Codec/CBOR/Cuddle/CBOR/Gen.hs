@@ -34,6 +34,7 @@ import Control.Monad (replicateM, (<=<))
 import Control.Monad.Reader (Reader, runReader)
 import Control.Monad.State.Strict (StateT, runStateT)
 import Data.ByteString (ByteString)
+import Data.ByteString.Base16 qualified as Base16
 import Data.Functor ((<&>))
 import Data.Functor.Identity (Identity (runIdentity))
 import Data.List.NonEmpty qualified as NE
@@ -48,13 +49,11 @@ import System.Random.Stateful
     RandomGen (genShortByteString, genWord32, genWord64),
     RandomGenM,
     StatefulGen (..),
-    StdGen,
     UniformRange (uniformRM),
     applyRandomGenM,
     randomM,
     uniformByteStringM,
   )
-import qualified Data.ByteString.Base16 as Base16
 
 --------------------------------------------------------------------------------
 -- Generator infrastructure
@@ -110,8 +109,6 @@ instance (RandomGen g) => StatefulGen (CapGenM g) (M g) where
 instance (RandomGen r) => RandomGenM (CapGenM r) r (M r) where
   applyRandomGenM f _ = state @"randomSeed" f
 
-type Gen = M StdGen
-
 runGen :: M g a -> GenEnv g -> GenState g -> (a, GenState g)
 runGen (M m) env st = runReader (runStateT m st) env
 
@@ -141,13 +138,13 @@ genText n = pure $ T.pack $ take n ['a' ..]
 -- Combinators
 --------------------------------------------------------------------------------
 
-choose :: [a] -> Gen a
+choose :: (RandomGen g) => [a] -> M g a
 choose xs = genUniformRM (0, length xs) >>= \i -> pure $ xs !! i
 
-oneOf :: [Gen a] -> Gen a
+oneOf :: (RandomGen g) => [M g a] -> M g a
 oneOf xs = genUniformRM (0, length xs) >>= \i -> xs !! i
 
-oneOfGenerated :: Gen [a] -> Gen a
+oneOfGenerated :: (RandomGen g) => M g [a] -> M g a
 oneOfGenerated genXs = genXs >>= choose
 
 --------------------------------------------------------------------------------
@@ -155,7 +152,7 @@ oneOfGenerated genXs = genXs >>= choose
 --------------------------------------------------------------------------------
 
 -- | Primitive types defined by the CDDL specification, with their generators
-genPostlude :: PTerm -> Gen Term
+genPostlude :: (RandomGen g) => PTerm -> M g Term
 genPostlude pt = case pt of
   PTBool ->
     genRandomM
@@ -233,7 +230,7 @@ pattern G xs = GroupTerm xs
 -- Generator functions
 --------------------------------------------------------------------------------
 
-genForCTree :: CTree MonoRef -> Gen WrappedTerm
+genForCTree :: (RandomGen g) => CTree MonoRef -> M g WrappedTerm
 genForCTree (CTree.Literal v) = S <$> genValue v
 genForCTree (CTree.Postlude pt) = S <$> genPostlude pt
 genForCTree (CTree.Map nodes) = do
@@ -322,12 +319,12 @@ genForCTree (CTree.Enum node) = do
     _ -> error "Attempt to form an enum from something other than a group"
 genForCTree (CTree.Unwrap node) = genForCTree =<< resolveIfRef node
 
-genForNode :: CTree.Node MonoRef -> Gen WrappedTerm
+genForNode :: (RandomGen g) => CTree.Node MonoRef -> M g WrappedTerm
 genForNode = genForCTree <=< resolveIfRef
 
 -- | Take something which might be a reference and resolve it to the relevant
 -- Tree, following multiple links if necessary.
-resolveIfRef :: CTree.Node MonoRef -> Gen (CTree MonoRef)
+resolveIfRef :: (RandomGen g) => CTree.Node MonoRef -> M g (CTree MonoRef)
 resolveIfRef (MIt a) = pure a
 resolveIfRef (MRuleRef n) = do
   (CTreeRoot cddl) <- ask @"cddl"
@@ -343,7 +340,7 @@ resolveIfRef (MRuleRef n) = do
 -- This will throw an error if the generated item does not correspond to a
 -- single CBOR term (e.g. if the name resolves to a group, which cannot be
 -- generated outside a context).
-genForName :: Name -> Gen Term
+genForName :: (RandomGen g) => Name -> M g Term
 genForName n = do
   (CTreeRoot cddl) <- ask @"cddl"
   case Map.lookup n cddl of
@@ -359,9 +356,10 @@ genForName n = do
 
 -- | Apply an occurence indicator to a group entry
 applyOccurenceIndicator ::
+  (RandomGen g) =>
   OccurrenceIndicator ->
-  Gen WrappedTerm ->
-  Gen WrappedTerm
+  M g WrappedTerm ->
+  M g WrappedTerm
 applyOccurenceIndicator OIOptional oldGen =
   genRandomM >>= \case
     False -> pure $ G mempty
@@ -376,7 +374,7 @@ applyOccurenceIndicator (OIBounded mlb mub) oldGen =
   genUniformRM (fromMaybe 0 mlb :: Word64, fromMaybe 10 mub)
     >>= \i -> G <$> replicateM (fromIntegral i) oldGen
 
-genValue :: Value -> Gen Term
+genValue :: (RandomGen g) => Value -> M g Term
 genValue (VUInt i) = pure . TInt $ fromIntegral i
 genValue (VNInt i) = pure . TInt $ fromIntegral (-i)
 genValue (VBignum i) = pure $ TInteger i
@@ -384,7 +382,7 @@ genValue (VFloat16 i) = pure . THalf $ i
 genValue (VFloat32 i) = pure . TFloat $ i
 genValue (VFloat64 i) = pure . TDouble $ i
 genValue (VText t) = pure $ TString t
-genValue (VBytes b) = case Base16.decode b of 
+genValue (VBytes b) = case Base16.decode b of
   Right bHex -> pure $ TBytes bHex
   Left err -> error $ "Unable to parse hex encoded bytestring: " <> err
 
@@ -392,7 +390,7 @@ genValue (VBytes b) = case Base16.decode b of
 -- Generator functions
 --------------------------------------------------------------------------------
 
-generateCBORTerm :: CTreeRoot' Identity MonoRef -> Name -> StdGen -> Term
+generateCBORTerm :: (RandomGen g) => CTreeRoot' Identity MonoRef -> Name -> g -> Term
 generateCBORTerm cddl n stdGen =
   let genEnv = GenEnv {cddl, fakeSeed = CapGenM}
       genState = GenState {randomSeed = stdGen}
