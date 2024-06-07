@@ -368,7 +368,7 @@ applyOccurenceIndicator OIZeroOrMore oldGen =
   genUniformRM (0 :: Int, 10) >>= \i ->
     G <$> replicateM i oldGen
 applyOccurenceIndicator OIOneOrMore oldGen =
-  genUniformRM (0 :: Int, 10) >>= \i ->
+  genUniformRM (1 :: Int, 10) >>= \i ->
     G <$> replicateM i oldGen
 applyOccurenceIndicator (OIBounded mlb mub) oldGen =
   genUniformRM (fromMaybe 0 mlb :: Word64, fromMaybe 10 mub)
