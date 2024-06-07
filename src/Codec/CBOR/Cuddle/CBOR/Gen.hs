@@ -30,7 +30,7 @@ import Codec.CBOR.Cuddle.CDDL.Resolve (MonoRef (..))
 import Codec.CBOR.Term (Term (..))
 import Codec.CBOR.Term qualified as CBOR
 import Codec.CBOR.Write qualified as CBOR
-import Control.Monad (replicateM, (<=<))
+import Control.Monad (join, replicateM, (<=<))
 import Control.Monad.Reader (Reader, runReader)
 import Control.Monad.State.Strict (StateT, runStateT)
 import Data.ByteString (ByteString)
@@ -42,7 +42,7 @@ import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import Data.Text qualified as T
-import Data.Word (Word64)
+import Data.Word (Word32, Word64)
 import GHC.Generics (Generic)
 import System.Random.Stateful
   ( Random,
@@ -132,7 +132,7 @@ genBytes :: forall g. (RandomGen g) => Int -> M g ByteString
 genBytes n = asksM @"fakeSeed" $ uniformByteStringM n
 
 genText :: forall g. (RandomGen g) => Int -> M g Text
-genText n = pure $ T.pack $ take n ['a' ..]
+genText n = pure $ T.pack . take n . join $ repeat ['a' .. 'z']
 
 --------------------------------------------------------------------------------
 -- Combinators
@@ -158,7 +158,7 @@ genPostlude pt = case pt of
     genRandomM
       <&> TBool
   PTUInt ->
-    genUniformRM (minBound :: Word, maxBound)
+    genUniformRM (minBound :: Word32, maxBound)
       <&> TInteger
         . fromIntegral
   PTNInt ->
