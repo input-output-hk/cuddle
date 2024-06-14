@@ -789,11 +789,11 @@ binding2 fRule t0 t1 =
 --------------------------------------------------------------------------------
 
 -- | Collect all rules starting from a given point.
-collectFrom :: Rule -> Huddle
-collectFrom topR =
+collectFrom :: [Rule] -> Huddle
+collectFrom topRs =
   toHuddle $
     execState
-      (goRule topR)
+      (traverse goRule topRs)
       (HaskMap.empty, HaskMap.empty, HaskMap.empty)
   where
     toHuddle (rules, groups, gRules) =
