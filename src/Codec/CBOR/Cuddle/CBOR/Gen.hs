@@ -367,7 +367,7 @@ resolveIfRef (MRuleRef n) = do
   -- Since we follow a reference, we increase the 'depth' of the gen monad.
   modify @"depth" (+ 1)
   case Map.lookup n cddl of
-    Nothing -> error "Unbound reference"
+    Nothing -> error $ "Unbound reference: " <> show n
     Just val -> resolveIfRef $ runIdentity val
 
 -- | Generate a CBOR Term corresponding to a top-level name.
@@ -382,7 +382,7 @@ genForName :: (RandomGen g) => Name -> M g Term
 genForName n = do
   (CTreeRoot cddl) <- ask @"cddl"
   case Map.lookup n cddl of
-    Nothing -> error "Unbound reference"
+    Nothing -> error $ "Unbound reference: " <> show n
     Just val ->
       genForNode (runIdentity val) >>= \case
         S x -> pure x
