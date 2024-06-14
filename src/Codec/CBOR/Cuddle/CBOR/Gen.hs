@@ -16,7 +16,7 @@ module Codec.CBOR.Cuddle.CBOR.Gen (generateCBORTerm) where
 import Capability.Reader
 import Capability.Sink (HasSink)
 import Capability.Source (HasSource, MonadState (..))
-import Capability.State (HasState, state)
+import Capability.State (HasState, get, modify, state)
 import Codec.CBOR.Cuddle.CDDL
   ( Name (..),
     OccurrenceIndicator (..),
@@ -37,6 +37,7 @@ import Data.ByteString (ByteString)
 import Data.ByteString.Base16 qualified as Base16
 import Data.Functor ((<&>))
 import Data.Functor.Identity (Identity (runIdentity))
+import Data.List (foldl')
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
@@ -67,9 +68,14 @@ data GenEnv g = GenEnv
   }
   deriving (Generic)
 
-newtype GenState g = GenState
+data GenState g = GenState
   { -- | Actual seed
-    randomSeed :: g
+    randomSeed :: g,
+    -- | Depth of the generator. This measures the number of references we
+    -- follow. As we go deeper into the tree, we try to reduce the likelihood of
+    -- following recursive paths, and generate shorter lists where allowed by
+    -- the occurrence bounds.
+    depth :: Int
   }
   deriving (Generic)
 
@@ -79,6 +85,12 @@ newtype M g a = M {runM :: StateT (GenState g) (Reader (GenEnv g)) a}
     (HasSource "randomSeed" g, HasSink "randomSeed" g, HasState "randomSeed" g)
     via Field
           "randomSeed"
+          ()
+          (MonadState (StateT (GenState g) (Reader (GenEnv g))))
+  deriving
+    (HasSource "depth" Int, HasSink "depth" Int, HasState "depth" Int)
+    via Field
+          "depth"
           ()
           (MonadState (StateT (GenState g) (Reader (GenEnv g))))
   deriving
@@ -124,6 +136,25 @@ asksM f = f =<< ask @tag
 
 genUniformRM :: forall a g. (UniformRange a, RandomGen g) => (a, a) -> M g a
 genUniformRM = asksM @"fakeSeed" . uniformRM
+
+-- | Generate a random number in a given range, biased increasingly towards the
+-- lower end as the depth parameter increases.
+genDepthBiasedRM ::
+  forall a g.
+  (Ord a, UniformRange a, RandomGen g) =>
+  (a, a) ->
+  M g a
+genDepthBiasedRM bounds = do
+  fs <- ask @"fakeSeed"
+  d <- get @"depth"
+  samples <- replicateM d (uniformRM bounds fs)
+  pure $ minimum samples
+
+-- | Generates a bool, increasingly likely to be 'False' as the depth increases.
+genDepthBiasedBool :: forall g. (RandomGen g) => M g Bool
+genDepthBiasedBool = do
+  d <- get @"depth"
+  foldl' (&&) True <$> replicateM d genRandomM
 
 genRandomM :: forall g a. (Random a, RandomGen g) => M g a
 genRandomM = asksM @"fakeSeed" randomM
@@ -333,6 +364,8 @@ resolveIfRef :: (RandomGen g) => CTree.Node MonoRef -> M g (CTree MonoRef)
 resolveIfRef (MIt a) = pure a
 resolveIfRef (MRuleRef n) = do
   (CTreeRoot cddl) <- ask @"cddl"
+  -- Since we follow a reference, we increase the 'depth' of the gen monad.
+  modify @"depth" (+ 1)
   case Map.lookup n cddl of
     Nothing -> error "Unbound reference"
     Just val -> resolveIfRef $ runIdentity val
@@ -366,17 +399,17 @@ applyOccurenceIndicator ::
   M g WrappedTerm ->
   M g WrappedTerm
 applyOccurenceIndicator OIOptional oldGen =
-  genRandomM >>= \case
+  genDepthBiasedBool >>= \case
     False -> pure $ G mempty
     True -> oldGen
 applyOccurenceIndicator OIZeroOrMore oldGen =
-  genUniformRM (0 :: Int, 10) >>= \i ->
+  genDepthBiasedRM (0 :: Int, 10) >>= \i ->
     G <$> replicateM i oldGen
 applyOccurenceIndicator OIOneOrMore oldGen =
-  genUniformRM (1 :: Int, 10) >>= \i ->
+  genDepthBiasedRM (1 :: Int, 10) >>= \i ->
     G <$> replicateM i oldGen
 applyOccurenceIndicator (OIBounded mlb mub) oldGen =
-  genUniformRM (fromMaybe 0 mlb :: Word64, fromMaybe 10 mub)
+  genDepthBiasedRM (fromMaybe 0 mlb :: Word64, fromMaybe 10 mub)
     >>= \i -> G <$> replicateM (fromIntegral i) oldGen
 
 genValue :: (RandomGen g) => Value -> M g Term
@@ -398,5 +431,5 @@ genValue (VBytes b) = case Base16.decode b of
 generateCBORTerm :: (RandomGen g) => CTreeRoot' Identity MonoRef -> Name -> g -> Term
 generateCBORTerm cddl n stdGen =
   let genEnv = GenEnv {cddl, fakeSeed = CapGenM}
-      genState = GenState {randomSeed = stdGen}
+      genState = GenState {randomSeed = stdGen, depth = 1}
    in evalGen (genForName n) genEnv genState
