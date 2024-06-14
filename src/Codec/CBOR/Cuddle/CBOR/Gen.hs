@@ -318,6 +318,11 @@ genForCTree (CTree.Enum node) = do
       genForNode $ nodes !! ix
     _ -> error "Attempt to form an enum from something other than a group"
 genForCTree (CTree.Unwrap node) = genForCTree =<< resolveIfRef node
+genForCTree (CTree.Tag tag node) = do
+  enc <- genForNode node
+  case enc of
+    S x -> pure $ S $ TTagged tag x
+    _ -> error "Tag controller does not correspond to a single term"
 
 genForNode :: (RandomGen g) => CTree.Node MonoRef -> M g WrappedTerm
 genForNode = genForCTree <=< resolveIfRef
