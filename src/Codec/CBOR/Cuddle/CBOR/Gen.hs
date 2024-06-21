@@ -308,6 +308,14 @@ genForCTree (CTree.Control op target controller) = do
   tt <- resolveIfRef target
   ct <- resolveIfRef controller
   case (op, ct) of
+    (CtlOp.Le, CTree.Literal (VUInt n)) -> case tt of 
+      CTree.Postlude PTUInt -> S. TInteger <$> genUniformRM (0, fromIntegral n)
+      _ -> error "Cannot apply le operator to target"
+    (CtlOp.Le, _) -> error $ "Invalid controller for .le operator: " <> show controller
+    (CtlOp.Lt, CTree.Literal (VUInt n)) -> case tt of 
+      CTree.Postlude PTUInt -> S. TInteger <$> genUniformRM (0, fromIntegral n - 1)
+      _ -> error "Cannot apply lt operator to target"
+    (CtlOp.Lt, _) -> error $ "Invalid controller for .lt operator: " <> show controller
     (CtlOp.Size, CTree.Literal (VUInt n)) -> case tt of
       CTree.Postlude PTText -> S . TString <$> genText (fromIntegral n)
       CTree.Postlude PTBytes -> S . TBytes <$> genBytes (fromIntegral n)
