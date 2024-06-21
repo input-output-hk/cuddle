@@ -11,7 +11,7 @@
 {-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
 
 -- | Generate example CBOR given a CDDL specification
-module Codec.CBOR.Cuddle.CBOR.Gen (generateCBORTerm) where
+module Codec.CBOR.Cuddle.CBOR.Gen (generateCBORTerm, generateCBORTerm') where
 
 import Capability.Reader
 import Capability.Sink (HasSink)
@@ -55,6 +55,7 @@ import System.Random.Stateful
     randomM,
     uniformByteStringM,
   )
+import Data.Bifunctor (second)
 
 --------------------------------------------------------------------------------
 -- Generator infrastructure
@@ -433,3 +434,9 @@ generateCBORTerm cddl n stdGen =
   let genEnv = GenEnv {cddl, fakeSeed = CapGenM}
       genState = GenState {randomSeed = stdGen, depth = 1}
    in evalGen (genForName n) genEnv genState
+
+generateCBORTerm' :: (RandomGen g) => CTreeRoot' Identity MonoRef -> Name -> g -> (Term, g)
+generateCBORTerm' cddl n stdGen =
+  let genEnv = GenEnv {cddl, fakeSeed = CapGenM}
+      genState = GenState {randomSeed = stdGen, depth = 1}
+   in second randomSeed $ runGen (genForName n) genEnv genState
