@@ -105,10 +105,10 @@ genericSpec =
         dict = binding2 $ \k v -> "dict" =:= mp [0 <+ asKey k ==> v]
      in do
           it "Should bind a single parameter" $
-            toCDDL (collectFrom ("intset" =:= set VUInt))
+            toCDDL (collectFrom ["intset" =:= set VUInt])
               `shouldMatchParseCDDL` "intset = set<uint>\n set<a0> = [* a0]"
           it "Should bind two parameters" $
-            toCDDL (collectFrom ("mymap" =:= dict VUInt VText))
+            toCDDL (collectFrom ["mymap" =:= dict VUInt VText])
               `shouldMatchParseCDDL` "mymap = dict<uint, text>\n dict<a0, b0> = {* a0 => b0}"
 
 --------------------------------------------------------------------------------

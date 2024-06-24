@@ -183,9 +183,11 @@ buildRefCTree rules = CTreeRoot $ fmap toCTreeRule rules
         Ref n (fromGenArgs margs)
     toCTreeT2 (T2Enum g) = toCTreeEnum g
     toCTreeT2 (T2EnumRef n margs) = Ref n $ fromGenArgs margs
-    toCTreeT2 (T2Tag _mint t0) =
+    toCTreeT2 (T2Tag Nothing t0) =
       -- Currently not validating tags
       toCTreeT0 t0
+    toCTreeT2 (T2Tag (Just tag) t0) =
+      It . CTree.Tag tag $ toCTreeT0 t0
     toCTreeT2 (T2DataItem _maj _mmin) =
       -- We don't validate numerical items yet
       It $ CTree.Postlude PTAny

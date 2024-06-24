@@ -13,6 +13,7 @@ import Codec.CBOR.Cuddle.CDDL.Postlude (PTerm)
 import Data.Hashable (Hashable)
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as Map
+import Data.Word (Word64)
 import GHC.Generics (Generic)
 
 --------------------------------------------------------------------------------
@@ -42,6 +43,7 @@ data CTree f
   | Control {op :: CtlOp, target :: Node f, controller :: Node f}
   | Enum (Node f)
   | Unwrap (Node f)
+  | Tag Word64 (Node f)
   deriving (Generic)
 
 -- | Traverse the CTree, carrying out the given operation at each node
@@ -67,6 +69,7 @@ traverseCTree atNode (Control o t c) = do
   pure $ Control o t' c'
 traverseCTree atNode (Enum ref) = Enum <$> atNode ref
 traverseCTree atNode (Unwrap ref) = Unwrap <$> atNode ref
+traverseCTree atNode (Tag i ref) = Tag i <$> atNode ref
 
 type Node f = f (CTree f)
 

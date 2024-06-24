@@ -11,12 +11,12 @@
 {-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
 
 -- | Generate example CBOR given a CDDL specification
-module Codec.CBOR.Cuddle.CBOR.Gen where
+module Codec.CBOR.Cuddle.CBOR.Gen (generateCBORTerm, generateCBORTerm') where
 
 import Capability.Reader
 import Capability.Sink (HasSink)
 import Capability.Source (HasSource, MonadState (..))
-import Capability.State (HasState, state)
+import Capability.State (HasState, get, modify, state)
 import Codec.CBOR.Cuddle.CDDL
   ( Name (..),
     OccurrenceIndicator (..),
@@ -28,36 +28,38 @@ import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
 import Codec.CBOR.Cuddle.CDDL.Postlude (PTerm (..))
 import Codec.CBOR.Cuddle.CDDL.Resolve (MonoRef (..))
 import Codec.CBOR.Term (Term (..))
-import Control.Monad (replicateM, (<=<))
+import Codec.CBOR.Term qualified as CBOR
+import Codec.CBOR.Write qualified as CBOR
+import Control.Monad (join, replicateM, (<=<))
 import Control.Monad.Reader (Reader, runReader)
 import Control.Monad.State.Strict (StateT, runStateT)
 import Data.ByteString (ByteString)
+import Data.ByteString.Base16 qualified as Base16
 import Data.Functor ((<&>))
 import Data.Functor.Identity (Identity (runIdentity))
+import Data.List (foldl')
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import Data.Text qualified as T
-import Data.Word (Word64)
+import Data.Word (Word32, Word64)
 import GHC.Generics (Generic)
 import System.Random.Stateful
   ( Random,
     RandomGen (genShortByteString, genWord32, genWord64),
     RandomGenM,
     StatefulGen (..),
-    StdGen,
     UniformRange (uniformRM),
     applyRandomGenM,
     randomM,
     uniformByteStringM,
   )
+import Data.Bifunctor (second)
 
 --------------------------------------------------------------------------------
 -- Generator infrastructure
 --------------------------------------------------------------------------------
-
-type TypeMap = Map.Map Name (Gen Term)
 
 -- | Generator context, parametrised over the type of the random seed
 data GenEnv g = GenEnv
@@ -67,9 +69,14 @@ data GenEnv g = GenEnv
   }
   deriving (Generic)
 
-newtype GenState g = GenState
+data GenState g = GenState
   { -- | Actual seed
-    randomSeed :: g
+    randomSeed :: g,
+    -- | Depth of the generator. This measures the number of references we
+    -- follow. As we go deeper into the tree, we try to reduce the likelihood of
+    -- following recursive paths, and generate shorter lists where allowed by
+    -- the occurrence bounds.
+    depth :: Int
   }
   deriving (Generic)
 
@@ -79,6 +86,12 @@ newtype M g a = M {runM :: StateT (GenState g) (Reader (GenEnv g)) a}
     (HasSource "randomSeed" g, HasSink "randomSeed" g, HasState "randomSeed" g)
     via Field
           "randomSeed"
+          ()
+          (MonadState (StateT (GenState g) (Reader (GenEnv g))))
+  deriving
+    (HasSource "depth" Int, HasSink "depth" Int, HasState "depth" Int)
+    via Field
+          "depth"
           ()
           (MonadState (StateT (GenState g) (Reader (GenEnv g))))
   deriving
@@ -109,8 +122,6 @@ instance (RandomGen g) => StatefulGen (CapGenM g) (M g) where
 instance (RandomGen r) => RandomGenM (CapGenM r) r (M r) where
   applyRandomGenM f _ = state @"randomSeed" f
 
-type Gen = M StdGen
-
 runGen :: M g a -> GenEnv g -> GenState g -> (a, GenState g)
 runGen (M m) env st = runReader (runStateT m st) env
 
@@ -127,6 +138,25 @@ asksM f = f =<< ask @tag
 genUniformRM :: forall a g. (UniformRange a, RandomGen g) => (a, a) -> M g a
 genUniformRM = asksM @"fakeSeed" . uniformRM
 
+-- | Generate a random number in a given range, biased increasingly towards the
+-- lower end as the depth parameter increases.
+genDepthBiasedRM ::
+  forall a g.
+  (Ord a, UniformRange a, RandomGen g) =>
+  (a, a) ->
+  M g a
+genDepthBiasedRM bounds = do
+  fs <- ask @"fakeSeed"
+  d <- get @"depth"
+  samples <- replicateM d (uniformRM bounds fs)
+  pure $ minimum samples
+
+-- | Generates a bool, increasingly likely to be 'False' as the depth increases.
+genDepthBiasedBool :: forall g. (RandomGen g) => M g Bool
+genDepthBiasedBool = do
+  d <- get @"depth"
+  foldl' (&&) True <$> replicateM d genRandomM
+
 genRandomM :: forall g a. (Random a, RandomGen g) => M g a
 genRandomM = asksM @"fakeSeed" randomM
 
@@ -134,19 +164,19 @@ genBytes :: forall g. (RandomGen g) => Int -> M g ByteString
 genBytes n = asksM @"fakeSeed" $ uniformByteStringM n
 
 genText :: forall g. (RandomGen g) => Int -> M g Text
-genText n = pure $ T.pack $ take n ['a' ..]
+genText n = pure $ T.pack . take n . join $ repeat ['a' .. 'z']
 
 --------------------------------------------------------------------------------
 -- Combinators
 --------------------------------------------------------------------------------
 
-choose :: [a] -> Gen a
+choose :: (RandomGen g) => [a] -> M g a
 choose xs = genUniformRM (0, length xs) >>= \i -> pure $ xs !! i
 
-oneOf :: [Gen a] -> Gen a
+oneOf :: (RandomGen g) => [M g a] -> M g a
 oneOf xs = genUniformRM (0, length xs) >>= \i -> xs !! i
 
-oneOfGenerated :: Gen [a] -> Gen a
+oneOfGenerated :: (RandomGen g) => M g [a] -> M g a
 oneOfGenerated genXs = genXs >>= choose
 
 --------------------------------------------------------------------------------
@@ -154,13 +184,13 @@ oneOfGenerated genXs = genXs >>= choose
 --------------------------------------------------------------------------------
 
 -- | Primitive types defined by the CDDL specification, with their generators
-genPostlude :: PTerm -> Gen Term
+genPostlude :: (RandomGen g) => PTerm -> M g Term
 genPostlude pt = case pt of
   PTBool ->
     genRandomM
       <&> TBool
   PTUInt ->
-    genUniformRM (minBound :: Word, maxBound)
+    genUniformRM (minBound :: Word32, maxBound)
       <&> TInteger
         . fromIntegral
   PTNInt ->
@@ -232,7 +262,7 @@ pattern G xs = GroupTerm xs
 -- Generator functions
 --------------------------------------------------------------------------------
 
-genForCTree :: CTree MonoRef -> Gen WrappedTerm
+genForCTree :: (RandomGen g) => CTree MonoRef -> M g WrappedTerm
 genForCTree (CTree.Literal v) = S <$> genValue v
 genForCTree (CTree.Postlude pt) = S <$> genPostlude pt
 genForCTree (CTree.Map nodes) = do
@@ -278,6 +308,14 @@ genForCTree (CTree.Control op target controller) = do
   tt <- resolveIfRef target
   ct <- resolveIfRef controller
   case (op, ct) of
+    (CtlOp.Le, CTree.Literal (VUInt n)) -> case tt of 
+      CTree.Postlude PTUInt -> S. TInteger <$> genUniformRM (0, fromIntegral n)
+      _ -> error "Cannot apply le operator to target"
+    (CtlOp.Le, _) -> error $ "Invalid controller for .le operator: " <> show controller
+    (CtlOp.Lt, CTree.Literal (VUInt n)) -> case tt of 
+      CTree.Postlude PTUInt -> S. TInteger <$> genUniformRM (0, fromIntegral n - 1)
+      _ -> error "Cannot apply lt operator to target"
+    (CtlOp.Lt, _) -> error $ "Invalid controller for .lt operator: " <> show controller
     (CtlOp.Size, CTree.Literal (VUInt n)) -> case tt of
       CTree.Postlude PTText -> S . TString <$> genText (fromIntegral n)
       CTree.Postlude PTBytes -> S . TBytes <$> genBytes (fromIntegral n)
@@ -306,6 +344,11 @@ genForCTree (CTree.Control op target controller) = do
       error $
         "Invalid controller for .size operator: "
           <> show controller
+    (CtlOp.Cbor, _) -> do
+      enc <- genForCTree ct
+      case enc of
+        S x -> pure . S . TBytes . CBOR.toStrictByteString $ CBOR.encodeTerm x
+        _ -> error "Controller does not correspond to a single term"
     _ -> genForNode target
 genForCTree (CTree.Enum node) = do
   tree <- resolveIfRef node
@@ -315,18 +358,25 @@ genForCTree (CTree.Enum node) = do
       genForNode $ nodes !! ix
     _ -> error "Attempt to form an enum from something other than a group"
 genForCTree (CTree.Unwrap node) = genForCTree =<< resolveIfRef node
+genForCTree (CTree.Tag tag node) = do
+  enc <- genForNode node
+  case enc of
+    S x -> pure $ S $ TTagged tag x
+    _ -> error "Tag controller does not correspond to a single term"
 
-genForNode :: CTree.Node MonoRef -> Gen WrappedTerm
+genForNode :: (RandomGen g) => CTree.Node MonoRef -> M g WrappedTerm
 genForNode = genForCTree <=< resolveIfRef
 
 -- | Take something which might be a reference and resolve it to the relevant
 -- Tree, following multiple links if necessary.
-resolveIfRef :: CTree.Node MonoRef -> Gen (CTree MonoRef)
+resolveIfRef :: (RandomGen g) => CTree.Node MonoRef -> M g (CTree MonoRef)
 resolveIfRef (MIt a) = pure a
 resolveIfRef (MRuleRef n) = do
   (CTreeRoot cddl) <- ask @"cddl"
+  -- Since we follow a reference, we increase the 'depth' of the gen monad.
+  modify @"depth" (+ 1)
   case Map.lookup n cddl of
-    Nothing -> error "Unbound reference"
+    Nothing -> error $ "Unbound reference: " <> show n
     Just val -> resolveIfRef $ runIdentity val
 
 -- | Generate a CBOR Term corresponding to a top-level name.
@@ -337,11 +387,11 @@ resolveIfRef (MRuleRef n) = do
 -- This will throw an error if the generated item does not correspond to a
 -- single CBOR term (e.g. if the name resolves to a group, which cannot be
 -- generated outside a context).
-genForName :: Name -> Gen Term
+genForName :: (RandomGen g) => Name -> M g Term
 genForName n = do
   (CTreeRoot cddl) <- ask @"cddl"
   case Map.lookup n cddl of
-    Nothing -> error "Unbound reference"
+    Nothing -> error $ "Unbound reference: " <> show n
     Just val ->
       genForNode (runIdentity val) >>= \case
         S x -> pure x
@@ -353,24 +403,25 @@ genForName n = do
 
 -- | Apply an occurence indicator to a group entry
 applyOccurenceIndicator ::
+  (RandomGen g) =>
   OccurrenceIndicator ->
-  Gen WrappedTerm ->
-  Gen WrappedTerm
+  M g WrappedTerm ->
+  M g WrappedTerm
 applyOccurenceIndicator OIOptional oldGen =
-  genRandomM >>= \case
+  genDepthBiasedBool >>= \case
     False -> pure $ G mempty
     True -> oldGen
 applyOccurenceIndicator OIZeroOrMore oldGen =
-  genUniformRM (0 :: Int, 10) >>= \i ->
+  genDepthBiasedRM (0 :: Int, 10) >>= \i ->
     G <$> replicateM i oldGen
 applyOccurenceIndicator OIOneOrMore oldGen =
-  genUniformRM (0 :: Int, 10) >>= \i ->
+  genDepthBiasedRM (1 :: Int, 10) >>= \i ->
     G <$> replicateM i oldGen
 applyOccurenceIndicator (OIBounded mlb mub) oldGen =
-  genUniformRM (fromMaybe 0 mlb :: Word64, fromMaybe 10 mub)
+  genDepthBiasedRM (fromMaybe 0 mlb :: Word64, fromMaybe 10 mub)
     >>= \i -> G <$> replicateM (fromIntegral i) oldGen
 
-genValue :: Value -> Gen Term
+genValue :: (RandomGen g) => Value -> M g Term
 genValue (VUInt i) = pure . TInt $ fromIntegral i
 genValue (VNInt i) = pure . TInt $ fromIntegral (-i)
 genValue (VBignum i) = pure $ TInteger i
@@ -378,14 +429,22 @@ genValue (VFloat16 i) = pure . THalf $ i
 genValue (VFloat32 i) = pure . TFloat $ i
 genValue (VFloat64 i) = pure . TDouble $ i
 genValue (VText t) = pure $ TString t
-genValue (VBytes b) = pure $ TBytes b
+genValue (VBytes b) = case Base16.decode b of
+  Right bHex -> pure $ TBytes bHex
+  Left err -> error $ "Unable to parse hex encoded bytestring: " <> err
 
 --------------------------------------------------------------------------------
 -- Generator functions
 --------------------------------------------------------------------------------
 
-generateCBORTerm :: CTreeRoot' Identity MonoRef -> Name -> StdGen -> Term
+generateCBORTerm :: (RandomGen g) => CTreeRoot' Identity MonoRef -> Name -> g -> Term
 generateCBORTerm cddl n stdGen =
   let genEnv = GenEnv {cddl, fakeSeed = CapGenM}
-      genState = GenState {randomSeed = stdGen}
+      genState = GenState {randomSeed = stdGen, depth = 1}
    in evalGen (genForName n) genEnv genState
+
+generateCBORTerm' :: (RandomGen g) => CTreeRoot' Identity MonoRef -> Name -> g -> (Term, g)
+generateCBORTerm' cddl n stdGen =
+  let genEnv = GenEnv {cddl, fakeSeed = CapGenM}
+      genState = GenState {randomSeed = stdGen, depth = 1}
+   in second randomSeed $ runGen (genForName n) genEnv genState
