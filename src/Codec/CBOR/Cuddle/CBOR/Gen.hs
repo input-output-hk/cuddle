@@ -33,6 +33,7 @@ import Codec.CBOR.Write qualified as CBOR
 import Control.Monad (join, replicateM, (<=<))
 import Control.Monad.Reader (Reader, runReader)
 import Control.Monad.State.Strict (StateT, runStateT)
+import Data.Bifunctor (second)
 import Data.ByteString (ByteString)
 import Data.ByteString.Base16 qualified as Base16
 import Data.Functor ((<&>))
@@ -55,7 +56,6 @@ import System.Random.Stateful
     randomM,
     uniformByteStringM,
   )
-import Data.Bifunctor (second)
 
 --------------------------------------------------------------------------------
 -- Generator infrastructure
@@ -268,7 +268,13 @@ genForCTree (CTree.Postlude pt) = S <$> genPostlude pt
 genForCTree (CTree.Map nodes) = do
   items <- pairTermList . flattenWrappedList <$> traverse genForNode nodes
   case items of
-    Just ts -> pure . S $ TMap ts
+    Just ts ->
+      let -- De-duplicate keys in the map.
+          -- Per RFC7049:
+          -- >> A map that has duplicate keys may be well-formed, but it is not
+          -- >> valid, and thus it causes indeterminate decoding
+          tsNodup = Map.toList $ Map.fromList ts
+       in pure . S $ TMap tsNodup
     Nothing -> error "Single terms in map context"
 genForCTree (CTree.Array nodes) = do
   items <- singleTermList . flattenWrappedList <$> traverse genForNode nodes
@@ -308,12 +314,12 @@ genForCTree (CTree.Control op target controller) = do
   tt <- resolveIfRef target
   ct <- resolveIfRef controller
   case (op, ct) of
-    (CtlOp.Le, CTree.Literal (VUInt n)) -> case tt of 
-      CTree.Postlude PTUInt -> S. TInteger <$> genUniformRM (0, fromIntegral n)
+    (CtlOp.Le, CTree.Literal (VUInt n)) -> case tt of
+      CTree.Postlude PTUInt -> S . TInteger <$> genUniformRM (0, fromIntegral n)
       _ -> error "Cannot apply le operator to target"
     (CtlOp.Le, _) -> error $ "Invalid controller for .le operator: " <> show controller
-    (CtlOp.Lt, CTree.Literal (VUInt n)) -> case tt of 
-      CTree.Postlude PTUInt -> S. TInteger <$> genUniformRM (0, fromIntegral n - 1)
+    (CtlOp.Lt, CTree.Literal (VUInt n)) -> case tt of
+      CTree.Postlude PTUInt -> S . TInteger <$> genUniformRM (0, fromIntegral n - 1)
       _ -> error "Cannot apply lt operator to target"
     (CtlOp.Lt, _) -> error $ "Invalid controller for .lt operator: " <> show controller
     (CtlOp.Size, CTree.Literal (VUInt n)) -> case tt of
