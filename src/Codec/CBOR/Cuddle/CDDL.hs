@@ -13,8 +13,15 @@ import GHC.Generics (Generic)
 newtype CDDL = CDDL (NE.NonEmpty (WithComments Rule))
   deriving (Eq, Generic, Show)
 
+-- | Sort the CDDL Rules on the basis of their names
+sortCDDL :: CDDL -> CDDL 
+sortCDDL (CDDL xs) = CDDL $ NE.sort xs
+
 data WithComments a = WithComments a (Maybe Comment)
   deriving (Eq, Show, Generic)
+
+instance Ord a => Ord (WithComments a) where
+  compare (WithComments a1 _) (WithComments a2 _) = compare a1 a2 
 
 stripComment :: WithComments a -> a
 stripComment (WithComments a _) = a
@@ -113,6 +120,9 @@ newtype GenericArg = GenericArg (NE.NonEmpty Type1)
 --   definitions before a determination can be made.)
 data Rule = Rule Name (Maybe GenericParam) Assign TypeOrGroup
   deriving (Eq, Generic, Show)
+
+instance Ord Rule where
+  compare (Rule n1 _ _ _) (Rule n2 _ _ _) = compare n1 n2 
 
 -- |
 --   A range operator can be used to join two type expressions that stand

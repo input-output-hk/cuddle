@@ -22,11 +22,12 @@ import System.Exit (exitFailure, exitSuccess)
 import System.IO (hPutStrLn, stderr)
 import System.Random (getStdGen)
 import Text.Megaparsec (ParseErrorBundle, Parsec, errorBundlePretty, runParser)
+import Codec.CBOR.Cuddle.CDDL (sortCDDL)
 
 data Opts = Opts Command String
 
 data Command
-  = Format
+  = Format FormatOpts
   | Validate
   | GenerateCBOR GenOpts
 
@@ -67,6 +68,17 @@ pGenOpts =
           <> value AsCBOR
       )
 
+newtype FormatOpts = FormatOpts
+  {sort :: Bool}
+
+pFormatOpts :: Parser FormatOpts
+pFormatOpts =
+  FormatOpts
+    <$> switch
+      ( long "sort-rules"
+          <> help "Sort the CDDL rule definitions before printing."
+      )
+
 opts :: Parser Opts
 opts =
   Opts
@@ -74,7 +86,7 @@ opts =
       ( command
           "format"
           ( info
-              (pure Format)
+              ( Format <$> pFormatOpts)
               ( progDesc "Format the provided CDDL file"
               )
           )
@@ -114,7 +126,8 @@ run (Opts cmd cddlFile) = do
       putStrLnErr $ errorBundlePretty err
       exitFailure
     Right res -> case cmd of
-      Format -> putDocW 80 $ pretty res
+      Format fOpts -> let defs = if sort fOpts then sortCDDL res else res in 
+        putDocW 80 $ pretty defs
       Validate -> case fullResolveCDDL res of
         Left err -> putStrLnErr (show err) >> exitFailure
         Right _ -> exitSuccess
