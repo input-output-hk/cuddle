@@ -53,13 +53,13 @@ arraySpec = describe "Arrays" $ do
     toCDDL ["age" =:= arr [0 <+ a VUInt +> 1]]
       `shouldMatchParseCDDL` "age = [ ? uint ]"
   it "Can handle a choice" $
-    toCDDL ["ageOrSex" =:= arr [a VUInt] // arr [a VBool]]
+    toCDDL ["ageOrSex" =:= arr [a VUInt] / arr [a VBool]]
       `shouldMatchParseCDDL` "ageOrSex = [ uint // bool ]"
   it "Can handle choices of groups" $
     toCDDL
       [ "asl"
           =:= arr [a VUInt, a VBool, a VText]
-          // arr
+          / arr
             [ a (int 1),
               a ("Hello" :: T.Text)
             ]
@@ -78,10 +78,10 @@ mapSpec = describe "Maps" $ do
     toCDDL ["age" =:= mp ["years" ==> VUInt +> 64]]
       `shouldMatchParseCDDL` "age = { *64 years : uint }"
   it "Can handle a choice" $
-    toCDDL ["ageOrSex" =:= mp ["age" ==> VUInt] // mp ["sex" ==> VBool]]
+    toCDDL ["ageOrSex" =:= mp ["age" ==> VUInt] / mp ["sex" ==> VBool]]
       `shouldMatchParseCDDL` "ageOrSex = { age : uint // sex : bool }"
   it "Can handle a choice with an entry" $
-    toCDDL ["mir" =:= arr [a (int 0) / int 1, a $ mp [0 <+ "test" ==> VUInt]]]
+    toCDDL ["mir" =:= arr [a (int 0 / int 1), a $ mp [0 <+ "test" ==> VUInt]]]
       `shouldMatchParseCDDL` "mir = [ 0 / 1, { * test : uint }]"
 
 nestedSpec :: Spec

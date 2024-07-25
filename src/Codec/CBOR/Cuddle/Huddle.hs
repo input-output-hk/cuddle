@@ -46,7 +46,6 @@ module Codec.CBOR.Cuddle.Huddle
     opt,
 
     -- * Choices
-    (//),
     (/),
     seal,
     sarr,
@@ -88,7 +87,7 @@ import Control.Monad (when)
 import Control.Monad.State (MonadState (get), execState, modify)
 import Data.ByteString (ByteString)
 import Data.Default.Class (Default (..))
-import Data.Generics.Product (HasField, field, getField)
+import Data.Generics.Product (field, getField)
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as HaskMap
 import Data.String (IsString (fromString))
@@ -507,9 +506,9 @@ class CanQuantify a where
   -- | Apply an upper bound
   (+>) :: a -> Word64 -> a
 
-infixl 8 <+
+infixl 7 <+
 
-infixr 7 +>
+infixr 6 +>
 
 opt :: (CanQuantify a) => a -> a
 opt r = 0 <+ r +> 1
@@ -558,7 +557,7 @@ k ==> gc =
         quantifier = def
       }
 
-infixl 9 ==>
+infixl 8 ==>
 
 -- | Assign a rule
 (=:=) :: (IsType0 a) => T.Text -> a -> Rule
@@ -631,6 +630,9 @@ instance IsChoosable Literal Type2 where
 instance IsChoosable (Value a) Type2 where
   toChoice = toChoice . T2Basic . unconstrained
 
+instance IsChoosable (Named Group) Type2 where
+  toChoice = toChoice . T2Group
+
 instance IsChoosable (Seal Array) Type2 where
   toChoice (Seal x) = NoChoice $ T2Array x
 
@@ -643,11 +645,46 @@ instance IsChoosable (Seal ArrayChoice) Type2 where
 instance IsChoosable (Seal MapChoice) Type2 where
   toChoice (Seal m) = NoChoice . T2Map $ NoChoice m
 
-(//) :: (IsChoosable a c, IsChoosable b c) => a -> b -> Choice c
-x // b = go (toChoice x) (toChoice b)
+-- | Allow choices between constructions
+--
+-- in CDDL, '/'  a choice between types (concretely, between Type1 values, to
+-- make a Type0). '//' allows choice between groups. We can illustrate the
+-- difference with the following snippet:
+--
+-- @ foo = [ 0 / 1, uint // 2 /3, tstr ] @
+--
+-- This construction would match either of the following:
+--
+-- @ [0, 3] [2, "Hello World"] @
+--
+-- In other words, the '//' binds less strongly than comma (',') in CDDL.
+--
+-- In Haskell, of course, we cannot have syntax inside an array which binds
+-- stronger than the comma. so we have to do things a little differently. The
+-- way this is handled at the moment is that '/' has special treatment for
+-- arrays/groups, where it will, instead of creating a type-level choice, merge
+-- the two arrays/groups/maps into a single one containing a group choice.
+--
+-- If one instead wants the behaviour corresponding to the CDDL '/' for arrays,
+-- maps or groups, one can "seal" the array or group using the 'seal', 'sarr' or
+-- 'smp' functions. For example:
+--
+-- @ "foo" =:= sarr [0, a VUInt] / sarr [1, a VText] @
+--
+-- Generates a choice (at the 'Type0') level between two arrays, whereas
+--
+-- @ "foo" =:= arr [0, a VUInt] / arr [1, a VUInt] @
+--
+-- will generate a single array containing a group choice between two groups.
+--
+-- As such, there is no `//` operator in Huddle.
+(/) :: (IsChoosable a c, IsChoosable b c) => a -> b -> Choice c
+x / b = go (toChoice x) (toChoice b)
   where
     go (NoChoice x') b' = ChoiceOf x' b'
     go (ChoiceOf x' b') c = ChoiceOf x' (go b' c)
+
+infixl 9 /
 
 -- Choices within maps or arrays
 --
@@ -690,16 +727,6 @@ smp = seal . NoChoice
 
 grp :: Group -> Group
 grp = id
-
--- | Allow a choice within an array or map entry.
-(/) ::
-  ( IsType0 rt,
-    HasField "value" e e Type0 Type0
-  ) =>
-  e ->
-  rt ->
-  e
-ae / rt = ae & field @"value" %~ (// toType0 rt)
 
 --------------------------------------------------------------------------------
 -- Tagged types
