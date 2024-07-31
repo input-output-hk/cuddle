@@ -67,9 +67,9 @@ instance Pretty Type1 where
 instance Pretty Type2 where
   pretty (T2Value v) = pretty v
   pretty (T2Name n mg) = pretty n <> pretty mg
-  pretty (T2Group g) = enclose "(" ")" $ pretty g
-  pretty (T2Map g) = enclose "{" "}" $ pretty g
-  pretty (T2Array g) = enclose "[" "]" $ pretty g
+  pretty (T2Group g) = align $ enclose "(" ")" $ pretty g
+  pretty (T2Map g) = align $ enclose "{" "}" $ pretty g
+  pretty (T2Array g) = brackets $ pretty g
   pretty (T2Unwrapped n mg) = "~" <+> pretty n <> pretty mg
   pretty (T2Enum g) = "&" <+> enclose "(" ")" (pretty g)
   pretty (T2EnumRef g mg) = "&" <+> pretty g <> pretty mg
@@ -92,9 +92,9 @@ instance Pretty OccurrenceIndicator where
 
 instance Pretty Group where
   pretty (Group (NE.toList -> xs)) =
-    align . encloseSep mempty mempty " // " $ fmap prettyGrpChoice xs
+    align . vsep . punctuate " // " $ fmap prettyGrpChoice xs
     where
-      prettyGrpChoice = align . encloseSep mempty mempty ", " . fmap pretty
+      prettyGrpChoice = sep . punctuate "," . fmap pretty
 
 instance Pretty GroupEntry where
   pretty (GEType moi mmk t) =

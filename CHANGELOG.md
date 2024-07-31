@@ -8,3 +8,8 @@
 
 * Rationalise the choice operators. Drop (//) and provide detailed comments
   explaining the use of (/).
+
+## 0.3.0.1 -- 2024-07-31
+
+* Improvements in the pretty printer - various groups should be formatted more
+  cleanly
