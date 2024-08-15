@@ -118,17 +118,19 @@ type Rule = Named Type0
 
 -- | Top-level Huddle type is a list of rules.
 data Huddle = Huddle
-  { rules :: NE.NonEmpty Rule,
+  { -- | Root elements
+    roots :: [Rule],
+    rules :: NE.NonEmpty Rule,
     groups :: [Named Group],
     gRules :: [GRuleDef]
   }
-  deriving (Show)
+  deriving (Generic, Show)
 
 -- | This instance is mostly used for testing
 instance IsList Huddle where
   type Item Huddle = Rule
   fromList [] = error "Huddle: Cannot have empty ruleset"
-  fromList (x : xs) = Huddle (x NE.:| xs) mempty mempty
+  fromList (x : xs) = Huddle mempty (x NE.:| xs) mempty mempty
 
   toList = NE.toList . rules
 
@@ -815,7 +817,9 @@ binding2 fRule t0 t1 =
 -- Collecting all top-level rules
 --------------------------------------------------------------------------------
 
--- | Collect all rules starting from a given point.
+-- | Collect all rules starting from a given point. This will also insert a
+--   single pseudo-rule as the first element which references the specified
+--   top-level rules.
 collectFrom :: [Rule] -> Huddle
 collectFrom topRs =
   toHuddle $
@@ -825,7 +829,8 @@ collectFrom topRs =
   where
     toHuddle (rules, groups, gRules) =
       Huddle
-        { rules = NE.fromList $ view _2 <$> HaskMap.toList rules,
+        { roots = topRs,
+          rules = NE.fromList $ view _2 <$> HaskMap.toList rules,
           groups = view _2 <$> HaskMap.toList groups,
           gRules = view _2 <$> HaskMap.toList gRules
         }
@@ -871,10 +876,16 @@ collectFrom topRs =
 toCDDL :: Huddle -> CDDL
 toCDDL hdl =
   C.CDDL $
-    fmap toCDDLRule (rules hdl)
-      `appendList` fmap toCDDLGroup (groups hdl)
-      `appendList` fmap toGenRuleDef (gRules hdl)
+    toTopLevelPseudoRoot (roots hdl)
+      NE.<| fmap toCDDLRule (rules hdl)
+        `appendList` fmap toCDDLGroup (groups hdl)
+        `appendList` fmap toGenRuleDef (gRules hdl)
   where
+    toTopLevelPseudoRoot :: [Rule] -> C.WithComments C.Rule
+    toTopLevelPseudoRoot topRs =
+      toCDDLRule $
+        comment "Pseudo-rule introduced by Cuddle to collect root elements" $
+          "huddle_root_defs" =:= arr (fromList (fmap a topRs))
     -- This function is missing from NonEmpty prior to 4.16, so we temporarily
     -- add it here.
     appendList :: NE.NonEmpty a -> [a] -> NE.NonEmpty a

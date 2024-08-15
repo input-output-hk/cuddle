@@ -13,3 +13,8 @@
 
 * Improvements in the pretty printer - various groups should be formatted more
   cleanly
+
+## 0.3.1.0 -- 2024-08-15
+
+* `collectFrom` now adds a first definition in the generated Huddle referencing 
+  the top level elements, to be compatible with the CDDL spec. 
