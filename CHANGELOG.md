@@ -18,3 +18,7 @@
 
 * `collectFrom` now adds a first definition in the generated Huddle referencing 
   the top level elements, to be compatible with the CDDL spec. 
+
+## 0.3.2.0 -- 2024-09-11 
+
+* Leading rather than trailing commas in the pretty printer.

@@ -67,11 +67,11 @@ instance Pretty Type1 where
 instance Pretty Type2 where
   pretty (T2Value v) = pretty v
   pretty (T2Name n mg) = pretty n <> pretty mg
-  pretty (T2Group g) = align $ enclose "(" ")" $ pretty g
-  pretty (T2Map g) = align $ enclose "{" "}" $ pretty g
-  pretty (T2Array g) = brackets $ pretty g
+  pretty (T2Group g) = enclose "( " ")" . align $ pretty g
+  pretty (T2Map g) = prettyGroup AsMap g
+  pretty (T2Array g) = prettyGroup AsArray g
   pretty (T2Unwrapped n mg) = "~" <+> pretty n <> pretty mg
-  pretty (T2Enum g) = "&" <+> enclose "(" ")" (pretty g)
+  pretty (T2Enum g) = "&" <+> prettyGroup AsGroup g
   pretty (T2EnumRef g mg) = "&" <+> pretty g <> pretty mg
   pretty (T2Tag minor t) = "#6" <> min' <> enclose "(" ")" (pretty t)
     where
@@ -90,12 +90,22 @@ instance Pretty OccurrenceIndicator where
   pretty OIOneOrMore = "+"
   pretty (OIBounded ml mh) = pretty ml <> "*" <> pretty mh
 
-instance Pretty Group where
-  pretty (Group (NE.toList -> xs)) =
-    align . vsep . punctuate " // " $ fmap prettyGrpChoice xs
-    where
-      prettyGrpChoice = sep . punctuate "," . fmap pretty
+-- | Control how to render a group
+data GroupRender = 
+    AsMap 
+  | AsArray
+  | AsGroup 
 
+prettyGroup :: GroupRender -> Group -> Doc ann
+prettyGroup gr (Group (NE.toList -> xs)) =
+    align $ encloseSep lp rp " // " (fmap prettyGrpChoice xs)
+    where
+      prettyGrpChoice = encloseSep mempty mempty ", " . fmap pretty
+      (lp, rp) = case gr of 
+        AsMap -> ("{", "}")
+        AsArray -> ("[", "]")
+        AsGroup -> ("(",")")
+         
 instance Pretty GroupEntry where
   pretty (GEType moi mmk t) =
     hsep $
@@ -106,7 +116,7 @@ instance Pretty GroupEntry where
       <> pretty mga
   pretty (GEGroup moi g) =
     hsep $
-      catMaybes [fmap pretty moi, Just $ enclose "(" ")" (pretty g)]
+      catMaybes [fmap pretty moi, Just $ prettyGroup AsGroup g]
 
 instance Pretty MemberKey where
   pretty (MKType t1) = pretty t1 <+> "=>"
