@@ -77,6 +77,7 @@ module Codec.CBOR.Cuddle.Huddle
     -- * Conversion to CDDL
     collectFrom,
     toCDDL,
+    toCDDLNoRoot
   )
 where
 
@@ -871,15 +872,25 @@ collectFrom topRs =
 --------------------------------------------------------------------------------
 -- Conversion to CDDL
 --------------------------------------------------------------------------------
+-- | Convert from Huddle to CDDL, generating a top level root element. 
+toCDDL :: Huddle -> CDDL 
+toCDDL = toCDDL' True
+
+-- | Convert from Huddle to CDDL, skipping a root element.
+toCDDLNoRoot :: Huddle -> CDDL 
+toCDDLNoRoot = toCDDL' False 
 
 -- | Convert from Huddle to CDDL for the purpose of pretty-printing.
-toCDDL :: Huddle -> CDDL
-toCDDL hdl =
-  C.CDDL $
-    toTopLevelPseudoRoot (roots hdl)
-      NE.<| fmap toCDDLRule (rules hdl)
-        `appendList` fmap toCDDLGroup (groups hdl)
-        `appendList` fmap toGenRuleDef (gRules hdl)
+toCDDL' :: Bool -> Huddle -> CDDL
+toCDDL' mkPseudoRoot hdl =
+  C.CDDL
+    $ ( if mkPseudoRoot
+          then (toTopLevelPseudoRoot (roots hdl) NE.<|)
+          else id
+      )
+    $ fmap toCDDLRule (rules hdl)
+      `appendList` fmap toCDDLGroup (groups hdl)
+      `appendList` fmap toGenRuleDef (gRules hdl)
   where
     toTopLevelPseudoRoot :: [Rule] -> C.WithComments C.Rule
     toTopLevelPseudoRoot topRs =

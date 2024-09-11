@@ -26,37 +26,37 @@ huddleSpec = describe "huddle" $ do
 basicAssign :: Spec
 basicAssign = describe "basic assignment" $ do
   it "Can assign a primitive" $
-    toCDDL ["port" =:= VUInt]
+    toCDDLNoRoot ["port" =:= VUInt]
       `shouldMatchParseCDDL` "port = uint"
   it "Can assign an int" $
-    toCDDL ["one" =:= (int 1)]
+    toCDDLNoRoot ["one" =:= (int 1)]
       `shouldMatchParseCDDL` "one = 1"
   -- it "Can assign a float" $
-  --   toCDDL ["onepointone" =:= (1.1 :: Float)]
+  --   toCDDLNoRoot ["onepointone" =:= (1.1 :: Float)]
   --     `shouldMatchParseCDDL` "onepointone = 1.1"
   it "Can assign a text string" $
-    toCDDL ["hello" =:= ("Hello World" :: T.Text)]
+    toCDDLNoRoot ["hello" =:= ("Hello World" :: T.Text)]
       `shouldMatchParseCDDL` "hello = \"Hello World\""
   it "Can handle multiple assignments" $
-    toCDDL ["age" =:= VUInt, "location" =:= VText]
+    toCDDLNoRoot ["age" =:= VUInt, "location" =:= VText]
       `shouldMatchParseCDDL` "age = uint\n location = text"
 
 arraySpec :: Spec
 arraySpec = describe "Arrays" $ do
   it "Can assign a small array" $
-    toCDDL ["asl" =:= arr [a VUInt, a VBool, a VText]]
+    toCDDLNoRoot ["asl" =:= arr [a VUInt, a VBool, a VText]]
       `shouldMatchParseCDDL` "asl = [ uint, bool, text ]"
   it "Can quantify an upper bound" $
-    toCDDL ["age" =:= arr [a VUInt +> 64]]
+    toCDDLNoRoot ["age" =:= arr [a VUInt +> 64]]
       `shouldMatchParseCDDL` "age = [ *64 uint ]"
   it "Can quantify an optional" $
-    toCDDL ["age" =:= arr [0 <+ a VUInt +> 1]]
+    toCDDLNoRoot ["age" =:= arr [0 <+ a VUInt +> 1]]
       `shouldMatchParseCDDL` "age = [ ? uint ]"
   it "Can handle a choice" $
-    toCDDL ["ageOrSex" =:= arr [a VUInt] / arr [a VBool]]
+    toCDDLNoRoot ["ageOrSex" =:= arr [a VUInt] / arr [a VBool]]
       `shouldMatchParseCDDL` "ageOrSex = [ uint // bool ]"
   it "Can handle choices of groups" $
-    toCDDL
+    toCDDLNoRoot
       [ "asl"
           =:= arr [a VUInt, a VBool, a VText]
           / arr
@@ -69,19 +69,19 @@ arraySpec = describe "Arrays" $ do
 mapSpec :: Spec
 mapSpec = describe "Maps" $ do
   it "Can assign a small map" $
-    toCDDL ["asl" =:= mp ["age" ==> VUInt, "sex" ==> VBool, "location" ==> VText]]
+    toCDDLNoRoot ["asl" =:= mp ["age" ==> VUInt, "sex" ==> VBool, "location" ==> VText]]
       `shouldMatchParseCDDL` "asl = { age : uint, sex : bool, location : text }"
   it "Can quantify a lower bound" $
-    toCDDL ["age" =:= mp [0 <+ "years" ==> VUInt]]
+    toCDDLNoRoot ["age" =:= mp [0 <+ "years" ==> VUInt]]
       `shouldMatchParseCDDL` "age = { * years : uint }"
   it "Can quantify an upper bound" $
-    toCDDL ["age" =:= mp ["years" ==> VUInt +> 64]]
+    toCDDLNoRoot ["age" =:= mp ["years" ==> VUInt +> 64]]
       `shouldMatchParseCDDL` "age = { *64 years : uint }"
   it "Can handle a choice" $
-    toCDDL ["ageOrSex" =:= mp ["age" ==> VUInt] / mp ["sex" ==> VBool]]
+    toCDDLNoRoot ["ageOrSex" =:= mp ["age" ==> VUInt] / mp ["sex" ==> VBool]]
       `shouldMatchParseCDDL` "ageOrSex = { age : uint // sex : bool }"
   it "Can handle a choice with an entry" $
-    toCDDL ["mir" =:= arr [a (int 0 / int 1), a $ mp [0 <+ "test" ==> VUInt]]]
+    toCDDLNoRoot ["mir" =:= arr [a (int 0 / int 1), a $ mp [0 <+ "test" ==> VUInt]]]
       `shouldMatchParseCDDL` "mir = [ 0 / 1, { * test : uint }]"
 
 nestedSpec :: Spec
@@ -89,7 +89,7 @@ nestedSpec =
   describe "Nesting" $
     it "Handles references" $
       let headerBody = "header_body" =:= arr ["block_number" ==> VUInt, "slot" ==> VUInt]
-       in toCDDL
+       in toCDDLNoRoot
             [ headerBody,
               "header" =:= arr [a headerBody, "body_signature" ==> VBytes]
             ]
@@ -105,10 +105,10 @@ genericSpec =
         dict = binding2 $ \k v -> "dict" =:= mp [0 <+ asKey k ==> v]
      in do
           it "Should bind a single parameter" $
-            toCDDL (collectFrom ["intset" =:= set VUInt])
+            toCDDLNoRoot (collectFrom ["intset" =:= set VUInt])
               `shouldMatchParseCDDL` "intset = set<uint>\n set<a0> = [* a0]"
           it "Should bind two parameters" $
-            toCDDL (collectFrom ["mymap" =:= dict VUInt VText])
+            toCDDLNoRoot (collectFrom ["mymap" =:= dict VUInt VText])
               `shouldMatchParseCDDL` "mymap = dict<uint, text>\n dict<a0, b0> = {* a0 => b0}"
 
 --------------------------------------------------------------------------------
