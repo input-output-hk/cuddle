@@ -67,7 +67,7 @@ instance Pretty Type1 where
 instance Pretty Type2 where
   pretty (T2Value v) = pretty v
   pretty (T2Name n mg) = pretty n <> pretty mg
-  pretty (T2Group g) = enclose "( " ")" . align $ pretty g
+  pretty (T2Group g) = enclose "(" ")" . align $ pretty g
   pretty (T2Map g) = prettyGroup AsMap g
   pretty (T2Array g) = prettyGroup AsArray g
   pretty (T2Unwrapped n mg) = "~" <+> pretty n <> pretty mg
