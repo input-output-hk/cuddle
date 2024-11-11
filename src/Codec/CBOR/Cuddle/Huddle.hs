@@ -17,6 +17,7 @@
 module Codec.CBOR.Cuddle.Huddle
   ( -- * Core Types
     Huddle,
+    HuddleItem (..),
     Rule,
     Named,
     IsType0 (..),
@@ -70,14 +71,17 @@ module Codec.CBOR.Cuddle.Huddle
     tag,
 
     -- * Generics
+    GRef,
+    GRuleDef,
     GRuleCall,
     binding,
     binding2,
+    callToDef,
 
     -- * Conversion to CDDL
     collectFrom,
     toCDDL,
-    toCDDLNoRoot
+    toCDDLNoRoot,
   )
 where
 
@@ -93,12 +97,12 @@ import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as HaskMap
 import Data.String (IsString (fromString))
 import Data.Text qualified as T
-import Data.Tuple.Optics (Field1 (..), Field2 (..), Field3 (..))
+import Data.Tuple.Optics (Field2 (..))
 import Data.Void (Void)
 import Data.Word (Word64)
 import GHC.Exts (IsList (Item, fromList, toList))
 import GHC.Generics (Generic)
-import Optics.Core (over, view, (%~), (&), (.~))
+import Optics.Core (view, (%~), (&), (.~))
 import Prelude hiding ((/))
 
 data Named a = Named
@@ -117,23 +121,22 @@ instance Show (Named a) where
 
 type Rule = Named Type0
 
+data HuddleItem
+  = HIRule Rule
+  | HIGRule GRuleDef
+  | HIGroup (Named Group)
+  deriving (Generic, Show)
+
 -- | Top-level Huddle type is a list of rules.
 data Huddle = Huddle
   { -- | Root elements
     roots :: [Rule],
-    rules :: NE.NonEmpty Rule,
-    groups :: [Named Group],
-    gRules :: [GRuleDef]
+    items :: [HuddleItem]
   }
   deriving (Generic, Show)
 
--- | This instance is mostly used for testing
-instance IsList Huddle where
-  type Item Huddle = Rule
-  fromList [] = error "Huddle: Cannot have empty ruleset"
-  fromList (x : xs) = Huddle mempty (x NE.:| xs) mempty mempty
-
-  toList = NE.toList . rules
+instance Default Huddle where
+  def = Huddle [] []
 
 data Choice a
   = NoChoice a
@@ -826,19 +829,17 @@ collectFrom topRs =
   toHuddle $
     execState
       (traverse goRule topRs)
-      (HaskMap.empty, HaskMap.empty, HaskMap.empty)
+      HaskMap.empty
   where
-    toHuddle (rules, groups, gRules) =
+    toHuddle items =
       Huddle
         { roots = topRs,
-          rules = NE.fromList $ view _2 <$> HaskMap.toList rules,
-          groups = view _2 <$> HaskMap.toList groups,
-          gRules = view _2 <$> HaskMap.toList gRules
+          items = view _2 <$> HaskMap.toList items
         }
     goRule r@(Named n t0 _) = do
-      (rules, _, _) <- get
-      when (HaskMap.notMember n rules) $ do
-        modify (over _1 $ HaskMap.insert n r)
+      items <- get
+      when (HaskMap.notMember n items) $ do
+        modify (HaskMap.insert n (HIRule r))
         goT0 t0
     goChoice f (NoChoice x) = f x
     goChoice f (ChoiceOf x xs) = f x >> goChoice f xs
@@ -848,14 +849,14 @@ collectFrom topRs =
     goT2 (T2Tagged (Tagged _ t0)) = goT0 t0
     goT2 (T2Ref n) = goRule n
     goT2 (T2Group r@(Named n g _)) = do
-      (_, groups, _) <- get
-      when (HaskMap.notMember n groups) $ do
-        modify (over _2 $ HaskMap.insert n r)
+      items <- get
+      when (HaskMap.notMember n items) $ do
+        modify (HaskMap.insert n (HIGroup r))
         goGroup g
     goT2 (T2Generic r@(Named n g _)) = do
-      (_, _, gRules) <- get
-      when (HaskMap.notMember n gRules) $ do
-        modify (over _3 $ HaskMap.insert n (fmap callToDef r))
+      items <- get
+      when (HaskMap.notMember n items) $ do
+        modify (HaskMap.insert n (HIGRule $ fmap callToDef r))
         goT0 (body g)
       -- Note that the parameters here may be different, so this doesn't live
       -- under the guard
@@ -872,13 +873,14 @@ collectFrom topRs =
 --------------------------------------------------------------------------------
 -- Conversion to CDDL
 --------------------------------------------------------------------------------
--- | Convert from Huddle to CDDL, generating a top level root element. 
-toCDDL :: Huddle -> CDDL 
+
+-- | Convert from Huddle to CDDL, generating a top level root element.
+toCDDL :: Huddle -> CDDL
 toCDDL = toCDDL' True
 
 -- | Convert from Huddle to CDDL, skipping a root element.
-toCDDLNoRoot :: Huddle -> CDDL 
-toCDDLNoRoot = toCDDL' False 
+toCDDLNoRoot :: Huddle -> CDDL
+toCDDLNoRoot = toCDDL' False
 
 -- | Convert from Huddle to CDDL for the purpose of pretty-printing.
 toCDDL' :: Bool -> Huddle -> CDDL
@@ -888,19 +890,16 @@ toCDDL' mkPseudoRoot hdl =
           then (toTopLevelPseudoRoot (roots hdl) NE.<|)
           else id
       )
-    $ fmap toCDDLRule (rules hdl)
-      `appendList` fmap toCDDLGroup (groups hdl)
-      `appendList` fmap toGenRuleDef (gRules hdl)
+    $ fmap toCDDLItem (NE.fromList $ items hdl)
   where
+    toCDDLItem (HIRule r) = toCDDLRule r
+    toCDDLItem (HIGroup g) = toCDDLGroup g
+    toCDDLItem (HIGRule g) = toGenRuleDef g
     toTopLevelPseudoRoot :: [Rule] -> C.WithComments C.Rule
     toTopLevelPseudoRoot topRs =
       toCDDLRule $
         comment "Pseudo-rule introduced by Cuddle to collect root elements" $
           "huddle_root_defs" =:= arr (fromList (fmap a topRs))
-    -- This function is missing from NonEmpty prior to 4.16, so we temporarily
-    -- add it here.
-    appendList :: NE.NonEmpty a -> [a] -> NE.NonEmpty a
-    appendList (x NE.:| xs) ys = x NE.:| xs <> ys
     toCDDLRule :: Rule -> C.WithComments C.Rule
     toCDDLRule (Named n t0 c) =
       C.WithComments
