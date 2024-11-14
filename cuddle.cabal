@@ -71,6 +71,7 @@ library
     , mtl
     , mutable-containers
     , optics-core
+    , ordered-containers
     , parser-combinators
     , prettyprinter
     , random

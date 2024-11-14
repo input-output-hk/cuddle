@@ -17,8 +17,9 @@ import Codec.CBOR.Cuddle.Huddle qualified as Huddle
 import Control.Monad.State.Strict (State, modify, runState)
 import Data.Default.Class (def)
 import Data.Generics.Product (HasField (..))
+import Data.Map.Ordered.Strict qualified as OMap
 import Data.Text qualified as T
-import Optics.Core (Field2 (..), set, (%), (%~))
+import Optics.Core (set, (%~), (^.))
 
 type HuddleM = State Huddle
 
@@ -54,22 +55,30 @@ huddleDef :: HuddleM a -> Huddle
 huddleDef = snd . huddleDef'
 
 huddleDef' :: HuddleM a -> (a, Huddle)
-huddleDef' mh = (_2 % field @"items") %~ reverse $ runState mh def
+huddleDef' mh = runState mh def
 
 class Includable a where
   -- | Include a rule, group, or generic rule defined elsewhere
   include :: a -> HuddleM a
 
 instance Includable Rule where
-  include r = modify (field @"items" %~ (HIRule r :)) >> pure r
+  include r =
+    modify (field @"items" %~ (OMap.|> (r ^. field @"name", HIRule r)))
+      >> pure r
 
 instance Includable (Named Group) where
-  include r = modify ((field @"items") %~ (HIGroup r :)) >> pure r
+  include r =
+    modify
+      ( (field @"items")
+          %~ (OMap.|> (r ^. field @"name", HIGroup r))
+      )
+      >> pure r
 
 instance (IsType0 t0) => Includable (t0 -> GRuleCall) where
   include gr =
     let fakeT0 = error "Attempting to unwrap fake value in generic call"
         grDef = callToDef <$> gr fakeT0
+        n = grDef ^. field @"name"
      in do
-          modify (field @"items" %~ (HIGRule grDef :))
+          modify (field @"items" %~ (OMap.|> (n, HIGRule grDef)))
           pure gr
