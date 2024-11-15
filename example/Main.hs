@@ -22,6 +22,7 @@ import Prettyprinter.Util (putDocW)
 import System.Environment (getArgs)
 import System.Random (getStdGen)
 import Text.Megaparsec (ParseErrorBundle, Parsec, errorBundlePretty, runParser)
+import qualified Monad
 
 main :: IO ()
 main = do
@@ -65,6 +66,10 @@ main = do
     [] -> do
       let cw = toCDDL conway
       putDocW 80 $ pretty cw
+      putStrLn "--------------------------------------"
+      putDocW 80 $ pretty (toCDDL Monad.spec)
+      putStrLn "--------------------------------------"
+      putDocW 80 $ pretty (toCDDL Monad.spec2)
     _ -> putStrLn "Expected filename"
 
 parseFromFile ::
