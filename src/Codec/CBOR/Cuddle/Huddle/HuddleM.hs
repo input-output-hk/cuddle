@@ -9,6 +9,7 @@ module Codec.CBOR.Cuddle.Huddle.HuddleM
     huddleDef,
     huddleDef',
     include,
+    unsafeIncludeFromHuddle,
   )
 where
 
@@ -82,3 +83,22 @@ instance (IsType0 t0) => Includable (t0 -> GRuleCall) where
      in do
           modify (field @"items" %~ (OMap.|> (n, HIGRule grDef)))
           pure gr
+
+instance Includable HuddleItem where
+  include x@(HIRule r) = include r >> pure x
+  include x@(HIGroup g) = include g >> pure x
+  include x@(HIGRule g) =
+    let n = g ^. field @"name"
+     in do
+          modify (field @"items" %~ (OMap.|> (n, x)))
+          pure x
+
+unsafeIncludeFromHuddle ::
+  Huddle ->
+  T.Text -> 
+  HuddleM HuddleItem
+unsafeIncludeFromHuddle h name =
+  let items = h ^. field @"items"
+   in case OMap.lookup name items  of
+        Just v -> include v
+        Nothing -> error $ show name <> " was not found in Huddle spec"

@@ -94,6 +94,8 @@ import Data.ByteString (ByteString)
 import Data.Default.Class (Default (..))
 import Data.Generics.Product (field, getField)
 import Data.List.NonEmpty qualified as NE
+import Data.Map.Ordered.Strict (OMap)
+import Data.Map.Ordered.Strict qualified as OMap
 import Data.String (IsString (fromString))
 import Data.Text qualified as T
 import Data.Tuple.Optics (Field2 (..))
@@ -103,8 +105,6 @@ import GHC.Exts (IsList (Item, fromList, toList))
 import GHC.Generics (Generic)
 import Optics.Core (view, (%~), (&), (.~), (^.))
 import Prelude hiding ((/))
-import Data.Map.Ordered.Strict qualified as OMap 
-import Data.Map.Ordered.Strict (OMap)
 
 data Named a = Named
   { name :: T.Text,
@@ -136,32 +136,37 @@ data Huddle = Huddle
   }
   deriving (Generic, Show)
 
--- | This semigroup instance takes the roots from the RHS and uses the
---   RHS to override items on the LHS where they share a name.
---   The value from the RHS is taken, but the index from the LHS is used.
+-- | This semigroup instance:
+--   - Takes takes the roots from the RHS unless they are empty, in which case
+--     it takes the roots from the LHS
+--   - Uses the RHS to override items on the LHS where they share a name.
+--     The value from the RHS is taken, but the index from the LHS is used.
 --
---   Note that this allows replacing items in the middle of a tree without 
+--   Note that this allows replacing items in the middle of a tree without
 --   updating higher-level items which make use of them - that is, we do not
 --   need to "close over" higher-level terms, since by the time they have been
 --   built into a huddle structure, the references have been converted to keys.
-instance Semigroup Huddle where 
-  h1 <> h2 = Huddle {
-    roots = roots h2,
-    items = OMap.unionWithL (\_ _ v2 -> v2) (items h1) (items h2)
-  }
+instance Semigroup Huddle where
+  h1 <> h2 =
+    Huddle
+      { roots = case roots h2 of
+          [] -> roots h1
+          xs -> xs,
+        items = OMap.unionWithL (\_ _ v2 -> v2) (items h1) (items h2)
+      }
 
 -- | This instance is mostly used for testing
 instance IsList Huddle where
   type Item Huddle = Rule
-  fromList [] = Huddle mempty OMap.empty 
-  fromList (x : xs) =  
-    (field @"items" %~ (OMap.|> (x ^. field @"name", HIRule x))) $ fromList xs 
+  fromList [] = Huddle mempty OMap.empty
+  fromList (x : xs) =
+    (field @"items" %~ (OMap.|> (x ^. field @"name", HIRule x))) $ fromList xs
 
   toList = const []
 
 instance Default Huddle where
-  def = Huddle [] OMap.empty 
-  
+  def = Huddle [] OMap.empty
+
 data Choice a
   = NoChoice a
   | ChoiceOf a (Choice a)
@@ -528,6 +533,13 @@ instance IsType0 GRef where
 
 instance (IsType0 a) => IsType0 (Tagged a) where
   toType0 = NoChoice . T2Tagged . fmap toType0
+
+instance IsType0 HuddleItem where
+  toType0 (HIRule r) = toType0 r
+  toType0 (HIGroup g) = toType0 g
+  toType0 (HIGRule g) =
+    error $
+      "Attempt to reference generic rule from HuddleItem not supported: " <> show g
 
 class CanQuantify a where
   -- | Apply a lower bound

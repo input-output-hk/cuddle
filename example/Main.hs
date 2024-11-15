@@ -68,6 +68,8 @@ main = do
       putDocW 80 $ pretty cw
       putStrLn "--------------------------------------"
       putDocW 80 $ pretty (toCDDL Monad.spec)
+      putStrLn "--------------------------------------"
+      putDocW 80 $ pretty (toCDDL Monad.spec2)
     _ -> putStrLn "Expected filename"
 
 parseFromFile ::
