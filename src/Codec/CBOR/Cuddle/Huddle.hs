@@ -94,7 +94,8 @@ import Data.ByteString (ByteString)
 import Data.Default.Class (Default (..))
 import Data.Generics.Product (field, getField)
 import Data.List.NonEmpty qualified as NE
-import Data.Map.Strict qualified as HaskMap
+import Data.Map.Ordered.Strict (OMap)
+import Data.Map.Ordered.Strict qualified as OMap
 import Data.String (IsString (fromString))
 import Data.Text qualified as T
 import Data.Tuple.Optics (Field2 (..))
@@ -102,7 +103,7 @@ import Data.Void (Void)
 import Data.Word (Word64)
 import GHC.Exts (IsList (Item, fromList, toList))
 import GHC.Generics (Generic)
-import Optics.Core (view, (%~), (&), (.~))
+import Optics.Core (view, (%~), (&), (.~), (^.))
 import Prelude hiding ((/))
 
 data Named a = Named
@@ -131,12 +132,40 @@ data HuddleItem
 data Huddle = Huddle
   { -- | Root elements
     roots :: [Rule],
-    items :: [HuddleItem]
+    items :: OMap T.Text HuddleItem
   }
   deriving (Generic, Show)
 
+-- | This semigroup instance:
+--   - Takes takes the roots from the RHS unless they are empty, in which case
+--     it takes the roots from the LHS
+--   - Uses the RHS to override items on the LHS where they share a name.
+--     The value from the RHS is taken, but the index from the LHS is used.
+--
+--   Note that this allows replacing items in the middle of a tree without
+--   updating higher-level items which make use of them - that is, we do not
+--   need to "close over" higher-level terms, since by the time they have been
+--   built into a huddle structure, the references have been converted to keys.
+instance Semigroup Huddle where
+  h1 <> h2 =
+    Huddle
+      { roots = case roots h2 of
+          [] -> roots h1
+          xs -> xs,
+        items = OMap.unionWithL (\_ _ v2 -> v2) (items h1) (items h2)
+      }
+
+-- | This instance is mostly used for testing
+instance IsList Huddle where
+  type Item Huddle = Rule
+  fromList [] = Huddle mempty OMap.empty
+  fromList (x : xs) =
+    (field @"items" %~ (OMap.|> (x ^. field @"name", HIRule x))) $ fromList xs
+
+  toList = const []
+
 instance Default Huddle where
-  def = Huddle [] []
+  def = Huddle [] OMap.empty
 
 data Choice a
   = NoChoice a
@@ -505,6 +534,13 @@ instance IsType0 GRef where
 instance (IsType0 a) => IsType0 (Tagged a) where
   toType0 = NoChoice . T2Tagged . fmap toType0
 
+instance IsType0 HuddleItem where
+  toType0 (HIRule r) = toType0 r
+  toType0 (HIGroup g) = toType0 g
+  toType0 (HIGRule g) =
+    error $
+      "Attempt to reference generic rule from HuddleItem not supported: " <> show g
+
 class CanQuantify a where
   -- | Apply a lower bound
   (<+) :: Word64 -> a -> a
@@ -829,17 +865,17 @@ collectFrom topRs =
   toHuddle $
     execState
       (traverse goRule topRs)
-      HaskMap.empty
+      OMap.empty
   where
     toHuddle items =
       Huddle
         { roots = topRs,
-          items = view _2 <$> HaskMap.toList items
+          items = items
         }
     goRule r@(Named n t0 _) = do
       items <- get
-      when (HaskMap.notMember n items) $ do
-        modify (HaskMap.insert n (HIRule r))
+      when (OMap.notMember n items) $ do
+        modify (OMap.|> (n, HIRule r))
         goT0 t0
     goChoice f (NoChoice x) = f x
     goChoice f (ChoiceOf x xs) = f x >> goChoice f xs
@@ -850,13 +886,13 @@ collectFrom topRs =
     goT2 (T2Ref n) = goRule n
     goT2 (T2Group r@(Named n g _)) = do
       items <- get
-      when (HaskMap.notMember n items) $ do
-        modify (HaskMap.insert n (HIGroup r))
+      when (OMap.notMember n items) $ do
+        modify (OMap.|> (n, HIGroup r))
         goGroup g
     goT2 (T2Generic r@(Named n g _)) = do
       items <- get
-      when (HaskMap.notMember n items) $ do
-        modify (HaskMap.insert n (HIGRule $ fmap callToDef r))
+      when (OMap.notMember n items) $ do
+        modify (OMap.|> (n, HIGRule $ fmap callToDef r))
         goT0 (body g)
       -- Note that the parameters here may be different, so this doesn't live
       -- under the guard
@@ -890,7 +926,7 @@ toCDDL' mkPseudoRoot hdl =
           then (toTopLevelPseudoRoot (roots hdl) NE.<|)
           else id
       )
-    $ fmap toCDDLItem (NE.fromList $ items hdl)
+    $ fmap toCDDLItem (NE.fromList $ fmap (view _2) $ toList $ items hdl)
   where
     toCDDLItem (HIRule r) = toCDDLRule r
     toCDDLItem (HIGroup g) = toCDDLGroup g

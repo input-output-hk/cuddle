@@ -13,7 +13,7 @@ header_body = [
 ]
 
 $kes_signature = bytes .size 32
-unit_interval<denominator> = [0..denominator, denominator]
+unit_interval<denominator> = [0 .. denominator, denominator]
 
 unit_int = unit_interval<uint>
 
@@ -28,3 +28,8 @@ usz4 = uint .size 4
 usz8 = uint .size 8
 
 group = (usz4, usz8 / mysize, header_body, { * uint => coin })
+
+set<a> = [ * a]
+set2<a> = set<a>
+
+coin_bag = set2<coin>
