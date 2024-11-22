@@ -122,7 +122,11 @@ pGroup :: Parser Group
 pGroup = Group <$> NE.sepBy1 (space *> pGrpChoice <* space) (string "//")
 
 pGrpChoice :: Parser GrpChoice
-pGrpChoice = many ((space *> pGrpEntry <* space) <* optional (char ','))
+pGrpChoice =
+  many
+    ( (space *> (noComment <$> pGrpEntry) <* space)
+        <* optional (char ',')
+    )
 
 pGrpEntry :: Parser GroupEntry
 pGrpEntry =

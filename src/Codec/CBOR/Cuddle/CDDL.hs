@@ -274,7 +274,7 @@ instance Hashable OccurrenceIndicator
 newtype Group = Group (NE.NonEmpty GrpChoice)
   deriving (Eq, Generic, Show, Semigroup)
 
-type GrpChoice = [GroupEntry]
+type GrpChoice = [WithComments GroupEntry]
 
 -- |
 --  A group entry can be given by a value type, which needs to be matched

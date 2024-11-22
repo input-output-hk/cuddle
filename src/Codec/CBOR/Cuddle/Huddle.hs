@@ -92,7 +92,7 @@ import Control.Monad (when)
 import Control.Monad.State (MonadState (get), execState, modify)
 import Data.ByteString (ByteString)
 import Data.Default.Class (Default (..))
-import Data.Generics.Product (field, getField)
+import Data.Generics.Product (HasField' (field'), field, getField)
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Ordered.Strict (OMap)
 import Data.Map.Ordered.Strict qualified as OMap
@@ -113,9 +113,9 @@ data Named a = Named
   }
   deriving (Functor, Generic)
 
--- | Add a description to a rule, to be included as a comment.
-comment :: T.Text -> Named a -> Named a
-comment desc n = n & field @"description" .~ Just desc
+-- | Add a description to a rule or group entry, to be included as a comment.
+comment :: (HasField' "description" a (Maybe T.Text)) => T.Text -> a -> a
+comment desc n = n & field' @"description" .~ Just desc
 
 instance Show (Named a) where
   show (Named n _ _) = T.unpack n
@@ -201,7 +201,8 @@ asKey r = case toType0 r of
 data MapEntry = MapEntry
   { key :: Key,
     value :: Type0,
-    quantifier :: Occurs
+    quantifier :: Occurs,
+    description :: Maybe T.Text
   }
   deriving (Generic, Show)
 
@@ -221,7 +222,8 @@ data ArrayEntry = ArrayEntry
     -- here because they can be illustrative in the generated CDDL.
     key :: Maybe Key,
     value :: Type0,
-    quantifier :: Occurs
+    quantifier :: Occurs,
+    description :: Maybe T.Text
   }
   deriving (Generic, Show)
 
@@ -231,6 +233,7 @@ instance Num ArrayEntry where
       Nothing
       (NoChoice . T2Literal . Unranged $ LInt (fromIntegral i))
       def
+      Nothing
   (+) = error "Cannot treat ArrayEntry as a number"
   (*) = error "Cannot treat ArrayEntry as a number"
   abs = error "Cannot treat ArrayEntry as a number"
@@ -584,7 +587,8 @@ instance IsEntryLike ArrayEntry where
       { key = Just $ getField @"key" me,
         value =
           getField @"value" me,
-        quantifier = getField @"quantifier" me
+        quantifier = getField @"quantifier" me,
+        description = Nothing
       }
 
 instance IsEntryLike Type0 where
@@ -596,7 +600,8 @@ k ==> gc =
     MapEntry
       { key = k,
         value = toType0 gc,
-        quantifier = def
+        quantifier = def,
+        description = Nothing
       }
 
 infixl 8 ==>
@@ -620,7 +625,8 @@ instance IsGroupOrArrayEntry ArrayEntry where
     ArrayEntry
       { key = Nothing,
         value = toType0 x,
-        quantifier = def
+        quantifier = def,
+        description = Nothing
       }
 
 instance IsGroupOrArrayEntry Type0 where
@@ -899,9 +905,9 @@ collectFrom topRs =
       mapM_ goT2 $ args g
     goT2 (T2Basic (Constrained _ _ refs)) = mapM_ goRule refs
     goT2 _ = pure ()
-    goArrayEntry (ArrayEntry (Just k) t0 _) = goKey k >> goT0 t0
-    goArrayEntry (ArrayEntry Nothing t0 _) = goT0 t0
-    goMapEntry (MapEntry k t0 _) = goKey k >> goT0 t0
+    goArrayEntry (ArrayEntry (Just k) t0 _ _) = goKey k >> goT0 t0
+    goArrayEntry (ArrayEntry Nothing t0 _ _) = goT0 t0
+    goMapEntry (MapEntry k t0 _ _) = goKey k >> goT0 t0
     goKey (TypeKey k) = goT2 k
     goKey _ = pure ()
     goGroup (Group g) = mapM_ goT0 g
@@ -960,12 +966,15 @@ toCDDL' mkPseudoRoot hdl =
     mapChoiceToCDDL :: MapChoice -> C.GrpChoice
     mapChoiceToCDDL (MapChoice entries) = fmap mapEntryToCDDL entries
 
-    mapEntryToCDDL :: MapEntry -> C.GroupEntry
-    mapEntryToCDDL (MapEntry k v occ) =
-      C.GEType
-        (toOccurrenceIndicator occ)
-        (Just $ toMemberKey k)
-        (toCDDLType0 v)
+    mapEntryToCDDL :: MapEntry -> C.WithComments C.GroupEntry
+    mapEntryToCDDL (MapEntry k v occ cmnt) =
+      C.WithComments
+        ( C.GEType
+            (toOccurrenceIndicator occ)
+            (Just $ toMemberKey k)
+            (toCDDLType0 v)
+        )
+        (fmap C.Comment cmnt)
 
     toOccurrenceIndicator :: Occurs -> Maybe C.OccurrenceIndicator
     toOccurrenceIndicator (Occurs Nothing Nothing) = Nothing
@@ -1006,13 +1015,15 @@ toCDDL' mkPseudoRoot hdl =
     arrayChoiceToCDDL :: ArrayChoice -> C.GrpChoice
     arrayChoiceToCDDL (ArrayChoice entries) = fmap arrayEntryToCDDL entries
 
-    arrayEntryToCDDL :: ArrayEntry -> C.GroupEntry
-    arrayEntryToCDDL (ArrayEntry k v occ) =
-      C.GEType
-        (toOccurrenceIndicator occ)
-        (fmap toMemberKey k)
-        (toCDDLType0 v)
-
+    arrayEntryToCDDL :: ArrayEntry -> C.WithComments C.GroupEntry
+    arrayEntryToCDDL (ArrayEntry k v occ cmnt) =
+      C.WithComments 
+        (      C.GEType
+                (toOccurrenceIndicator occ)
+                (fmap toMemberKey k)
+                (toCDDLType0 v)
+        )
+        (fmap C.Comment cmnt)
     toCDDLPostlude :: Value a -> C.Name
     toCDDLPostlude VBool = C.Name "bool"
     toCDDLPostlude VUInt = C.Name "uint"
@@ -1042,7 +1053,7 @@ toCDDL' mkPseudoRoot hdl =
             . C.GEGroup Nothing
             . C.Group
             . (NE.:| [])
-            $ fmap (C.GEType Nothing Nothing . toCDDLType0) t0s
+            $ fmap (C.noComment . C.GEType Nothing Nothing . toCDDLType0) t0s
         )
         (fmap C.Comment c)
 

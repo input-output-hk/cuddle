@@ -193,6 +193,9 @@ buildRefCTree rules = CTreeRoot $ fmap toCTreeRule rules
       It $ CTree.Postlude PTAny
     toCTreeT2 T2Any = It $ CTree.Postlude PTAny
 
+    toCTreeGroupEntryNC :: WithComments GroupEntry -> CTree.Node OrRef
+    toCTreeGroupEntryNC = toCTreeGroupEntry . stripComment 
+    
     toCTreeGroupEntry :: GroupEntry -> CTree.Node OrRef
     toCTreeGroupEntry (GEType (Just occi) mmkey t0) =
       It $
@@ -223,18 +226,18 @@ buildRefCTree rules = CTreeRoot $ fmap toCTreeRule rules
     -- choice options
     toCTreeEnum :: Group -> CTree.Node OrRef
     toCTreeEnum (Group (a NE.:| [])) =
-      It . CTree.Enum . It . CTree.Group $ fmap toCTreeGroupEntry a
+      It . CTree.Enum . It . CTree.Group $ fmap toCTreeGroupEntryNC a
     toCTreeEnum (Group xs) =
       It . CTree.Choice $
-        fmap (It . CTree.Enum . It . CTree.Group . fmap toCTreeGroupEntry) xs
+        fmap (It . CTree.Enum . It . CTree.Group . fmap toCTreeGroupEntryNC) xs
 
     -- Embed a group in another group, again floating out the choice options
     groupToGroup :: Group -> CTree.Node OrRef
     groupToGroup (Group (a NE.:| [])) =
-      It . CTree.Group $ fmap toCTreeGroupEntry a
+      It . CTree.Group $ fmap toCTreeGroupEntryNC a
     groupToGroup (Group xs) =
       It . CTree.Choice $
-        fmap (It . CTree.Group . fmap toCTreeGroupEntry) xs
+        fmap (It . CTree.Group . fmap toCTreeGroupEntryNC) xs
 
     toKVPair :: Maybe MemberKey -> Type0 -> CTree.Node OrRef
     toKVPair Nothing t0 = toCTreeT0 t0
@@ -249,20 +252,20 @@ buildRefCTree rules = CTreeRoot $ fmap toCTreeRule rules
 
     -- Interpret a group as a map. Note that we float out the choice options
     toCTreeMap :: Group -> CTree.Node OrRef
-    toCTreeMap (Group (a NE.:| [])) = It . CTree.Map $ fmap toCTreeGroupEntry a
+    toCTreeMap (Group (a NE.:| [])) = It . CTree.Map $ fmap toCTreeGroupEntryNC a
     toCTreeMap (Group xs) =
       It
         . CTree.Choice
-        $ fmap (It . CTree.Map . fmap toCTreeGroupEntry) xs
+        $ fmap (It . CTree.Map . fmap toCTreeGroupEntryNC) xs
 
     -- Interpret a group as an array. Note that we float out the choice
     -- options
     toCTreeArray :: Group -> CTree.Node OrRef
     toCTreeArray (Group (a NE.:| [])) =
-      It . CTree.Array $ fmap toCTreeGroupEntry a
+      It . CTree.Array $ fmap toCTreeGroupEntryNC a
     toCTreeArray (Group xs) =
       It . CTree.Choice $
-        fmap (It . CTree.Array . fmap toCTreeGroupEntry) xs
+        fmap (It . CTree.Array . fmap toCTreeGroupEntryNC) xs
 
     toCTreeMemberKey :: MemberKey -> CTree.Node OrRef
     toCTreeMemberKey (MKValue v) = It $ CTree.Literal v
