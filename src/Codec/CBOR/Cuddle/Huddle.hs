@@ -1,8 +1,10 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -59,6 +61,7 @@ module Codec.CBOR.Cuddle.Huddle
     text,
 
     -- * Ctl operators
+    IsConstrainable,
     IsSizeable,
     sized,
     cbor,
@@ -261,7 +264,7 @@ instance IsList Group where
   toList (Group l) = l
 
 data Type2
-  = T2Basic Constrained
+  = T2Constrained Constrained
   | T2Literal Ranged
   | T2Map Map
   | T2Array Array
@@ -346,11 +349,27 @@ inferInteger i
 -- Constraints and Ranges
 --------------------------------------------------------------------------------
 
--- | We only allow constraining basic values.
+-- | A reference can be to any type, so we allow it to inhabit all
+type AnyRef a = Named Type0
+
+data Constrainable a
+  = CValue (Value a)
+  | CRef (AnyRef a)
+  | CGRef GRef
+  deriving (Show)
+
+-- | Uninhabited type used as marker for the type of thing a CRef sizes
+data CRefType
+
+-- | Uninhabited type used as marker for the type of thing a CGRef sizes
+data CGRefType
+
+-- | We only allow constraining basic values, or references. Of course, we
+--   can't check what the references refer to.
 data Constrained where
   Constrained ::
     forall a.
-    { value :: Value a,
+    { value :: Constrainable a,
       constraint :: ValueConstraint a,
       -- | Sometimes constraints reference rules. In this case we need to
       -- collect the references in order to traverse them when collecting all
@@ -361,8 +380,20 @@ data Constrained where
 
 deriving instance Show Constrained
 
+class IsConstrainable a x | a -> x where
+  toConstrainable :: a -> Constrainable x
+
+instance IsConstrainable (AnyRef a) CRefType where
+  toConstrainable = CRef
+
+instance IsConstrainable (Value a) a where
+  toConstrainable = CValue
+
+instance IsConstrainable GRef CGRefType where
+  toConstrainable = CGRef
+
 unconstrained :: Value a -> Constrained
-unconstrained v = Constrained v def []
+unconstrained v = Constrained (CValue v) def []
 
 -- | A constraint on a 'Value' is something applied via CtlOp or RangeOp on a
 -- Type2, forming a Type1.
@@ -391,6 +422,10 @@ instance IsSizeable ByteString
 
 instance IsSizeable T.Text
 
+instance IsSizeable CRefType
+
+instance IsSizeable CGRefType
+
 -- | Things which can be used on the RHS of the '.size' operator.
 class IsSize a where
   sizeAsCDDL :: a -> C.Type2
@@ -412,11 +447,20 @@ instance IsSize (Word64, Word64) where
       )
   sizeAsString (x, y) = show x <> ".." <> show y
 
--- | Declare a size constraint on an int-style type.
-sized :: (IsSizeable a, IsSize s) => Value a -> s -> Constrained
+-- | Declare a size constraint on an int-style type or reference.
+--   Since 0.3.4 this has worked for reference types as well as values.
+sized ::
+  forall c a s.
+  ( IsSizeable a,
+    IsSize s,
+    IsConstrainable c a
+  ) =>
+  c ->
+  s ->
+  Constrained
 sized v sz =
   Constrained
-    v
+    (toConstrainable @c @a v)
     ValueConstraint
       { applyConstraint = \t2 ->
           C.Type1
@@ -426,10 +470,15 @@ sized v sz =
       }
     []
 
-cbor :: Value ByteString -> Rule -> Constrained
+class IsCborable a 
+instance IsCborable ByteString 
+instance IsCborable CRef 
+instance IsCborable CGRef 
+
+cbor :: (IsCborable b, IsConstrainable c b) => c -> Rule -> Constrained
 cbor v r@(Named n _ _) =
   Constrained
-    v
+    (toConstrainable v)
     ValueConstraint
       { applyConstraint = \t2 ->
           C.Type1
@@ -439,10 +488,15 @@ cbor v r@(Named n _ _) =
       }
     [r]
 
-le :: Value Int -> Word64 -> Constrained
+class IsComparable a 
+instance IsComparable Int 
+instance IsComparable CRef 
+instance IsComparable CGRef
+
+le :: (IsComparable a, IsConstrainable c a) => c -> Word64 -> Constrained
 le v bound =
   Constrained
-    v
+    (toConstrainable v)
     ValueConstraint
       { applyConstraint = \t2 ->
           C.Type1
@@ -485,7 +539,7 @@ instance IsType0 (Choice Type2) where
   toType0 = id
 
 instance IsType0 Constrained where
-  toType0 = NoChoice . T2Basic
+  toType0 = NoChoice . T2Constrained
 
 instance IsType0 Map where
   toType0 = NoChoice . T2Map
@@ -523,7 +577,7 @@ instance IsType0 Double where
   toType0 = NoChoice . T2Literal . Unranged . LDouble
 
 instance IsType0 (Value a) where
-  toType0 = NoChoice . T2Basic . unconstrained
+  toType0 = NoChoice . T2Constrained . unconstrained
 
 instance IsType0 (Named Group) where
   toType0 = NoChoice . T2Group
@@ -667,7 +721,7 @@ instance IsChoosable ByteString Type2 where
   toChoice = toChoice . T2Literal . Unranged . LBytes
 
 instance IsChoosable Constrained Type2 where
-  toChoice = toChoice . T2Basic
+  toChoice = toChoice . T2Constrained
 
 instance (IsType0 a) => IsChoosable (Tagged a) Type2 where
   toChoice = toChoice . T2Tagged . fmap toType0
@@ -676,7 +730,7 @@ instance IsChoosable Literal Type2 where
   toChoice = toChoice . T2Literal . Unranged
 
 instance IsChoosable (Value a) Type2 where
-  toChoice = toChoice . T2Basic . unconstrained
+  toChoice = toChoice . T2Constrained . unconstrained
 
 instance IsChoosable (Named Group) Type2 where
   toChoice = toChoice . T2Group
@@ -903,7 +957,13 @@ collectFrom topRs =
       -- Note that the parameters here may be different, so this doesn't live
       -- under the guard
       mapM_ goT2 $ args g
-    goT2 (T2Basic (Constrained _ _ refs)) = mapM_ goRule refs
+    goT2 (T2Constrained (Constrained c _ refs)) =
+      ( case c of
+          CValue _ -> pure ()
+          CRef r -> goRule r
+          CGRef _ -> pure ()
+      )
+        >> mapM_ goRule refs
     goT2 _ = pure ()
     goArrayEntry (ArrayEntry (Just k) t0 _ _) = goKey k >> goT0 t0
     goArrayEntry (ArrayEntry Nothing t0 _ _) = goT0 t0
@@ -985,9 +1045,9 @@ toCDDL' mkPseudoRoot hdl =
 
     toCDDLType1 :: Type2 -> C.Type1
     toCDDLType1 = \case
-      T2Basic (Constrained x constr _) ->
+      T2Constrained (Constrained x constr _) ->
         -- TODO Need to handle choices at the top level
-        applyConstraint constr (C.T2Name (toCDDLPostlude x) Nothing)
+        applyConstraint constr (C.T2Name (toCDDLConstrainable x) Nothing)
       T2Literal l -> toCDDLRanged l
       T2Map m ->
         C.Type1
@@ -1017,13 +1077,14 @@ toCDDL' mkPseudoRoot hdl =
 
     arrayEntryToCDDL :: ArrayEntry -> C.WithComments C.GroupEntry
     arrayEntryToCDDL (ArrayEntry k v occ cmnt) =
-      C.WithComments 
-        (      C.GEType
-                (toOccurrenceIndicator occ)
-                (fmap toMemberKey k)
-                (toCDDLType0 v)
+      C.WithComments
+        ( C.GEType
+            (toOccurrenceIndicator occ)
+            (fmap toMemberKey k)
+            (toCDDLType0 v)
         )
         (fmap C.Comment cmnt)
+
     toCDDLPostlude :: Value a -> C.Name
     toCDDLPostlude VBool = C.Name "bool"
     toCDDLPostlude VUInt = C.Name "uint"
@@ -1036,6 +1097,11 @@ toCDDL' mkPseudoRoot hdl =
     toCDDLPostlude VText = C.Name "text"
     toCDDLPostlude VAny = C.Name "any"
     toCDDLPostlude VNil = C.Name "nil"
+
+    toCDDLConstrainable c = case c of
+      CValue v -> toCDDLPostlude v
+      CRef r -> C.Name $ name r
+      CGRef (GRef n) -> C.Name n
 
     toCDDLRanged :: Ranged -> C.Type1
     toCDDLRanged (Unranged x) =
