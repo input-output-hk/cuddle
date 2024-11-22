@@ -956,13 +956,14 @@ bounded_bytes = "bounded_bytes" =:= VBytes `sized` (0 :: Word64, 64 :: Word64)
 
 -- a type for distinct values.
 -- The type parameter must support .size, for example: bytes or uint
-distinct :: (IsSizeable s) => Value s -> Rule
-distinct x =
-  "distinct_"
-    <> T.pack (show x)
+
+distinct :: (IsType0 a, IsConstrainable a b)  => a -> GRuleCall
+distinct = binding $ \x -> 
+  "distinct"
       =:= (x `sized` (8 :: Word64))
       / (x `sized` (16 :: Word64))
       / (x `sized` (20 :: Word64))
       / (x `sized` (24 :: Word64))
       / (x `sized` (30 :: Word64))
       / (x `sized` (32 :: Word64))
+
