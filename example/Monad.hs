@@ -42,9 +42,9 @@ spec2 =
           _transaction <-
             "transaction"
               =:= mp
-                [ idx 0 ==> set txIn,
-                  idx 1 ==> set txOut,
-                  idx 2 ==> metadata
+                [ comment "Transaction inputs" $ idx 0 ==> set txIn,
+                  comment "Transaction outputs" $ idx 1 ==> set txOut,
+                  comment "Metadata" $ idx 2 ==> metadata
                 ]
           metadata <- "metadata" =:= VBytes
           _value <- "value" =:= mp ["token" ==> VText, "quantity" ==> VUInt]

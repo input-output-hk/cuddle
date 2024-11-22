@@ -161,10 +161,11 @@ type2Spec = describe "type2" $ do
         `shouldParse` T2Map
           ( Group
               ( (NE.:| [])
-                  [ GEType
-                      Nothing
-                      (Just (MKType (Type1 (T2Name (Name "int") Nothing) Nothing)))
-                      (Type0 ((NE.:| []) (Type1 (T2Name (Name "string") Nothing) Nothing)))
+                  [ noComment $
+                      GEType
+                        Nothing
+                        (Just (MKType (Type1 (T2Name (Name "int") Nothing) Nothing)))
+                        (Type0 ((NE.:| []) (Type1 (T2Name (Name "string") Nothing) Nothing)))
                   ]
               )
           )
@@ -173,10 +174,11 @@ type2Spec = describe "type2" $ do
         `shouldParse` T2Map
           ( Group
               ( (NE.:| [])
-                  [ GEType
-                      (Just OIZeroOrMore)
-                      (Just (MKType (Type1 (T2Name (Name "int") Nothing) Nothing)))
-                      (Type0 ((NE.:| []) (Type1 (T2Name (Name "string") Nothing) Nothing)))
+                  [ noComment $
+                      GEType
+                        (Just OIZeroOrMore)
+                        (Just (MKType (Type1 (T2Name (Name "int") Nothing) Nothing)))
+                        (Type0 ((NE.:| []) (Type1 (T2Name (Name "string") Nothing) Nothing)))
                   ]
               )
           )
@@ -185,27 +187,29 @@ type2Spec = describe "type2" $ do
       parse pType2 "" "[int // string]"
         `shouldParse` T2Array
           ( Group
-              ( [ GEType
-                    Nothing
-                    Nothing
-                    ( Type0
-                        ( Type1
-                            (T2Name (Name "int") Nothing)
-                            Nothing
-                            NE.:| []
-                        )
-                    )
+              ( [ noComment $
+                    GEType
+                      Nothing
+                      Nothing
+                      ( Type0
+                          ( Type1
+                              (T2Name (Name "int") Nothing)
+                              Nothing
+                              NE.:| []
+                          )
+                      )
                 ]
-                  NE.:| [ [ GEType
-                              Nothing
-                              Nothing
-                              ( Type0
-                                  ( Type1
-                                      (T2Name (Name "string") Nothing)
-                                      Nothing
-                                      NE.:| []
-                                  )
-                              )
+                  NE.:| [ [ noComment $
+                              GEType
+                                Nothing
+                                Nothing
+                                ( Type0
+                                    ( Type1
+                                        (T2Name (Name "string") Nothing)
+                                        Nothing
+                                        NE.:| []
+                                    )
+                                )
                           ]
                         ]
               )
@@ -215,15 +219,17 @@ type2Spec = describe "type2" $ do
       parse pType2 "" "[0 // 1]"
         `shouldParse` T2Array
           ( Group
-              ( [ GEType
-                    Nothing
-                    Nothing
-                    (Type0 ((NE.:| []) (Type1 (T2Value (VUInt 0)) Nothing)))
+              ( [ noComment $
+                    GEType
+                      Nothing
+                      Nothing
+                      (Type0 ((NE.:| []) (Type1 (T2Value (VUInt 0)) Nothing)))
                 ]
-                  NE.:| [ [ GEType
-                              Nothing
-                              Nothing
-                              (Type0 ((NE.:| []) (Type1 (T2Value (VUInt 1)) Nothing)))
+                  NE.:| [ [ noComment $
+                              GEType
+                                Nothing
+                                Nothing
+                                (Type0 ((NE.:| []) (Type1 (T2Value (VUInt 1)) Nothing)))
                           ]
                         ]
               )
@@ -293,16 +299,17 @@ grpChoiceSpec :: SpecWith ()
 grpChoiceSpec = describe "GroupChoice" $ do
   it "Should parse part of a group alternative" $
     parse pGrpChoice "" "int // string"
-      `shouldParse` [ GEType
-                        Nothing
-                        Nothing
-                        ( Type0
-                            ( Type1
-                                (T2Name (Name "int") Nothing)
-                                Nothing
-                                NE.:| []
-                            )
-                        )
+      `shouldParse` [ noComment $
+                        GEType
+                          Nothing
+                          Nothing
+                          ( Type0
+                              ( Type1
+                                  (T2Name (Name "int") Nothing)
+                                  Nothing
+                                  NE.:| []
+                              )
+                          )
                     ]
 
 type1Spec :: Spec

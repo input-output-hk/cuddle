@@ -167,7 +167,7 @@ instance Arbitrary Group where
   shrink (Group gr) = Group <$> shrinkNE gr
 
 genGrpChoice :: Gen GrpChoice
-genGrpChoice = listOf' genGroupEntry
+genGrpChoice = listOf' (noComment <$> genGroupEntry)
 
 genGroupEntry :: Gen GroupEntry
 genGroupEntry =
@@ -240,6 +240,11 @@ genCtlOp =
 instance Arbitrary CtlOp where
   arbitrary = genCtlOp
   shrink = genericShrink
+
+instance Arbitrary a => Arbitrary (WithComments a) where
+  arbitrary = noComment <$> arbitrary
+  shrink (WithComments x _) = noComment <$> shrink x 
+
 
 --------------------------------------------------------------------------------
 -- Utility
