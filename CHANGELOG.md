@@ -29,3 +29,12 @@
   control over the order that items are presented in the CDDL, at the cost 
   of making it somewhat harder to re-use items (they need to be returned from
   the monad).
+
+## O.3.5.0 -- 2024-11-25
+
+* Add support for constraints on references and generic references.
+* Add support for using references as range bounds. Note that this breaks 
+  backwards compatibility - because the range arguments are now more generic, 
+  additional hints are required to type literal numerics correctly. Typically 
+  this is most easily fixed by adding a call `int` for any numeric literals in 
+  ranges. An example is shown in `example/Conway.hs` 
