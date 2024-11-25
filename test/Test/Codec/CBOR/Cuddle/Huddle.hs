@@ -22,6 +22,7 @@ huddleSpec = describe "huddle" $ do
   mapSpec
   nestedSpec
   genericSpec
+  constraintSpec
 
 basicAssign :: Spec
 basicAssign = describe "basic assignment" $ do
@@ -111,6 +112,12 @@ genericSpec =
             toSortedCDDL (collectFrom ["mymap" =:= dict VUInt VText])
               `shouldMatchParseCDDL` "dict<a0, b0> = {* a0 => b0}\n mymap = dict<uint, text>"
 
+constraintSpec :: Spec 
+constraintSpec = 
+  describe "Constraints" $ 
+    it "Size can take a Word" $ 
+      toSortedCDDL (collectFrom ["sz" =:= VUInt `sized` (2 :: Word)])
+        `shouldMatchParseCDDL` "sz = uint .size 2"
 --------------------------------------------------------------------------------
 -- Helper functions
 --------------------------------------------------------------------------------

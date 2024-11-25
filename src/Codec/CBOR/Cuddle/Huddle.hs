@@ -431,6 +431,10 @@ class IsSize a where
   sizeAsCDDL :: a -> C.Type2
   sizeAsString :: a -> String
 
+instance IsSize Word where
+  sizeAsCDDL = C.T2Value . C.VUInt . fromIntegral
+  sizeAsString = show 
+
 instance IsSize Word64 where
   sizeAsCDDL = C.T2Value . C.VUInt
   sizeAsString = show
