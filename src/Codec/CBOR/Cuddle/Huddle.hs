@@ -234,7 +234,7 @@ instance Num ArrayEntry where
   fromInteger i =
     ArrayEntry
       Nothing
-      (NoChoice . T2Literal . Unranged $ LInt (fromIntegral i))
+      (NoChoice . T2Range . Unranged $ LInt (fromIntegral i))
       def
       Nothing
   (+) = error "Cannot treat ArrayEntry as a number"
@@ -265,7 +265,7 @@ instance IsList Group where
 
 data Type2
   = T2Constrained Constrained
-  | T2Literal Ranged
+  | T2Range Ranged
   | T2Map Map
   | T2Array Array
   | T2Tagged (Tagged Type0)
@@ -280,7 +280,7 @@ data Type2
 type Type0 = Choice Type2
 
 instance Num Type0 where
-  fromInteger i = NoChoice . T2Literal . Unranged $ LInt (fromIntegral i)
+  fromInteger i = NoChoice . T2Range . Unranged $ LInt (fromIntegral i)
   (+) = error "Cannot treat Type0 as a number"
   (*) = error "Cannot treat Type0 as a number"
   abs = error "Cannot treat Type0 as a number"
@@ -512,20 +512,36 @@ le v bound =
 
 -- Ranges
 
+data RangeBound =
+    RangeBoundLiteral Literal 
+  | RangeBoundRef (Named Type0) 
+  deriving Show
+
+class IsRangeBound a where
+  toRangeBound :: a -> RangeBound 
+
+instance IsRangeBound Literal where
+  toRangeBound = RangeBoundLiteral 
+
+instance IsRangeBound Integer where
+  toRangeBound = RangeBoundLiteral . inferInteger
+
+instance IsRangeBound (Named Type0) where
+  toRangeBound = RangeBoundRef
+
 data Ranged where
   Ranged ::
-    { lb :: Literal,
-      ub :: Literal,
+    { lb :: RangeBound,
+      ub :: RangeBound,
       bounds :: C.RangeBound
     } ->
     Ranged
   Unranged :: Literal -> Ranged
   deriving (Show)
 
--- | Establish a closed range bound. Currently specialised to Int for type
--- inference purposes.
-(...) :: Integer -> Integer -> Ranged
-l ... u = Ranged (inferInteger l) (inferInteger u) C.Closed
+-- | Establish a closed range bound.
+(...) :: (IsRangeBound a, IsRangeBound b) => a -> b -> Ranged
+l ... u = Ranged (toRangeBound l) (toRangeBound u) C.Closed
 
 infixl 9 ...
 
@@ -558,27 +574,27 @@ instance IsType0 ArrayChoice where
   toType0 = NoChoice . T2Array . NoChoice
 
 instance IsType0 Ranged where
-  toType0 = NoChoice . T2Literal
+  toType0 = NoChoice . T2Range
 
 instance IsType0 Literal where
-  toType0 = NoChoice . T2Literal . Unranged
+  toType0 = NoChoice . T2Range . Unranged
 
 -- We also allow going directly from primitive types to Type2
 instance IsType0 Integer where
-  toType0 = NoChoice . T2Literal . Unranged . inferInteger
+  toType0 = NoChoice . T2Range . Unranged . inferInteger
 
 instance IsType0 T.Text where
   toType0 :: T.Text -> Type0
-  toType0 = NoChoice . T2Literal . Unranged . LText
+  toType0 = NoChoice . T2Range . Unranged . LText
 
 instance IsType0 ByteString where
-  toType0 = NoChoice . T2Literal . Unranged . LBytes
+  toType0 = NoChoice . T2Range . Unranged . LBytes
 
 instance IsType0 Float where
-  toType0 = NoChoice . T2Literal . Unranged . LFloat
+  toType0 = NoChoice . T2Range . Unranged . LFloat
 
 instance IsType0 Double where
-  toType0 = NoChoice . T2Literal . Unranged . LDouble
+  toType0 = NoChoice . T2Range . Unranged . LDouble
 
 instance IsType0 (Value a) where
   toType0 = NoChoice . T2Constrained . unconstrained
@@ -722,7 +738,7 @@ instance IsChoosable GRef Type2 where
   toChoice = toChoice . T2GenericRef
 
 instance IsChoosable ByteString Type2 where
-  toChoice = toChoice . T2Literal . Unranged . LBytes
+  toChoice = toChoice . T2Range . Unranged . LBytes
 
 instance IsChoosable Constrained Type2 where
   toChoice = toChoice . T2Constrained
@@ -731,7 +747,7 @@ instance (IsType0 a) => IsChoosable (Tagged a) Type2 where
   toChoice = toChoice . T2Tagged . fmap toType0
 
 instance IsChoosable Literal Type2 where
-  toChoice = toChoice . T2Literal . Unranged
+  toChoice = toChoice . T2Range . Unranged
 
 instance IsChoosable (Value a) Type2 where
   toChoice = toChoice . T2Constrained . unconstrained
@@ -944,6 +960,7 @@ collectFrom topRs =
     goChoice f (NoChoice x) = f x
     goChoice f (ChoiceOf x xs) = f x >> goChoice f xs
     goT0 = goChoice goT2
+    goT2 (T2Range r) = goRanged r 
     goT2 (T2Map m) = goChoice (mapM_ goMapEntry . unMapChoice) m
     goT2 (T2Array m) = goChoice (mapM_ goArrayEntry . unArrayChoice) m
     goT2 (T2Tagged (Tagged _ t0)) = goT0 t0
@@ -975,7 +992,11 @@ collectFrom topRs =
     goKey (TypeKey k) = goT2 k
     goKey _ = pure ()
     goGroup (Group g) = mapM_ goT0 g
-
+    goRanged (Unranged _) = pure ()
+    goRanged (Ranged lb ub _) = goRangeBound lb >> goRangeBound ub 
+    goRangeBound (RangeBoundLiteral _) = pure ()
+    goRangeBound (RangeBoundRef r) = goRule r
+    
 --------------------------------------------------------------------------------
 -- Conversion to CDDL
 --------------------------------------------------------------------------------
@@ -1052,7 +1073,7 @@ toCDDL' mkPseudoRoot hdl =
       T2Constrained (Constrained x constr _) ->
         -- TODO Need to handle choices at the top level
         applyConstraint constr (C.T2Name (toCDDLConstrainable x) Nothing)
-      T2Literal l -> toCDDLRanged l
+      T2Range l -> toCDDLRanged l
       T2Map m ->
         C.Type1
           (C.T2Map $ mapToCDDLGroup m)
@@ -1112,8 +1133,12 @@ toCDDL' mkPseudoRoot hdl =
       C.Type1 (C.T2Value $ toCDDLValue x) Nothing
     toCDDLRanged (Ranged lb ub rop) =
       C.Type1
-        (C.T2Value $ toCDDLValue lb)
-        (Just (C.RangeOp rop, C.T2Value $ toCDDLValue ub))
+        (toCDDLRangeBound lb)
+        (Just (C.RangeOp rop, toCDDLRangeBound ub))
+
+    toCDDLRangeBound :: RangeBound -> C.Type2 
+    toCDDLRangeBound (RangeBoundLiteral l) = C.T2Value $ toCDDLValue l
+    toCDDLRangeBound (RangeBoundRef (Named n _ _)) = C.T2Name (C.Name n) Nothing
 
     toCDDLGroup :: Named Group -> C.WithComments C.Rule
     toCDDLGroup (Named n (Group t0s) c) =

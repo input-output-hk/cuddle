@@ -647,7 +647,7 @@ language =
     / int 2 -- Plutus v3
 
 potential_languages :: Rule
-potential_languages = "potential_languages" =:= 0 ... 255
+potential_languages = "potential_languages" =:= int 0 ... int 255
 
 -- The format for costmdls is flexible enough to allow adding Plutus built-ins and language
 -- versions in the future.
@@ -767,16 +767,16 @@ asset_name :: Rule
 asset_name = "asset_name" =:= VBytes `sized` (0 :: Word64, 32 :: Word64)
 
 negInt64 :: Rule
-negInt64 = "negInt64" =:= (-9223372036854775808) ... (-1)
+negInt64 = "negInt64" =:= int (-9223372036854775808) ... int (-1)
 
 posInt64 :: Rule
-posInt64 = "posInt64" =:= 1 ... 9223372036854775807
+posInt64 = "posInt64" =:= int 1 ... int 9223372036854775807
 
 nonZeroInt64 :: Rule
 nonZeroInt64 = "nonZeroInt64" =:= negInt64 / posInt64 -- this is the same as the current int64 definition but without zero
 
 positive_coin :: Rule
-positive_coin = "positive_coin" =:= 1 ... 18446744073709551615
+positive_coin = "positive_coin" =:= int 1 ... int 18446744073709551615
 
 value :: Rule
 value = "value" =:= coin / sarr [a coin, a (multiasset positive_coin)]
@@ -785,7 +785,7 @@ mint :: Rule
 mint = "mint" =:= multiasset nonZeroInt64
 
 int64 :: Rule
-int64 = "int64" =:= (-9223372036854775808) ... 9223372036854775807
+int64 = "int64" =:= int (-9223372036854775808) ... int 9223372036854775807
 
 network_id :: Rule
 network_id = "network_id" =:= int 0 / int 1
@@ -900,7 +900,7 @@ nonempty_oset :: (IsType0 t0) => t0 -> GRuleCall
 nonempty_oset = nonempty_set
 
 positive_int :: Rule
-positive_int = "positive_int" =:= 1 ... 18446744073709551615
+positive_int = "positive_int" =:= int 1 ... int 18446744073709551615
 
 unit_interval :: Rule
 unit_interval = "unit_interval" =:= tag 30 (arr [1, 2])

@@ -114,10 +114,15 @@ genericSpec =
 
 constraintSpec :: Spec 
 constraintSpec = 
-  describe "Constraints" $ 
+  describe "Constraints" $ do
     it "Size can take a Word" $ 
       toSortedCDDL (collectFrom ["sz" =:= VUInt `sized` (2 :: Word)])
         `shouldMatchParseCDDL` "sz = uint .size 2"
+
+    it "Range bound can take a reference" $ 
+      let b = "b" =:= (16 :: Integer) in 
+      toSortedCDDL (collectFrom ["b" =:= (16 :: Integer), "c" =:= int 0 ... b])
+        `shouldMatchParseCDDL` "b = 16\n c = 0 .. b"
 --------------------------------------------------------------------------------
 -- Helper functions
 --------------------------------------------------------------------------------
