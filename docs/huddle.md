@@ -14,6 +14,27 @@ Huddle utilizes several core types to represent CDDL constructs:
 ● Value: A type representing primitive CBOR values.
 ● Group: Represents a collection of entries within a map or array.
 
+## Language Extensions
+
+Huddle makes use of some Haskell language extensions which liberalise aspects
+of Haskell's syntax. We recommend enabling them whenever working with Huddle:
+
+```haskell
+{-# LANGUAGE OverloadedLists #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE NoImplicitPrelude #-}
+```
+
+In addition, if using hlint, we suggest disabling the following hints:
+
+```haskell
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+
+{-# HLINT ignore "Use camelCase" #-}
+{-# HLINT ignore "Evaluate" #-}
+
+```
+  
 ## Rules and Assignment
 Rules are defined using the =:= operator. The left-hand side of the operator is
 the rule name (a T.Text value), and the right-hand side is the type definition.
