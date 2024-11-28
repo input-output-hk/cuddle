@@ -69,3 +69,5 @@ Obviously, this comes with the downside of needing to sensibly mesh the
 different abstraction facilities offered by Haskell and CDDL. We have tried to 
 find a balance where the Huddle code roughly matches the CDDL but gains many
 of the advantages of writing in Haskell.
+
+[A guide to writing Huddle](docs/huddle.md) goes into more details.
