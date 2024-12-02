@@ -20,6 +20,7 @@ huddleSpec = describe "huddle" $ do
   basicAssign
   arraySpec
   mapSpec
+  grpSpec
   nestedSpec
   genericSpec
   constraintSpec
@@ -85,6 +86,21 @@ mapSpec = describe "Maps" $ do
     toSortedCDDL ["mir" =:= arr [a (int 0 / int 1), a $ mp [0 <+ "test" ==> VUInt]]]
       `shouldMatchParseCDDL` "mir = [ 0 / 1, { * test : uint }]"
 
+grpSpec :: Spec 
+grpSpec = describe "Groups" $ do 
+  it "Can handle a choice in a group entry" $ 
+    let g1 = "g1" =:~ grp [a (VUInt / VBytes), a VUInt]
+    in toSortedCDDL (collectFrom ["a1" =:= arr [a g1]])
+      `shouldMatchParseCDDL` "a1 = [g1]\n g1 = ( uint / bytes, uint )"
+  it "Can handle keys in a group entry" $ 
+    let g1 = "g1" =:~ grp ["bytes"==> VBytes]
+    in toSortedCDDL (collectFrom ["a1" =:= arr [a g1]])
+      `shouldMatchParseCDDL` "a1 = [g1]\n g1 = (bytes : bytes)"
+  -- it "Can handle a group in a map" $ 
+  --   let g1 = "g1" =:~ grp ["bytes"==> VBytes]
+  --   in toSortedCDDL (collectFrom ["a1" =:= mp [g1]])
+  --     `shouldMatchParseCDDL` "a1 = [g1]\n g1 = (bytes : bytes)"
+ 
 nestedSpec :: Spec
 nestedSpec =
   describe "Nesting" $
