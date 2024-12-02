@@ -159,30 +159,30 @@ parameter_change_action =
   "parameter_change_action"
     =:~ grp
       [ 0,
-        gov_action_id / VNil,
+        a (gov_action_id / VNil),
         a protocol_param_update,
-        policy_hash / VNil
+        a (policy_hash / VNil)
       ]
 
 hard_fork_initiation_action :: Named Group
 hard_fork_initiation_action =
   "hard_fork_initiation_action"
-    =:~ grp [1, gov_action_id / VNil, a (arr [a protocol_version])]
+    =:~ grp [1, a (gov_action_id / VNil), a (arr [a protocol_version])]
 
 treasury_withdrawals_action :: Named Group
 treasury_withdrawals_action =
   "treasury_withdrawals_action"
-    =:~ grp [2, a (arr [asKey reward_account ==> coin / VInt]), policy_hash / VNil]
+    =:~ grp [2, a (arr [asKey reward_account ==> coin / VInt]), a (policy_hash / VNil)]
 
 no_confidence :: Named Group
-no_confidence = "no_confidence" =:~ grp [3, gov_action_id / VNil]
+no_confidence = "no_confidence" =:~ grp [3, a (gov_action_id / VNil)]
 
 update_committee :: Named Group
 update_committee =
   "update_committee"
     =:~ grp
       [ 4,
-        gov_action_id / VNil,
+        a (gov_action_id / VNil),
         a (set committee_cold_credential),
         a (arr [asKey committee_cold_credential ==> epoch]),
         a unit_interval
@@ -191,7 +191,7 @@ update_committee =
 new_constitution :: Named Group
 new_constitution =
   "new_constitution"
-    =:~ grp [5, gov_action_id / VNil, a constitution]
+    =:~ grp [5, a (gov_action_id / VNil), a constitution]
 
 constitution :: Rule
 constitution =
@@ -356,16 +356,16 @@ auth_committee_hot_cert =
 resign_committee_cold_cert :: Named Group
 resign_committee_cold_cert =
   "resign_committee_cold_cert"
-    =:~ grp [15, a committee_cold_credential, anchor / VNil]
+    =:~ grp [15, a committee_cold_credential, a (anchor / VNil)]
 
 reg_drep_cert :: Named Group
-reg_drep_cert = "reg_drep_cert" =:~ grp [16, a drep_credential, a coin, anchor / VNil]
+reg_drep_cert = "reg_drep_cert" =:~ grp [16, a drep_credential, a coin, a (anchor / VNil)]
 
 unreg_drep_cert :: Named Group
 unreg_drep_cert = "unreg_drep_cert" =:~ grp [17, a drep_credential, a coin]
 
 update_drep_cert :: Named Group
-update_drep_cert = "update_drep_cert" =:~ grp [18, a drep_credential, anchor / VNil]
+update_drep_cert = "update_drep_cert" =:~ grp [18, a drep_credential, a (anchor / VNil)]
 
 delta_coin :: Rule
 delta_coin = "delta_coin" =:= VUInt
@@ -429,9 +429,9 @@ single_host_addr =
   "single_host_addr"
     =:~ grp
       [ 0,
-        port / VNil,
-        ipv4 / VNil,
-        ipv6 / VNil
+        a (port / VNil),
+        a (ipv4 / VNil),
+        a (ipv6 / VNil)
       ]
 
 single_host_name :: Named Group
@@ -439,7 +439,7 @@ single_host_name =
   "single_host_name"
     =:~ grp
       [ 1,
-        port / VNil,
+        a (port / VNil),
         a dns_name -- An A or AAAA DNS record
       ]
 
