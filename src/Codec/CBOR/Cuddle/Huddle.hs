@@ -254,11 +254,11 @@ instance IsList ArrayChoice where
 
 type Array = Choice ArrayChoice
 
-newtype Group = Group {unGroup :: [Type0]}
+newtype Group = Group {unGroup :: [ArrayEntry]}
   deriving (Show, Monoid, Semigroup)
 
 instance IsList Group where
-  type Item Group = Type0
+  type Item Group = ArrayEntry
 
   fromList = Group
   toList (Group l) = l
@@ -991,7 +991,7 @@ collectFrom topRs =
     goMapEntry (MapEntry k t0 _ _) = goKey k >> goT0 t0
     goKey (TypeKey k) = goT2 k
     goKey _ = pure ()
-    goGroup (Group g) = mapM_ goT0 g
+    goGroup (Group g) = mapM_ goArrayEntry g
     goRanged (Unranged _) = pure ()
     goRanged (Ranged lb ub _) = goRangeBound lb >> goRangeBound ub 
     goRangeBound (RangeBoundLiteral _) = pure ()
@@ -1148,7 +1148,7 @@ toCDDL' mkPseudoRoot hdl =
             . C.GEGroup Nothing
             . C.Group
             . (NE.:| [])
-            $ fmap (C.noComment . C.GEType Nothing Nothing . toCDDLType0) t0s
+            $ fmap arrayEntryToCDDL t0s
         )
         (fmap C.Comment c)
 
