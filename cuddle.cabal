@@ -51,6 +51,7 @@ library
     Codec.CBOR.Cuddle.CDDL.Resolve
     Codec.CBOR.Cuddle.Huddle
     Codec.CBOR.Cuddle.Huddle.HuddleM
+    Codec.CBOR.Cuddle.Huddle.Optics
     Codec.CBOR.Cuddle.Parser
     Codec.CBOR.Cuddle.Pretty
 
