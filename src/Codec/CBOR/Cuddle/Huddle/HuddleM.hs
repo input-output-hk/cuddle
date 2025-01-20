@@ -1,19 +1,20 @@
 -- | Monad for declaring Huddle constructs
-module Codec.CBOR.Cuddle.Huddle.HuddleM (
-  module Huddle,
-  (=:=),
-  (=:~),
-  (=::=),
-  binding,
-  setRootRules,
-  huddleDef,
-  huddleDef',
-  include,
-  unsafeIncludeFromHuddle,
-)
+module Codec.CBOR.Cuddle.Huddle.HuddleM
+  ( module Huddle,
+    (=:=),
+    (=:~),
+    (=::=),
+    binding,
+    binding',
+    setRootRules,
+    huddleDef,
+    huddleDef',
+    include,
+    unsafeIncludeFromHuddle,
+  )
 where
 
-import Codec.CBOR.Cuddle.Huddle hiding (binding, (=:=), (=:~))
+import Codec.CBOR.Cuddle.Huddle hiding (binding, binding', (=:=), (=:~))
 import Codec.CBOR.Cuddle.Huddle qualified as Huddle
 import Control.Monad.State.Strict (State, modify, runState)
 import Data.Default.Class (def)
@@ -42,6 +43,11 @@ binding ::
   (GRef -> Rule) ->
   HuddleM (t0 -> GRuleCall)
 binding fRule = include (Huddle.binding fRule)
+
+binding' ::
+  (GRef -> Rule) ->
+  HuddleM GRuleDef'
+binding' fRule = include (Huddle.binding' fRule)
 
 -- | Renamed version of Huddle's underlying '=:=' for use in generic bindings
 (=::=) :: IsType0 a => T.Text -> a -> Rule
@@ -84,9 +90,15 @@ instance IsType0 t0 => Includable (t0 -> GRuleCall) where
           modify (field @"items" %~ (OMap.|> (n, HIGRule grDef)))
           pure gr
 
+instance Includable GRuleDef' where
+  include r =
+    modify (field @"items" %~ (OMap.|> (r ^. field @"name", HIGRule' r)))
+      >> pure r
+
 instance Includable HuddleItem where
   include x@(HIRule r) = include r >> pure x
   include x@(HIGroup g) = include g >> pure x
+  include x@(HIGRule' g) = include g >> pure x
   include x@(HIGRule g) =
     let n = g ^. field @"name"
      in do
