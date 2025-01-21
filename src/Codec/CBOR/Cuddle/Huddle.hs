@@ -1228,7 +1228,7 @@ toCDDL' mkPseudoRoot hdl =
     toGenericCall' (Named n gr _) =
       C.T2Name
         (C.Name n)
-        (Just . C.GenericArg $ NE.singleton (toCDDLType1 (callArg gr)))
+        (Just . C.GenericArg $ (toCDDLType1 (callArg gr)) NE.:| [])
 
     toGenRuleDef :: GRuleDef -> C.WithComments C.Rule
     toGenRuleDef (Named n gr c) =
@@ -1254,4 +1254,4 @@ toCDDL' mkPseudoRoot hdl =
         (C.comment <$> c)
       where
         gps =
-          C.GenericParam $ fmap (\(GRef t) -> C.Name t) (NE.singleton $ arg g)
+          C.GenericParam $ fmap (\(GRef t) -> C.Name t) (arg g NE.:| [])
