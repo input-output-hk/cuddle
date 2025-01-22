@@ -19,8 +19,8 @@ spec = huddleDef $ mdo
   transaction <-
     "transaction"
       =:= mp
-        [ idx 0 ==> set txIn,
-          idx 1 ==> set' <-- txOut
+        [ idx 0 ==> set txIn
+        , idx 1 ==> set' <-- txOut
         ]
   txIn <- "txIn" =:= arr ["transaction_id" ==> hash32, "index" ==> txId]
   txOut <- "txOut" =:= arr [idx 0 ==> address, idx 1 ==> value]
@@ -44,9 +44,9 @@ spec2 =
           _transaction <-
             "transaction"
               =:= mp
-                [ comment "Transaction inputs" $ idx 0 ==> set <-- txIn,
-                  comment "Transaction outputs" $ idx 1 ==> set <-- txOut,
-                  comment "Metadata" $ idx 2 ==> metadata
+                [ comment "Transaction inputs" $ idx 0 ==> set <-- txIn
+                , comment "Transaction outputs" $ idx 1 ==> set <-- txOut
+                , comment "Metadata" $ idx 2 ==> metadata
                 ]
           metadata <- "metadata" =:= VBytes
           _value <- "value" =:= mp ["token" ==> VText, "quantity" ==> VUInt]

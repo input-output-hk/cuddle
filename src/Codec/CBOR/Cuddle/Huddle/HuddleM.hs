@@ -1,17 +1,17 @@
 -- | Monad for declaring Huddle constructs
-module Codec.CBOR.Cuddle.Huddle.HuddleM
-  ( module Huddle,
-    (=:=),
-    (=:~),
-    (=::=),
-    binding,
-    binding',
-    setRootRules,
-    huddleDef,
-    huddleDef',
-    include,
-    unsafeIncludeFromHuddle,
-  )
+module Codec.CBOR.Cuddle.Huddle.HuddleM (
+  module Huddle,
+  (=:=),
+  (=:~),
+  (=::=),
+  binding,
+  binding',
+  setRootRules,
+  huddleDef,
+  huddleDef',
+  include,
+  unsafeIncludeFromHuddle,
+)
 where
 
 import Codec.CBOR.Cuddle.Huddle hiding (binding, binding', (=:=), (=:~))

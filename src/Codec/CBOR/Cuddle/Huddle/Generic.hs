@@ -2,8 +2,8 @@ module Codec.CBOR.Cuddle.Huddle.Generic where
 
 -- | Function carrying its argument
 data FnWithArg a result = FnWithArg
-  { fn :: a -> result,
-    arg :: a
+  { fn :: a -> result
+  , arg :: a
   }
   deriving (Functor)
 
