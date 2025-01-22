@@ -633,10 +633,14 @@ instance IsType0 HuddleItem where
   toType0 (HIGroup g) = toType0 g
   toType0 (HIGRule g) =
     error $
-      "Attempt to reference generic rule from HuddleItem not supported: " <> show g
+      "Attempt to reference a raw generic rule: "
+        <> show g
+        <> ". Most likely this indicates you haven't provided generic parameters."
   toType0 (HIGRule' g) =
     error $
-      "Attempt to reference generic rule from HuddleItem not supported: " <> show g
+      "Attempt to reference a raw generic rule: "
+        <> show g
+        <> ". Most likely this indicates you haven't provided generic parameters."
 
 class CanQuantify a where
   -- | Apply a lower bound
@@ -966,6 +970,7 @@ data GRuleCallAux = GRuleCallAux
 
 type GRuleCall' = Named GRuleCallAux
 
+-- | Create a generic rule definition binding a single generic parameter.
 binding' :: (GRef -> Rule) -> GRuleDef'
 binding' fRule =
   Named
@@ -983,8 +988,11 @@ instance IsGRuleDef GRuleDef' where
 
 instance IsGRuleDef HuddleItem where
   toGRuleDef (HIGRule' gd) = gd
-  toGRuleDef _ = error "Attempt to use a non-generic rule as a GRuleDef"
+  toGRuleDef hi =
+    error $
+      "Attempt to apply generic parameters to a non-generic rule: " <> show hi
 
+-- | Call a generic definition, applying the given type parameter.
 (<--) :: (IsType0 t0, IsGRuleDef gd) => gd -> t0 -> GRuleCall'
 (toGRuleDef -> f) <-- t0 = fmap toCall f
   where
@@ -1228,7 +1236,7 @@ toCDDL' mkPseudoRoot hdl =
     toGenericCall' (Named n gr _) =
       C.T2Name
         (C.Name n)
-        (Just . C.GenericArg $ (toCDDLType1 (callArg gr)) NE.:| [])
+        (Just . C.GenericArg $ toCDDLType1 (callArg gr) NE.:| [])
 
     toGenRuleDef :: GRuleDef -> C.WithComments C.Rule
     toGenRuleDef (Named n gr c) =
