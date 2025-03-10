@@ -7,12 +7,12 @@ defining CDDL in Huddle.
 
 ## Core Types
 Huddle utilizes several core types to represent CDDL constructs:
-● Huddle: The top-level type representing a collection of rules.
-● HuddleItem: Represents individual items within a Huddle, such as rules, groups, or generic rules.
-● Rule: A named type definition.
-● Named: A type wrapper for associating a name, value, and optional description with an item.
-● Value: A type representing primitive CBOR values.
-● Group: Represents a collection of entries within a map or array.
+- Huddle: The top-level type representing a collection of rules.
+- HuddleItem: Represents individual items within a Huddle, such as rules, groups, or generic rules.
+- Rule: A named type definition.
+- Named: A type wrapper for associating a name, value, and optional description with an item.
+- Value: A type representing primitive CBOR values.
+- Group: Represents a collection of entries within a map or array.
 
 ## Language Extensions
 
@@ -96,9 +96,9 @@ choice =:= optionA / optionB
 ## Quantifiers
 Huddle provides functions to specify occurrence quantifiers for group entries
 and array elements:
-● <+: Lower bound
-● +>: Upper bound
-● opt: Optional (0 or 1 occurrences)
+- <+: Lower bound
+- +>: Upper bound
+- opt: Optional (0 or 1 occurrences)
 
 ### Example:
 ```haskell
