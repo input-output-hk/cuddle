@@ -39,16 +39,18 @@ In addition, if using hlint, we suggest disabling the following hints:
 Rules are defined using the =:= operator. The left-hand side of the operator is
 the rule name (a T.Text value), and the right-hand side is the type definition.
 
-ruleName =:= typeDefinition
+`ruleName =:= typeDefinition`
 
 ### Example:
-`age =:= VUInt`
+```haskell
+age =:= VUInt
+```
 
 ## Maps
 Maps are defined using the mp function and the ==> operator to specify key-value
 pairs.
 
-mapName =:= mp [ key1 ==> value1, key2 ==> value2 ]
+`mapName =:= mp [ key1 ==> value1, key2 ==> value2 ]`
 
 ### Example:
 ```haskell
@@ -61,15 +63,19 @@ location =:= mp [
 ## Arrays
 Arrays are defined using the arr function and the a function to indicate array elements.
 
-arrayName =:= arr [ a element1, a element2 ]
+`arrayName =:= arr [ a element1, a element2 ]`
 
 ### Example:
+```haskell
 point =:= arr [ a int, a int ]
+```
+
 ## Groups
 Groups are collections of entries within maps or arrays. They can be named using
 the =:~ operator.
 
-groupName =:~ grp [ entry1, entry2 ]
+`groupName =:~ grp [ entry1, entry2 ]`
+
 ### Example:
 ```haskell
 personalinfo =:~ grp [
@@ -77,10 +83,15 @@ personalinfo =:~ grp [
   "age" ==> uint
 ]
 ```
+
 ## Choices
+
 Huddle represents choices between types using the / operator.
+
 ### Example:
+```haskell
 value =:= int / tstr
+```
 
 Huddle does not have a direct equivalent for the CDDL // operator (group
 choice). Instead, choices within arrays are represented by creating separate
@@ -96,9 +107,9 @@ choice =:= optionA / optionB
 ## Quantifiers
 Huddle provides functions to specify occurrence quantifiers for group entries
 and array elements:
-- <+: Lower bound
-- +>: Upper bound
-- opt: Optional (0 or 1 occurrences)
+- `<+`: Lower bound
+- `+>`: Upper bound
+- `opt`: Optional (0 or 1 occurrences)
 
 ### Example:
 ```haskell
@@ -112,7 +123,7 @@ which will be included as comments in the generated CDDL.
 ### Example:
 ```haskell
 person =:= comment "Represents a person" $ mp [
-  comment "Person's name" $ "name" ==> VBytes,
+  "name" ==> VBytes & comment "Person's name",
   "age" ==> VUIntf
 ]
 ```
@@ -129,11 +140,11 @@ message = binding $ \t -> "message" =:= {
 ```
   
 ## Converting to CDDL
-The toCDDL and toCDDLNoRoot functions convert a Huddle definition to CDDL.
-toCDDL generates a top-level root element, while toCDDLNoRoot skips the root
+The `toCDDL` and `toCDDLNoRoot` functions convert a Huddle definition to CDDL.
+`toCDDL` generates a top-level root element, while `toCDDLNoRoot` skips the root
 element.
 
 ## Example File (Conway.hs)
-The Conway.hs example file showcases a practical application of Huddle to define
-the CDDL for a specific data structure. The file defines numerous rules and
-groups using the Huddle syntax and functions described above.
+The `Conway.hs` example file showcases a practical application of Huddle to
+define the CDDL for a specific data structure. The file defines numerous rules
+and groups using the Huddle syntax and functions described above.
