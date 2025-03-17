@@ -123,7 +123,7 @@ instance (RandomGen r) => RandomGenM (CapGenM r) r (M r) where
   applyRandomGenM f _ = state @"randomSeed" f
 
 runGen :: M g a -> GenEnv g -> GenState g -> (a, GenState g)
-runGen (M m) env st = runReader (runStateT m st) env
+runGen m env st = runReader (runStateT (runM m) st) env
 
 evalGen :: M g a -> GenEnv g -> GenState g -> a
 evalGen m env = fst . runGen m env
@@ -165,19 +165,6 @@ genBytes n = asksM @"fakeSeed" $ uniformByteStringM n
 
 genText :: forall g. (RandomGen g) => Int -> M g Text
 genText n = pure $ T.pack . take n . join $ repeat ['a' .. 'z']
-
---------------------------------------------------------------------------------
--- Combinators
---------------------------------------------------------------------------------
-
-choose :: (RandomGen g) => [a] -> M g a
-choose xs = genUniformRM (0, length xs) >>= \i -> pure $ xs !! i
-
-oneOf :: (RandomGen g) => [M g a] -> M g a
-oneOf xs = genUniformRM (0, length xs) >>= \i -> xs !! i
-
-oneOfGenerated :: (RandomGen g) => M g [a] -> M g a
-oneOfGenerated genXs = genXs >>= choose
 
 --------------------------------------------------------------------------------
 -- Postlude
