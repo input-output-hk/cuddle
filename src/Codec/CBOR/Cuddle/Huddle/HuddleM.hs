@@ -5,6 +5,7 @@ module Codec.CBOR.Cuddle.Huddle.HuddleM
     (=:~),
     (=::=),
     binding,
+    binding',
     setRootRules,
     huddleDef,
     huddleDef',
@@ -13,7 +14,7 @@ module Codec.CBOR.Cuddle.Huddle.HuddleM
   )
 where
 
-import Codec.CBOR.Cuddle.Huddle hiding (binding, (=:=), (=:~))
+import Codec.CBOR.Cuddle.Huddle hiding (binding, binding', (=:=), (=:~))
 import Codec.CBOR.Cuddle.Huddle qualified as Huddle
 import Control.Monad.State.Strict (State, modify, runState)
 import Data.Default.Class (def)
@@ -42,6 +43,11 @@ binding ::
   (GRef -> Rule) ->
   HuddleM (t0 -> GRuleCall)
 binding fRule = include (Huddle.binding fRule)
+
+binding' ::
+  (GRef -> Rule) ->
+  HuddleM GRuleDef'
+binding' fRule = include (Huddle.binding' fRule)
 
 -- | Renamed version of Huddle's underlying '=:=' for use in generic bindings
 (=::=) :: (IsType0 a) => T.Text -> a -> Rule
@@ -84,9 +90,15 @@ instance (IsType0 t0) => Includable (t0 -> GRuleCall) where
           modify (field @"items" %~ (OMap.|> (n, HIGRule grDef)))
           pure gr
 
+instance Includable GRuleDef' where
+  include r =
+    modify (field @"items" %~ (OMap.|> (r ^. field @"name", HIGRule' r)))
+      >> pure r
+
 instance Includable HuddleItem where
   include x@(HIRule r) = include r >> pure x
   include x@(HIGroup g) = include g >> pure x
+  include x@(HIGRule' g) = include g >> pure x
   include x@(HIGRule g) =
     let n = g ^. field @"name"
      in do
@@ -95,10 +107,10 @@ instance Includable HuddleItem where
 
 unsafeIncludeFromHuddle ::
   Huddle ->
-  T.Text -> 
+  T.Text ->
   HuddleM HuddleItem
 unsafeIncludeFromHuddle h name =
   let items = h ^. field @"items"
-   in case OMap.lookup name items  of
+   in case OMap.lookup name items of
         Just v -> include v
         Nothing -> error $ show name <> " was not found in Huddle spec"
