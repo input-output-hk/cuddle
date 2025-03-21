@@ -1,6 +1,6 @@
 -- | Monad for declaring Huddle constructs
-module Codec.CBOR.Cuddle.Huddle.HuddleM
-  ( module Huddle,
+module Codec.CBOR.Cuddle.Huddle.HuddleM (
+    module Huddle,
     (=:=),
     (=:~),
     (=::=),
@@ -10,7 +10,7 @@ module Codec.CBOR.Cuddle.Huddle.HuddleM
     huddleDef',
     include,
     unsafeIncludeFromHuddle,
-  )
+)
 where
 
 import Codec.CBOR.Cuddle.Huddle hiding (binding, (=:=), (=:~))
@@ -37,10 +37,10 @@ n =:~ b = let r = n Huddle.=:~ b in include r
 infixl 1 =:~
 
 binding ::
-  forall t0.
-  (IsType0 t0) =>
-  (GRef -> Rule) ->
-  HuddleM (t0 -> GRuleCall)
+    forall t0.
+    (IsType0 t0) =>
+    (GRef -> Rule) ->
+    HuddleM (t0 -> GRuleCall)
 binding fRule = include (Huddle.binding fRule)
 
 -- | Renamed version of Huddle's underlying '=:=' for use in generic bindings
@@ -59,46 +59,46 @@ huddleDef' :: HuddleM a -> (a, Huddle)
 huddleDef' mh = runState mh def
 
 class Includable a where
-  -- | Include a rule, group, or generic rule defined elsewhere
-  include :: a -> HuddleM a
+    -- | Include a rule, group, or generic rule defined elsewhere
+    include :: a -> HuddleM a
 
 instance Includable Rule where
-  include r =
-    modify (field @"items" %~ (OMap.|> (r ^. field @"name", HIRule r)))
-      >> pure r
+    include r =
+        modify (field @"items" %~ (OMap.|> (r ^. field @"name", HIRule r)))
+            >> pure r
 
 instance Includable (Named Group) where
-  include r =
-    modify
-      ( (field @"items")
-          %~ (OMap.|> (r ^. field @"name", HIGroup r))
-      )
-      >> pure r
+    include r =
+        modify
+            ( (field @"items")
+                %~ (OMap.|> (r ^. field @"name", HIGroup r))
+            )
+            >> pure r
 
 instance (IsType0 t0) => Includable (t0 -> GRuleCall) where
-  include gr =
-    let fakeT0 = error "Attempting to unwrap fake value in generic call"
-        grDef = callToDef <$> gr fakeT0
-        n = grDef ^. field @"name"
-     in do
-          modify (field @"items" %~ (OMap.|> (n, HIGRule grDef)))
-          pure gr
+    include gr =
+        let fakeT0 = error "Attempting to unwrap fake value in generic call"
+            grDef = callToDef <$> gr fakeT0
+            n = grDef ^. field @"name"
+         in do
+                modify (field @"items" %~ (OMap.|> (n, HIGRule grDef)))
+                pure gr
 
 instance Includable HuddleItem where
-  include x@(HIRule r) = include r >> pure x
-  include x@(HIGroup g) = include g >> pure x
-  include x@(HIGRule g) =
-    let n = g ^. field @"name"
-     in do
-          modify (field @"items" %~ (OMap.|> (n, x)))
-          pure x
+    include x@(HIRule r) = include r >> pure x
+    include x@(HIGroup g) = include g >> pure x
+    include x@(HIGRule g) =
+        let n = g ^. field @"name"
+         in do
+                modify (field @"items" %~ (OMap.|> (n, x)))
+                pure x
 
 unsafeIncludeFromHuddle ::
-  Huddle ->
-  T.Text -> 
-  HuddleM HuddleItem
+    Huddle ->
+    T.Text ->
+    HuddleM HuddleItem
 unsafeIncludeFromHuddle h name =
-  let items = h ^. field @"items"
-   in case OMap.lookup name items  of
-        Just v -> include v
-        Nothing -> error $ show name <> " was not found in Huddle spec"
+    let items = h ^. field @"items"
+     in case OMap.lookup name items of
+            Just v -> include v
+            Nothing -> error $ show name <> " was not found in Huddle spec"

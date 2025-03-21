@@ -6,6 +6,6 @@ import Test.Hspec
 
 main :: IO ()
 main =
-  hspec $ do
-    describe "cddlParser" parserSpec
-    describe "Huddle" huddleSpec
+    hspec $ do
+        describe "cddlParser" parserSpec
+        describe "Huddle" huddleSpec
