@@ -52,7 +52,7 @@ roundtripSpec = describe "Roundtripping should be id" $ do
         Right parsed ->
           counterexample (show parsed) $
             printed === printText parsed
-    printText :: (Pretty a) => a -> T.Text
+    printText :: Pretty a => a -> T.Text
     printText = renderStrict . layoutPretty defaultLayoutOptions . pretty
 
 valueSpec :: Spec
@@ -199,7 +199,8 @@ type2Spec = describe "type2" $ do
                           )
                       )
                 ]
-                  NE.:| [ [ noComment $
+                  NE.:| [
+                          [ noComment $
                               GEType
                                 Nothing
                                 Nothing
@@ -225,7 +226,8 @@ type2Spec = describe "type2" $ do
                       Nothing
                       (Type0 ((NE.:| []) (Type1 (T2Value (VUInt 0)) Nothing)))
                 ]
-                  NE.:| [ [ noComment $
+                  NE.:| [
+                          [ noComment $
                               GEType
                                 Nothing
                                 Nothing
@@ -275,8 +277,8 @@ grpEntrySpec = describe "GroupEntry" $ do
                             ( Type1
                                 (T2Value (VUInt 0))
                                 ( Just
-                                    ( RangeOp ClOpen,
-                                      T2Tag Nothing (Type0 (Type1 (T2Value (VUInt 0)) Nothing NE.:| []))
+                                    ( RangeOp ClOpen
+                                    , T2Tag Nothing (Type0 (Type1 (T2Value (VUInt 0)) Nothing NE.:| []))
                                     )
                                 )
                                 NE.:| []
@@ -341,8 +343,8 @@ qcFoundSpec =
         `shouldParse` Type1
           (T2Map (Group ([] NE.:| [])))
           ( Just
-              ( CtrlOp CtlOp.Ge,
-                T2EnumRef
+              ( CtrlOp CtlOp.Ge
+              , T2EnumRef
                   (Name "i")
                   ( Just
                       ( GenericArg

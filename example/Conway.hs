@@ -26,23 +26,23 @@ block :: Rule
 block =
   "block"
     =:= arr
-      [ a header,
-        "transaction_bodies" ==> arr [0 <+ a transaction_body],
-        "transaction_witness_sets"
-          ==> arr [0 <+ a transaction_witness_set],
-        "auxiliary_data_set"
-          ==> mp [0 <+ asKey transaction_index ==> auxiliary_data],
-        "invalid_transactions" ==> arr [0 <+ a transaction_index]
+      [ a header
+      , "transaction_bodies" ==> arr [0 <+ a transaction_body]
+      , "transaction_witness_sets"
+          ==> arr [0 <+ a transaction_witness_set]
+      , "auxiliary_data_set"
+          ==> mp [0 <+ asKey transaction_index ==> auxiliary_data]
+      , "invalid_transactions" ==> arr [0 <+ a transaction_index]
       ]
 
 transaction :: Rule
 transaction =
   "transaction"
     =:= arr
-      [ a transaction_body,
-        a transaction_witness_set,
-        a VBool,
-        a (auxiliary_data / VNil)
+      [ a transaction_body
+      , a transaction_witness_set
+      , a VBool
+      , a (auxiliary_data / VNil)
       ]
 
 transaction_index :: Rule
@@ -55,26 +55,26 @@ header_body :: Rule
 header_body =
   "header_body"
     =:= arr
-      [ "block_number" ==> VUInt,
-        "slot" ==> VUInt,
-        "prev_hash" ==> hash32,
-        "issuer_vkey" ==> vkey,
-        "vrf_vkey" ==> vkey,
-        "vrf_result" ==> vrf_cert,
-        "block_body_size" ==> VUInt,
-        "block_body_hash" ==> hash32,
-        a operational_cert,
-        a (arr [a protocol_version])
+      [ "block_number" ==> VUInt
+      , "slot" ==> VUInt
+      , "prev_hash" ==> hash32
+      , "issuer_vkey" ==> vkey
+      , "vrf_vkey" ==> vkey
+      , "vrf_result" ==> vrf_cert
+      , "block_body_size" ==> VUInt
+      , "block_body_hash" ==> hash32
+      , a operational_cert
+      , a (arr [a protocol_version])
       ]
 
 operational_cert :: Rule
 operational_cert =
   "operational_cert"
     =:= arr
-      [ "hot_vkey" ==> kes_vkey,
-        "sequence_number" ==> VUInt,
-        "kes_period" ==> VUInt,
-        "sigma" ==> signature
+      [ "hot_vkey" ==> kes_vkey
+      , "sequence_number" ==> VUInt
+      , "kes_period" ==> VUInt
+      , "sigma" ==> signature
       ]
 
 protocol_version :: Named Group
@@ -90,26 +90,26 @@ transaction_body :: Rule
 transaction_body =
   "transaction_body"
     =:= mp
-      [ idx 0 ==> set transaction_index,
-        idx 1 ==> arr [0 <+ a transaction_output],
-        idx 2 ==> coin,
-        opt (idx 3 ==> VUInt),
-        opt (idx 4 ==> certificates),
-        opt (idx 5 ==> withdrawals),
-        opt (idx 7 ==> auxiliary_data_hash),
-        opt (idx 8 ==> VUInt),
-        opt (idx 9 ==> mint),
-        opt (idx 11 ==> script_data_hash),
-        opt (idx 13 ==> nonempty_set transaction_input),
-        opt (idx 14 ==> required_signers),
-        opt (idx 15 ==> network_id),
-        opt (idx 16 ==> transaction_output),
-        opt (idx 17 ==> coin),
-        opt (idx 18 ==> nonempty_set transaction_input),
-        opt (idx 19 ==> voting_procedures),
-        opt (idx 20 ==> proposal_procedures),
-        opt (idx 21 ==> coin),
-        opt (idx 22 ==> positive_coin)
+      [ idx 0 ==> set transaction_index
+      , idx 1 ==> arr [0 <+ a transaction_output]
+      , idx 2 ==> coin
+      , opt (idx 3 ==> VUInt)
+      , opt (idx 4 ==> certificates)
+      , opt (idx 5 ==> withdrawals)
+      , opt (idx 7 ==> auxiliary_data_hash)
+      , opt (idx 8 ==> VUInt)
+      , opt (idx 9 ==> mint)
+      , opt (idx 11 ==> script_data_hash)
+      , opt (idx 13 ==> nonempty_set transaction_input)
+      , opt (idx 14 ==> required_signers)
+      , opt (idx 15 ==> network_id)
+      , opt (idx 16 ==> transaction_output)
+      , opt (idx 17 ==> coin)
+      , opt (idx 18 ==> nonempty_set transaction_input)
+      , opt (idx 19 ==> voting_procedures)
+      , opt (idx 20 ==> proposal_procedures)
+      , opt (idx 21 ==> coin)
+      , opt (idx 22 ==> positive_coin)
       ]
 
 voting_procedures :: Rule
@@ -124,10 +124,10 @@ proposal_procedure :: Rule
 proposal_procedure =
   "proposal_procedure"
     =:= arr
-      [ "deposit" ==> coin,
-        a reward_account,
-        a gov_action,
-        a anchor
+      [ "deposit" ==> coin
+      , a reward_account
+      , a gov_action
+      , a anchor
       ]
 
 proposal_procedures :: Rule
@@ -158,10 +158,10 @@ parameter_change_action :: Named Group
 parameter_change_action =
   "parameter_change_action"
     =:~ grp
-      [ 0,
-        a (gov_action_id / VNil),
-        a protocol_param_update,
-        a (policy_hash / VNil)
+      [ 0
+      , a (gov_action_id / VNil)
+      , a protocol_param_update
+      , a (policy_hash / VNil)
       ]
 
 hard_fork_initiation_action :: Named Group
@@ -181,11 +181,11 @@ update_committee :: Named Group
 update_committee =
   "update_committee"
     =:~ grp
-      [ 4,
-        a (gov_action_id / VNil),
-        a (set committee_cold_credential),
-        a (arr [asKey committee_cold_credential ==> epoch]),
-        a unit_interval
+      [ 4
+      , a (gov_action_id / VNil)
+      , a (set committee_cold_credential)
+      , a (arr [asKey committee_cold_credential ==> epoch])
+      , a unit_interval
       ]
 
 new_constitution :: Named Group
@@ -197,8 +197,8 @@ constitution :: Rule
 constitution =
   "constitution"
     =:= arr
-      [ a anchor,
-        a (scripthash / VNil)
+      [ a anchor
+      , a (scripthash / VNil)
       ]
 
 info_action :: Rule
@@ -217,8 +217,8 @@ anchor :: Rule
 anchor =
   "anchor"
     =:= arr
-      [ "anchor_url" ==> url,
-        "anchor_data_hash" ==> hash32
+      [ "anchor_url" ==> url
+      , "anchor_data_hash" ==> hash32
       ]
 
 vote :: Rule
@@ -228,8 +228,8 @@ gov_action_id :: Rule
 gov_action_id =
   "gov_action_id"
     =:= arr
-      [ "transaction_id" ==> hash32,
-        "gov_action_index" ==> VUInt
+      [ "transaction_id" ==> hash32
+      , "gov_action_index" ==> VUInt
       ]
 
 required_signers :: Rule
@@ -239,8 +239,8 @@ transaction_input :: Rule
 transaction_input =
   "transaction_input"
     =:= arr
-      [ "transaction_id" ==> hash32,
-        "index" ==> VUInt
+      [ "transaction_id" ==> hash32
+      , "index" ==> VUInt
       ]
 
 transaction_output :: Rule
@@ -253,19 +253,19 @@ legacy_transaction_output :: Rule
 legacy_transaction_output =
   "legacy_transaction_output"
     =:= arr
-      [ a address,
-        "amount" ==> value,
-        opt ("datum_hash" ==> hash32)
+      [ a address
+      , "amount" ==> value
+      , opt ("datum_hash" ==> hash32)
       ]
 
 post_alonzo_transaction_output :: Rule
 post_alonzo_transaction_output =
   "post_alonzo_transaction_output"
     =:= arr
-      [ idx 0 ==> address,
-        idx 1 ==> value,
-        opt (idx 2 ==> datum_option), -- datum option
-        opt (idx 3 ==> script_ref) -- script reference
+      [ idx 0 ==> address
+      , idx 1 ==> value
+      , opt (idx 2 ==> datum_option) -- datum option
+      , opt (idx 3 ==> script_ref) -- script reference
       ]
 
 script_data_hash :: Rule
@@ -401,15 +401,15 @@ pool_params :: Named Group
 pool_params =
   "pool_params"
     =:~ grp
-      [ "operator" ==> pool_keyhash,
-        "vrf_keyhash" ==> vrf_keyhash,
-        "pledge" ==> coin,
-        "cost" ==> coin,
-        "margin" ==> unit_interval,
-        "reward_account" ==> reward_account,
-        "pool_owners" ==> set addr_keyhash,
-        "relays" ==> arr [0 <+ a relay],
-        "pool_metadata" ==> (pool_metadata / VNil)
+      [ "operator" ==> pool_keyhash
+      , "vrf_keyhash" ==> vrf_keyhash
+      , "pledge" ==> coin
+      , "cost" ==> coin
+      , "margin" ==> unit_interval
+      , "reward_account" ==> reward_account
+      , "pool_owners" ==> set addr_keyhash
+      , "relays" ==> arr [0 <+ a relay]
+      , "pool_metadata" ==> (pool_metadata / VNil)
       ]
 
 port :: Rule
@@ -428,27 +428,27 @@ single_host_addr :: Named Group
 single_host_addr =
   "single_host_addr"
     =:~ grp
-      [ 0,
-        a (port / VNil),
-        a (ipv4 / VNil),
-        a (ipv6 / VNil)
+      [ 0
+      , a (port / VNil)
+      , a (ipv4 / VNil)
+      , a (ipv6 / VNil)
       ]
 
 single_host_name :: Named Group
 single_host_name =
   "single_host_name"
     =:~ grp
-      [ 1,
-        a (port / VNil),
-        a dns_name -- An A or AAAA DNS record
+      [ 1
+      , a (port / VNil)
+      , a dns_name -- An A or AAAA DNS record
       ]
 
 multi_host_name :: Named Group
 multi_host_name =
   "multi_host_name"
     =:~ grp
-      [ 2,
-        a dns_name -- A SRV DNS record
+      [ 2
+      , a dns_name -- A SRV DNS record
       ]
 
 relay :: Rule
@@ -475,76 +475,76 @@ protocol_param_update :: Rule
 protocol_param_update =
   "protocol_param_update"
     =:= mp
-      [ opt (idx 0 ==> coin), -- minfee A
-        opt (idx 1 ==> coin), -- minfee B
-        opt (idx 2 ==> VUInt), -- max block body size
-        opt (idx 3 ==> VUInt), -- max transaction size
-        opt (idx 4 ==> VUInt), -- max block header size
-        opt (idx 5 ==> coin), -- key deposit
-        opt (idx 6 ==> coin), -- pool deposit
-        opt (idx 7 ==> epoch), -- maximum epoch
-        opt (idx 8 ==> VUInt), -- n_opt: desired number of stake pools
-        opt (idx 9 ==> nonnegative_interval), -- pool pledge influence
-        opt (idx 10 ==> unit_interval), -- expansion rate
-        opt (idx 11 ==> unit_interval), -- treasury growth rate
-        opt (idx 16 ==> coin), -- min pool cost
-        opt (idx 17 ==> coin), -- ada per utxo byte
-        opt (idx 18 ==> costmdls), -- cost models for script languages
-        opt (idx 19 ==> ex_unit_prices), -- execution costs
-        opt (idx 20 ==> ex_units), -- max tx ex units
-        opt (idx 21 ==> ex_units), -- max block ex units
-        opt (idx 22 ==> VUInt), -- max value size
-        opt (idx 23 ==> VUInt), -- collateral percentage
-        opt (idx 24 ==> VUInt), -- max collateral inputs
-        opt (idx 25 ==> pool_voting_thresholds), -- pool voting thresholds
-        opt (idx 26 ==> drep_voting_thresholds), -- DRep voting thresholds
-        opt (idx 27 ==> VUInt), -- min committee size
-        opt (idx 28 ==> epoch), -- committee term limit
-        opt (idx 29 ==> epoch), -- governance action validity period
-        opt (idx 30 ==> coin), -- governance action deposit
-        opt (idx 31 ==> coin), -- DRep deposit
-        opt (idx 32 ==> epoch) -- DRep inactivity period
+      [ opt (idx 0 ==> coin) -- minfee A
+      , opt (idx 1 ==> coin) -- minfee B
+      , opt (idx 2 ==> VUInt) -- max block body size
+      , opt (idx 3 ==> VUInt) -- max transaction size
+      , opt (idx 4 ==> VUInt) -- max block header size
+      , opt (idx 5 ==> coin) -- key deposit
+      , opt (idx 6 ==> coin) -- pool deposit
+      , opt (idx 7 ==> epoch) -- maximum epoch
+      , opt (idx 8 ==> VUInt) -- n_opt: desired number of stake pools
+      , opt (idx 9 ==> nonnegative_interval) -- pool pledge influence
+      , opt (idx 10 ==> unit_interval) -- expansion rate
+      , opt (idx 11 ==> unit_interval) -- treasury growth rate
+      , opt (idx 16 ==> coin) -- min pool cost
+      , opt (idx 17 ==> coin) -- ada per utxo byte
+      , opt (idx 18 ==> costmdls) -- cost models for script languages
+      , opt (idx 19 ==> ex_unit_prices) -- execution costs
+      , opt (idx 20 ==> ex_units) -- max tx ex units
+      , opt (idx 21 ==> ex_units) -- max block ex units
+      , opt (idx 22 ==> VUInt) -- max value size
+      , opt (idx 23 ==> VUInt) -- collateral percentage
+      , opt (idx 24 ==> VUInt) -- max collateral inputs
+      , opt (idx 25 ==> pool_voting_thresholds) -- pool voting thresholds
+      , opt (idx 26 ==> drep_voting_thresholds) -- DRep voting thresholds
+      , opt (idx 27 ==> VUInt) -- min committee size
+      , opt (idx 28 ==> epoch) -- committee term limit
+      , opt (idx 29 ==> epoch) -- governance action validity period
+      , opt (idx 30 ==> coin) -- governance action deposit
+      , opt (idx 31 ==> coin) -- DRep deposit
+      , opt (idx 32 ==> epoch) -- DRep inactivity period
       ]
 
 pool_voting_thresholds :: Rule
 pool_voting_thresholds =
   "pool_voting_thresholds"
     =:= arr
-      [ a unit_interval, -- motion no confidence
-        a unit_interval, -- committee normal
-        a unit_interval, -- committee no confidence
-        a unit_interval, -- hard fork initiation
-        a unit_interval -- security relevant parameter voting threshold
+      [ a unit_interval -- motion no confidence
+      , a unit_interval -- committee normal
+      , a unit_interval -- committee no confidence
+      , a unit_interval -- hard fork initiation
+      , a unit_interval -- security relevant parameter voting threshold
       ]
 
 drep_voting_thresholds :: Rule
 drep_voting_thresholds =
   "drep_voting_thresholds"
     =:= arr
-      [ a unit_interval, -- motion no confidence
-        a unit_interval, -- committee normal
-        a unit_interval, -- committee no confidence
-        a unit_interval, -- update constitution
-        a unit_interval, -- hard fork initiation
-        a unit_interval, -- PP network group
-        a unit_interval, -- PP economic group
-        a unit_interval, -- PP technical group
-        a unit_interval, -- PP governance group
-        a unit_interval -- treasury withdrawal
+      [ a unit_interval -- motion no confidence
+      , a unit_interval -- committee normal
+      , a unit_interval -- committee no confidence
+      , a unit_interval -- update constitution
+      , a unit_interval -- hard fork initiation
+      , a unit_interval -- PP network group
+      , a unit_interval -- PP economic group
+      , a unit_interval -- PP technical group
+      , a unit_interval -- PP governance group
+      , a unit_interval -- treasury withdrawal
       ]
 
 transaction_witness_set :: Rule
 transaction_witness_set =
   "transaction_witness_set"
     =:= mp
-      [ opt $ idx 0 ==> nonempty_set vkeywitness,
-        opt $ idx 1 ==> nonempty_set native_script,
-        opt $ idx 2 ==> nonempty_set bootstrap_witness,
-        opt $ idx 3 ==> nonempty_set plutus_v1_script,
-        opt $ idx 4 ==> nonempty_set plutus_data,
-        opt $ idx 5 ==> redeemers,
-        opt $ idx 6 ==> nonempty_set plutus_v2_script,
-        opt $ idx 7 ==> nonempty_set plutus_v3_script
+      [ opt $ idx 0 ==> nonempty_set vkeywitness
+      , opt $ idx 1 ==> nonempty_set native_script
+      , opt $ idx 2 ==> nonempty_set bootstrap_witness
+      , opt $ idx 3 ==> nonempty_set plutus_v1_script
+      , opt $ idx 4 ==> nonempty_set plutus_data
+      , opt $ idx 5 ==> redeemers
+      , opt $ idx 6 ==> nonempty_set plutus_v2_script
+      , opt $ idx 7 ==> nonempty_set plutus_v3_script
       ]
 
 -- The real type of  plutus_v1_script, plutus_v2_script and plutus_v3_script is bytes.
@@ -585,7 +585,7 @@ big_VUInt = "big_VUInt" =:= tag 2 bounded_bytes
 big_nint :: Rule
 big_nint = "big_nint" =:= tag 3 bounded_bytes
 
-constr :: (IsType0 x) => x -> GRuleCall
+constr :: IsType0 x => x -> GRuleCall
 constr = binding $ \x ->
   "constr"
     =:= tag 1 (arr [0 <+ a x])
@@ -605,10 +605,10 @@ redeemers =
       [ 1
           <+ a
             ( arr
-                [ "tag" ==> redeemer_tag,
-                  "index" ==> VUInt,
-                  "data" ==> plutus_data,
-                  "ex_units" ==> ex_units
+                [ "tag" ==> redeemer_tag
+                , "index" ==> VUInt
+                , "data" ==> plutus_data
+                , "ex_units" ==> ex_units
                 ]
             )
       ]
@@ -635,8 +635,8 @@ ex_unit_prices :: Rule
 ex_unit_prices =
   "ex_unit_prices"
     =:= arr
-      [ "mem_price" ==> nonnegative_interval,
-        "step_price" ==> nonnegative_interval
+      [ "mem_price" ==> nonnegative_interval
+      , "step_price" ==> nonnegative_interval
       ]
 
 language :: Rule
@@ -654,13 +654,14 @@ potential_languages = "potential_languages" =:= int 0 ... int 255
 --
 costmdls :: Rule
 costmdls =
-  comment "The format for costmdls is flexible enough to allow adding Plutus\n built-ins and language versions in the future." $
-    "costmdls"
+  comment
+    "The format for costmdls is flexible enough to allow adding Plutus\n built-ins and language versions in the future."
+    $ "costmdls"
       =:= mp
-        [ opt $ idx 0 ==> arr [166 <+ a VInt], -- Plutus v1, only 166 integers are used, but more are accepted (and ignored)
-          opt $ idx 1 ==> arr [175 <+ a VInt], -- Plutus v2, only 175 integers are used, but more are accepted (and ignored)
-          opt $ idx 2 ==> arr [223 <+ a VInt], -- Plutus v3, only 223 integers are used, but more are accepted (and ignored)
-          opt $ idx 3 ==> arr [a VInt] -- Any 8-bit unsigned number can be used as a key.
+        [ opt $ idx 0 ==> arr [166 <+ a VInt] -- Plutus v1, only 166 integers are used, but more are accepted (and ignored)
+        , opt $ idx 1 ==> arr [175 <+ a VInt] -- Plutus v2, only 175 integers are used, but more are accepted (and ignored)
+        , opt $ idx 2 ==> arr [223 <+ a VInt] -- Plutus v3, only 223 integers are used, but more are accepted (and ignored)
+        , opt $ idx 3 ==> arr [a VInt] -- Any 8-bit unsigned number can be used as a key.
         ]
 
 transaction_metadatum :: Rule
@@ -689,15 +690,15 @@ auxiliary_data =
   "auxiliary_data"
     =:= metadata -- Shelley
     / sarr
-      [ "transaction_metadata" ==> metadata, -- Shelley-ma
-        "auxiliary_scripts" ==> arr [0 <+ a native_script]
+      [ "transaction_metadata" ==> metadata -- Shelley-ma
+      , "auxiliary_scripts" ==> arr [0 <+ a native_script]
       ]
     / smp
-      [ opt (idx 0 ==> metadata), -- Alonzo and beyond
-        opt (idx 1 ==> arr [0 <+ a native_script]),
-        opt (idx 2 ==> arr [0 <+ a plutus_v1_script]),
-        opt (idx 3 ==> arr [0 <+ a plutus_v2_script]),
-        opt (idx 4 ==> arr [0 <+ a plutus_v3_script])
+      [ opt (idx 0 ==> metadata) -- Alonzo and beyond
+      , opt (idx 1 ==> arr [0 <+ a native_script])
+      , opt (idx 2 ==> arr [0 <+ a plutus_v1_script])
+      , opt (idx 3 ==> arr [0 <+ a plutus_v2_script])
+      , opt (idx 4 ==> arr [0 <+ a plutus_v3_script])
       ]
 
 vkeywitness :: Rule
@@ -707,10 +708,10 @@ bootstrap_witness :: Rule
 bootstrap_witness =
   "bootstrap_witness"
     =:= arr
-      [ "public_key" ==> vkey,
-        "signature" ==> signature,
-        "chain_code" ==> (VBytes `sized` (32 :: Word64)),
-        "attributes" ==> VBytes
+      [ "public_key" ==> vkey
+      , "signature" ==> signature
+      , "chain_code" ==> (VBytes `sized` (32 :: Word64))
+      , "attributes" ==> VBytes
       ]
 
 native_script :: Rule
@@ -889,14 +890,14 @@ signature = "signature" =:= VBytes `sized` (64 :: Word64)
 -- second era after Conway. We recommend all the tooling to account for this future breaking
 -- change sooner rather than later, in order to provide a smooth transition for their users.
 
-set :: (IsType0 t0) => t0 -> GRuleCall
+set :: IsType0 t0 => t0 -> GRuleCall
 set = binding $ \x -> "set" =:= arr [0 <+ a x]
 
-nonempty_set :: (IsType0 t0) => t0 -> GRuleCall
+nonempty_set :: IsType0 t0 => t0 -> GRuleCall
 nonempty_set = binding $ \x -> "nonempty_set" =:= set x
 
 -- TODO Should we give this a name?
-nonempty_oset :: (IsType0 t0) => t0 -> GRuleCall
+nonempty_oset :: IsType0 t0 => t0 -> GRuleCall
 nonempty_oset = nonempty_set
 
 positive_int :: Rule
@@ -926,10 +927,14 @@ nonnegative_interval = "nonnegative_interval" =:= tag 30 (arr [a VUInt, a positi
 address :: Rule
 address =
   "address"
-    =:= bstr "001000000000000000000000000000000000000000000000000000000011000000000000000000000000000000000000000000000000000000"
-    / bstr "102000000000000000000000000000000000000000000000000000000022000000000000000000000000000000000000000000000000000000"
-    / bstr "203000000000000000000000000000000000000000000000000000000033000000000000000000000000000000000000000000000000000000"
-    / bstr "304000000000000000000000000000000000000000000000000000000044000000000000000000000000000000000000000000000000000000"
+    =:= bstr
+      "001000000000000000000000000000000000000000000000000000000011000000000000000000000000000000000000000000000000000000"
+    / bstr
+      "102000000000000000000000000000000000000000000000000000000022000000000000000000000000000000000000000000000000000000"
+    / bstr
+      "203000000000000000000000000000000000000000000000000000000033000000000000000000000000000000000000000000000000000000"
+    / bstr
+      "304000000000000000000000000000000000000000000000000000000044000000000000000000000000000000000000000000000000000000"
     / bstr "405000000000000000000000000000000000000000000000000000000087680203"
     / bstr "506000000000000000000000000000000000000000000000000000000087680203"
     / bstr "6070000000000000000000000000000000000000000000000000000000"
@@ -957,13 +962,12 @@ bounded_bytes = "bounded_bytes" =:= VBytes `sized` (0 :: Word64, 64 :: Word64)
 -- a type for distinct values.
 -- The type parameter must support .size, for example: bytes or uint
 
-distinct :: (IsType0 a, IsConstrainable a b)  => a -> GRuleCall
-distinct = binding $ \x -> 
+distinct :: (IsType0 a, IsConstrainable a b) => a -> GRuleCall
+distinct = binding $ \x ->
   "distinct"
-      =:= (x `sized` (8 :: Word64))
-      / (x `sized` (16 :: Word64))
-      / (x `sized` (20 :: Word64))
-      / (x `sized` (24 :: Word64))
-      / (x `sized` (30 :: Word64))
-      / (x `sized` (32 :: Word64))
-
+    =:= (x `sized` (8 :: Word64))
+    / (x `sized` (16 :: Word64))
+    / (x `sized` (20 :: Word64))
+    / (x `sized` (24 :: Word64))
+    / (x `sized` (30 :: Word64))
+    / (x `sized` (32 :: Word64))

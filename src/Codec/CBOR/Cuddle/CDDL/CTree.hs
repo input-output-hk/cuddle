@@ -2,12 +2,12 @@
 
 module Codec.CBOR.Cuddle.CDDL.CTree where
 
-import Codec.CBOR.Cuddle.CDDL
-  ( Name,
-    OccurrenceIndicator,
-    RangeBound,
-    Value,
-  )
+import Codec.CBOR.Cuddle.CDDL (
+  Name,
+  OccurrenceIndicator,
+  RangeBound,
+  Value,
+ )
 import Codec.CBOR.Cuddle.CDDL.CtlOp
 import Codec.CBOR.Cuddle.CDDL.Postlude (PTerm)
 import Data.Hashable (Hashable)
@@ -47,7 +47,7 @@ data CTree f
   deriving (Generic)
 
 -- | Traverse the CTree, carrying out the given operation at each node
-traverseCTree :: (Monad m) => (Node f -> m (Node g)) -> CTree f -> m (CTree g)
+traverseCTree :: Monad m => (Node f -> m (Node g)) -> CTree f -> m (CTree g)
 traverseCTree _ (Literal a) = pure $ Literal a
 traverseCTree _ (Postlude a) = pure $ Postlude a
 traverseCTree atNode (Map xs) = Map <$> traverse atNode xs
@@ -83,8 +83,8 @@ type CTreeRoot f = CTreeRoot' (ParametrisedWith [Name]) f
 data ParametrisedWith w a
   = Unparametrised {underlying :: a}
   | Parametrised
-      { underlying :: a,
-        params :: w
+      { underlying :: a
+      , params :: w
       }
   deriving (Eq, Functor, Generic, Foldable, Traversable, Show)
 
