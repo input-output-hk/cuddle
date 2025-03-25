@@ -182,6 +182,35 @@ type2Spec = describe "type2" $ do
                   ]
               )
           )
+    it "Commas are optional" $
+      parse pType2 "" "{ 1 => string, 2 => int 3 => bytes}"
+        `shouldParse` T2Map
+          ( Group
+              ( [ WithComments
+                    ( GEType
+                        Nothing
+                        (Just (MKType (Type1 (T2Value (VUInt 1)) Nothing)))
+                        (Type0 (Type1 (T2Name (Name "string") Nothing) Nothing NE.:| []))
+                    )
+                    Nothing
+                , WithComments
+                    ( GEType
+                        Nothing
+                        (Just (MKType (Type1 (T2Value (VUInt 2)) Nothing)))
+                        (Type0 (Type1 (T2Name (Name "int") Nothing) Nothing NE.:| []))
+                    )
+                    Nothing
+                , WithComments
+                    ( GEType
+                        Nothing
+                        (Just (MKType (Type1 (T2Value (VUInt 3)) Nothing)))
+                        (Type0 (Type1 (T2Name (Name "bytes") Nothing) Nothing NE.:| []))
+                    )
+                    Nothing
+                ]
+                  NE.:| []
+              )
+          )
   describe "Array" $ do
     it "Parses an array with an alternative" $
       parse pType2 "" "[int // string]"
@@ -234,6 +263,19 @@ type2Spec = describe "type2" $ do
                                 (Type0 ((NE.:| []) (Type1 (T2Value (VUInt 1)) Nothing)))
                           ]
                         ]
+              )
+          )
+    it "Trailing commas permitted" $
+      parse pType2 "" "[ 1 , ]"
+        `shouldParse` T2Array
+          ( Group
+              ( [ noComment $
+                    GEType
+                      Nothing
+                      Nothing
+                      (Type0 ((NE.:| []) (Type1 (T2Value (VUInt 1)) Nothing)))
+                ]
+                  NE.:| []
               )
           )
 

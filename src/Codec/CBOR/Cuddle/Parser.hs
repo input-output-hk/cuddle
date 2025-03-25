@@ -124,9 +124,7 @@ pGroup = Group <$> NE.sepBy1 (space *> pGrpChoice <* space) (string "//")
 pGrpChoice :: Parser GrpChoice
 pGrpChoice =
   many
-    ( (space *> (noComment <$> pGrpEntry) <* space)
-        <* optional (char ',')
-    )
+    (try $ (space *> (noComment <$> pGrpEntry) <* space) <* optional (char ','))
 
 pGrpEntry :: Parser GroupEntry
 pGrpEntry =
