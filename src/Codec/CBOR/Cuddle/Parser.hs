@@ -8,11 +8,16 @@ import Codec.CBOR.Cuddle.CDDL.CtlOp (CtlOp)
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as COp
 import Control.Applicative (liftA2)
 import Control.Applicative.Combinators.NonEmpty qualified as NE
+import Data.ByteString qualified as B
 import Data.Functor (void, ($>))
 import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NE
+import Data.Maybe (fromMaybe)
+import Data.Scientific qualified as Sci
+import Data.String (IsString (..))
 import Data.Text (Text)
 import Data.Text qualified as T
+import Data.Text.Encoding (encodeUtf8)
 import Data.Void (Void)
 import Text.Megaparsec
 import Text.Megaparsec.Char hiding (space)
@@ -24,20 +29,18 @@ pCDDL :: Parser CDDL
 pCDDL = CDDL . fmap noComment <$> (space *> NE.some (pRule <* space) <* eof)
 
 pRule :: Parser Rule
-pRule =
-  choice
-    [ try $
-        Rule
-          <$> pName
-          <*> optcomp pGenericParam
-          <*> (space *> pAssignT <* space)
-          <*> (TOGType <$> pType0 <* notFollowedBy (void (char ':') <|> void (string "=>")))
-    , Rule
-        <$> pName
-        <*> optcomp pGenericParam
-        <*> (space *> pAssignG <* space)
-        <*> (TOGGroup <$> pGrpEntry)
-    ]
+pRule = do
+  name <- pName
+  genericParam <- optcomp pGenericParam
+  (assign, typeOrGrp) <-
+    choice
+      [ try $
+          (,)
+            <$> (space *> pAssignT <* space)
+            <*> (TOGType <$> pType0 <* notFollowedBy (void (char ':') <|> void (string "=>")))
+      , (,) <$> (space *> pAssignG <* space) <*> (TOGGroup <$> pGrpEntry)
+      ]
+  pure $ Rule name genericParam assign typeOrGrp
 
 pName :: Parser Name
 pName = do
@@ -102,13 +105,7 @@ pType2 =
     , try $ T2Unwrapped <$> (char '~' *> space *> pName) <*> optional pGenericArg
     , try $
         T2Enum
-          <$> ( char '&'
-                  *> space
-                  *> between
-                    (char '(' <* space)
-                    (char ')')
-                    (pGroup <* space)
-              )
+          <$> (char '&' *> space *> between (char '(' <* space) (char ')') (pGroup <* space))
     , try $ T2EnumRef <$> (char '&' *> space *> pName) <*> optional pGenericArg
     , try $
         T2Tag
@@ -119,12 +116,11 @@ pType2 =
     ]
 
 pGroup :: Parser Group
-pGroup = Group <$> NE.sepBy1 (space *> pGrpChoice <* space) (string "//")
+pGroup = Group <$> NE.sepBy1 pGrpChoice (space *> string "//" <* space)
 
 pGrpChoice :: Parser GrpChoice
 pGrpChoice =
-  many
-    (try $ (space *> (noComment <$> pGrpEntry) <* space) <* optional (char ','))
+  many $ (noComment <$> pGrpEntry) <* space <* optional (char ',' >> space)
 
 pGrpEntry :: Parser GroupEntry
 pGrpEntry =
@@ -203,55 +199,57 @@ pOccur =
 
 pValue :: Parser Value
 pValue =
-  choice
-    [ try pUInt
-    , try pNInt
-    , pFloat
-    , pText
-    ]
+  label "Value" $
+    choice
+      [ try pFloat
+      , try (pUInt <* notFollowedBy (char '*'))
+      , try (pNInt <* notFollowedBy (char '*'))
+      , try pBytes
+      , pText
+      ]
   where
     -- Need to ensure that number values are not actually bounds on a later
     -- value.
-    pUInt = VUInt <$> L.decimal <* notFollowedBy (oneOf ['*', '.'])
-    pNInt = VNInt <$> (char '-' *> L.decimal <* notFollowedBy (oneOf ['*', '.']))
-    pFloat = VFloat64 <$> L.signed hspace L.float
+    pUInt = VUInt <$> L.decimal
+    pNInt = VNInt <$> (char '-' *> L.decimal)
+    pFloat = do
+      sign <- optional $ char '-'
+      _ <- space
+      val <- L.float
+      pure . VFloat64 $ case sign of
+        Just _ -> -val
+        Nothing -> val
     pText = VText <$> (char '"' *> pSChar <* char '"')
     -- Currently this doesn't allow string escaping
     pSChar :: Parser Text
     pSChar =
-      T.pack
-        <$> many
-          ( satisfy
-              ( charInRange '\x20' '\x21'
-                  ||| charInRange '\x23' '\x5b'
-                  ||| charInRange '\x5d' '\x7e'
-                  ||| charInRange '\x80' '\x10fffd'
-              )
-          )
-
--- pBytes = VBytes <$> (optional (string "h" <|> string "b64") $> mempty)
+      takeWhileP
+        (Just "character")
+        ( charInRange '\x20' '\x21'
+            ||| charInRange '\x23' '\x5b'
+            ||| charInRange '\x5d' '\x7e'
+            ||| charInRange '\x80' '\x10fffd'
+        )
+    pSByte = takeWhileP (Just "byte character") $ \x ->
+      or $
+        [ charInRange '\x20' '\x26'
+        , charInRange '\x28' '\x5b'
+        , charInRange '\x5d' '\x10fffd'
+        ]
+          <*> pure x
+    pBytes = do
+      _qualifier <- optional (string "h" <|> string "b64")
+      between "'" "'" $ VBytes . encodeUtf8 <$> pSByte
 
 space :: Parser ()
 space = L.space space1 (void pComment) (fail "No block comments")
 
 pComment :: Parser Comment
 pComment =
-  Comment . T.pack
-    <$> (char ';' *> many pChar <* eol)
+  Comment
+    <$> (char ';' *> takeWhileP Nothing validChar <* eol)
   where
-    pChar = satisfy (charInRange '\x20' '\x7e' ||| charInRange '\x80' '\x10fffd')
-
--- pBChar :: Parser B.ByteString
--- pBChar =
---   B.pack
---     <$> many
---       ( satisfy
---           ( charInRange '\x20' '\x26'
---               ||| charInRange '\x28' '\x5b'
---               ||| charInRange '\x5d' '\x10fffd'
---           )
---           <|> crlf
---       )
+    validChar = charInRange '\x20' '\x7e' ||| charInRange '\x80' '\x10fffd'
 
 charInRange :: Char -> Char -> Char -> Bool
 charInRange lb ub x = lb <= x && x <= ub
