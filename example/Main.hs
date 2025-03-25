@@ -5,24 +5,24 @@ module Main (main) where
 
 import Codec.CBOR.Cuddle.CBOR.Gen (generateCBORTerm)
 import Codec.CBOR.Cuddle.CDDL (Name (..))
-import Codec.CBOR.Cuddle.CDDL.Resolve
-  ( asMap,
-    buildMonoCTree,
-    buildRefCTree,
-    buildResolvedCTree,
-  )
+import Codec.CBOR.Cuddle.CDDL.Resolve (
+  asMap,
+  buildMonoCTree,
+  buildRefCTree,
+  buildResolvedCTree,
+ )
 import Codec.CBOR.Cuddle.Huddle (toCDDL)
 import Codec.CBOR.Cuddle.Parser (pCDDL)
 import Codec.CBOR.Cuddle.Pretty ()
 import Conway (conway)
 import Data.Text qualified as T
 import Data.Text.IO qualified as T
+import Monad qualified
 import Prettyprinter (Pretty (pretty))
 import Prettyprinter.Util (putDocW)
 import System.Environment (getArgs)
 import System.Random (getStdGen)
 import Text.Megaparsec (ParseErrorBundle, Parsec, errorBundlePretty, runParser)
-import qualified Monad
 
 main :: IO ()
 main = do

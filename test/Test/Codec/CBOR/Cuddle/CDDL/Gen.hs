@@ -2,15 +2,15 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 -- | Hedgehog generators for CDDL
-module Test.Codec.CBOR.Cuddle.CDDL.Gen
-  ( genCDDL,
-    genRule,
-    genName,
-    genValue,
-    --
-    genType0,
-    genGroupEntry,
-  )
+module Test.Codec.CBOR.Cuddle.CDDL.Gen (
+  genCDDL,
+  genRule,
+  genName,
+  genValue,
+  --
+  genType0,
+  genGroupEntry,
+)
 where
 
 import Codec.CBOR.Cuddle.CDDL
@@ -87,8 +87,8 @@ instance Arbitrary RangeBound where
 genTyOp :: Gen TyOp
 genTyOp =
   Gen.oneof
-    [ RangeOp <$> genRangeBound,
-      CtrlOp <$> genCtlOp
+    [ RangeOp <$> genRangeBound
+    , CtrlOp <$> genCtlOp
     ]
 
 instance Arbitrary TyOp where
@@ -98,8 +98,8 @@ instance Arbitrary TyOp where
 genTypeOrGroup :: Gen TypeOrGroup
 genTypeOrGroup =
   Gen.oneof
-    [ TOGGroup <$> genGroupEntry,
-      TOGType <$> genType0
+    [ TOGGroup <$> genGroupEntry
+    , TOGType <$> genType0
     ]
 
 instance Arbitrary TypeOrGroup where
@@ -124,20 +124,20 @@ genType2 :: Gen Type2
 genType2 =
   recursive
     Gen.oneof
-    [ T2Value <$> genValue,
-      T2Map <$> genGroup,
-      T2Array <$> genGroup,
-      T2Enum <$> genGroup,
-      T2DataItem
+    [ T2Value <$> genValue
+    , T2Map <$> genGroup
+    , T2Array <$> genGroup
+    , T2Enum <$> genGroup
+    , T2DataItem
         <$> elements [0 .. 7]
-        <*> maybe Gen.arbitrarySizedBoundedIntegral,
-      T2Name <$> genName <*> maybeRec genGenericArg,
-      T2Unwrapped <$> genName <*> maybeRec genGenericArg,
-      T2EnumRef <$> genName <*> maybeRec genGenericArg,
-      pure T2Any
+        <*> maybe Gen.arbitrarySizedBoundedIntegral
+    , T2Name <$> genName <*> maybeRec genGenericArg
+    , T2Unwrapped <$> genName <*> maybeRec genGenericArg
+    , T2EnumRef <$> genName <*> maybeRec genGenericArg
+    , pure T2Any
     ]
-    [ T2Group <$> genType0,
-      T2Tag <$> maybe arbitrary <*> genType0
+    [ T2Group <$> genType0
+    , T2Tag <$> maybe arbitrary <*> genType0
     ]
 
 instance Arbitrary Type2 where
@@ -147,10 +147,10 @@ instance Arbitrary Type2 where
 genOccurrenceIndicator :: Gen OccurrenceIndicator
 genOccurrenceIndicator =
   Gen.oneof
-    [ pure OIOptional,
-      pure OIZeroOrMore,
-      pure OIOneOrMore,
-      OIBounded
+    [ pure OIOptional
+    , pure OIZeroOrMore
+    , pure OIOneOrMore
+    , OIBounded
         <$> maybe arbitrary
         <*> maybe arbitrary
     ]
@@ -181,8 +181,8 @@ genGroupEntry =
     [ GEType
         <$> maybe genOccurrenceIndicator
         <*> maybe genMemberKey
-        <*> genType0,
-      GEGroup <$> maybe genOccurrenceIndicator <*> genGroup
+        <*> genType0
+    , GEGroup <$> maybe genOccurrenceIndicator <*> genGroup
     ]
 
 instance Arbitrary GroupEntry where
@@ -193,8 +193,8 @@ genMemberKey :: Gen MemberKey
 genMemberKey =
   recursive
     Gen.oneof
-    [ MKBareword <$> genName,
-      MKValue <$> genValue
+    [ MKBareword <$> genName
+    , MKValue <$> genValue
     ]
     [ MKType <$> genType1
     ]
@@ -206,13 +206,13 @@ instance Arbitrary MemberKey where
 genValue :: Gen Value
 genValue =
   Gen.oneof
-    [ VUInt <$> arbitrary,
-      VNInt <$> arbitrary,
-      VFloat16 <$> arbitrary,
-      VFloat32 <$> arbitrary,
-      VFloat64 <$> arbitrary,
-      VText . T.pack <$> listOf (elements $ ['a' .. 'z'] <> ['0' .. '9'] <> [' '])
-      -- VBytes <$> Gen.bytes (Range.linear 0 1100)
+    [ VUInt <$> arbitrary
+    , VNInt <$> arbitrary
+    , VFloat16 <$> arbitrary
+    , VFloat32 <$> arbitrary
+    , VFloat64 <$> arbitrary
+    , VText . T.pack <$> listOf (elements $ ['a' .. 'z'] <> ['0' .. '9'] <> [' '])
+    -- VBytes <$> Gen.bytes (Range.linear 0 1100)
     ]
 
 instance Arbitrary Value where
@@ -221,20 +221,20 @@ instance Arbitrary Value where
 genCtlOp :: Gen CtlOp
 genCtlOp =
   Gen.elements
-    [ Size,
-      Bits,
-      Regexp,
-      Cbor,
-      Cborseq,
-      Within,
-      And,
-      Lt,
-      Le,
-      Gt,
-      Ge,
-      Eq,
-      Ne,
-      Default
+    [ Size
+    , Bits
+    , Regexp
+    , Cbor
+    , Cborseq
+    , Within
+    , And
+    , Lt
+    , Le
+    , Gt
+    , Ge
+    , Eq
+    , Ne
+    , Default
     ]
 
 instance Arbitrary CtlOp where
@@ -243,8 +243,7 @@ instance Arbitrary CtlOp where
 
 instance Arbitrary a => Arbitrary (WithComments a) where
   arbitrary = noComment <$> arbitrary
-  shrink (WithComments x _) = noComment <$> shrink x 
-
+  shrink (WithComments x _) = noComment <$> shrink x
 
 --------------------------------------------------------------------------------
 -- Utility
@@ -273,8 +272,8 @@ maybeRec gen = sized $
       then pure Nothing
       else
         Gen.frequency
-          [ (2, pure Nothing),
-            (1 + fromIntegral n, Just <$> Gen.scale golden gen)
+          [ (2, pure Nothing)
+          , (1 + fromIntegral n, Just <$> Gen.scale golden gen)
           ]
 
 -- | Choose from a set of non-recursive generators and a set of recursive
@@ -292,7 +291,7 @@ golden x = round (fromIntegral x * 0.61803398875 :: Double)
 scaleBy :: Int -> Int -> Int
 scaleBy k x = round (fromIntegral x * ((1 :: Double) / fromIntegral k))
 
-shrinkNE :: (Arbitrary a) => NE.NonEmpty a -> [NE.NonEmpty a]
+shrinkNE :: Arbitrary a => NE.NonEmpty a -> [NE.NonEmpty a]
 shrinkNE (NE.toList -> l) = mapMaybe NE.nonEmpty (shrink l)
 
 -- | Variant on 'listOf' that tries to constrain the ultimate size of the

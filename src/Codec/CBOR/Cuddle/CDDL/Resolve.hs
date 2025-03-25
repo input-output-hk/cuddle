@@ -23,16 +23,16 @@
 --    references since they may be circular.
 -- 4. Finally, we monomorphise, synthesizing instances of rules with their
 --    generic arguments bound.
-module Codec.CBOR.Cuddle.CDDL.Resolve
-  ( buildResolvedCTree,
-    monoCTree,
-    buildRefCTree,
-    asMap,
-    buildMonoCTree,
-    fullResolveCDDL,
-    MonoRef (..),
-    NameResolutionFailure (..),
-  )
+module Codec.CBOR.Cuddle.CDDL.Resolve (
+  buildResolvedCTree,
+  monoCTree,
+  buildRefCTree,
+  asMap,
+  buildMonoCTree,
+  fullResolveCDDL,
+  MonoRef (..),
+  NameResolutionFailure (..),
+)
 where
 
 import Capability.Accessors (Field (..), Lift (..))
@@ -43,12 +43,12 @@ import Capability.Sink (HasSink)
 import Capability.Source (HasSource)
 import Capability.State (HasState, MonadState (..), modify)
 import Codec.CBOR.Cuddle.CDDL
-import Codec.CBOR.Cuddle.CDDL.CTree
-  ( CTree,
-    CTreeRoot,
-    CTreeRoot' (CTreeRoot),
-    ParametrisedWith (..),
-  )
+import Codec.CBOR.Cuddle.CDDL.CTree (
+  CTree,
+  CTreeRoot,
+  CTreeRoot' (CTreeRoot),
+  ParametrisedWith (..),
+ )
 import Codec.CBOR.Cuddle.CDDL.CTree qualified as CTree
 import Codec.CBOR.Cuddle.CDDL.Postlude (PTerm (..))
 import Control.Monad.Except (ExceptT (..), runExceptT)
@@ -156,16 +156,16 @@ buildRefCTree rules = CTreeRoot $ fmap toCTreeRule rules
       RangeOp bound ->
         It $
           CTree.Range
-            { CTree.from = toCTreeT2 t2,
-              CTree.to = toCTreeT2 t2',
-              CTree.inclusive = bound
+            { CTree.from = toCTreeT2 t2
+            , CTree.to = toCTreeT2 t2'
+            , CTree.inclusive = bound
             }
       CtrlOp ctlop ->
         It $
           CTree.Control
-            { CTree.op = ctlop,
-              CTree.target = toCTreeT2 t2,
-              CTree.controller = toCTreeT2 t2'
+            { CTree.op = ctlop
+            , CTree.target = toCTreeT2 t2
+            , CTree.controller = toCTreeT2 t2'
             }
 
     toCTreeT2 :: Type2 -> CTree.Node OrRef
@@ -194,28 +194,28 @@ buildRefCTree rules = CTreeRoot $ fmap toCTreeRule rules
     toCTreeT2 T2Any = It $ CTree.Postlude PTAny
 
     toCTreeGroupEntryNC :: WithComments GroupEntry -> CTree.Node OrRef
-    toCTreeGroupEntryNC = toCTreeGroupEntry . stripComment 
-    
+    toCTreeGroupEntryNC = toCTreeGroupEntry . stripComment
+
     toCTreeGroupEntry :: GroupEntry -> CTree.Node OrRef
     toCTreeGroupEntry (GEType (Just occi) mmkey t0) =
       It $
         CTree.Occur
-          { CTree.item = toKVPair mmkey t0,
-            CTree.occurs = occi
+          { CTree.item = toKVPair mmkey t0
+          , CTree.occurs = occi
           }
     toCTreeGroupEntry (GEType Nothing mmkey t0) = toKVPair mmkey t0
     toCTreeGroupEntry (GERef (Just occi) n margs) =
       It $
         CTree.Occur
-          { CTree.item = Ref n (fromGenArgs margs),
-            CTree.occurs = occi
+          { CTree.item = Ref n (fromGenArgs margs)
+          , CTree.occurs = occi
           }
     toCTreeGroupEntry (GERef Nothing n margs) = Ref n (fromGenArgs margs)
     toCTreeGroupEntry (GEGroup (Just occi) g) =
       It $
         CTree.Occur
-          { CTree.item = groupToGroup g,
-            CTree.occurs = occi
+          { CTree.item = groupToGroup g
+          , CTree.occurs = occi
           }
     toCTreeGroupEntry (GEGroup Nothing g) = groupToGroup g
 
@@ -244,9 +244,9 @@ buildRefCTree rules = CTreeRoot $ fmap toCTreeRule rules
     toKVPair (Just mkey) t0 =
       It $
         CTree.KV
-          { CTree.key = toCTreeMemberKey mkey,
-            CTree.value = toCTreeT0 t0,
-            -- TODO Handle cut semantics
+          { CTree.key = toCTreeMemberKey mkey
+          , CTree.value = toCTreeT0 t0
+          , -- TODO Handle cut semantics
             CTree.cut = False
           }
 
@@ -285,27 +285,27 @@ data NameResolutionFailure
 postludeBinding :: Map.Map Name PTerm
 postludeBinding =
   Map.fromList
-    [ (Name "bool", PTBool),
-      (Name "uint", PTUInt),
-      (Name "nint", PTNInt),
-      (Name "int", PTInt),
-      (Name "half", PTHalf),
-      (Name "float", PTFloat),
-      (Name "double", PTDouble),
-      (Name "bytes", PTBytes),
-      (Name "bstr", PTBytes),
-      (Name "text", PTText),
-      (Name "tstr", PTText),
-      (Name "any", PTAny),
-      (Name "nil", PTNil),
-      (Name "null", PTNil)
+    [ (Name "bool", PTBool)
+    , (Name "uint", PTUInt)
+    , (Name "nint", PTNInt)
+    , (Name "int", PTInt)
+    , (Name "half", PTHalf)
+    , (Name "float", PTFloat)
+    , (Name "double", PTDouble)
+    , (Name "bytes", PTBytes)
+    , (Name "bstr", PTBytes)
+    , (Name "text", PTText)
+    , (Name "tstr", PTText)
+    , (Name "any", PTAny)
+    , (Name "nil", PTNil)
+    , (Name "null", PTNil)
     ]
 
 data BindingEnv poly f = BindingEnv
-  { -- | Global name bindings via 'RuleDef'
-    global :: Map.Map Name (poly (CTree.Node f)),
-    -- | Local bindings for generic parameters
-    local :: Map.Map Name (CTree.Node f)
+  { global :: Map.Map Name (poly (CTree.Node f))
+  -- ^ Global name bindings via 'RuleDef'
+  , local :: Map.Map Name (CTree.Node f)
+  -- ^ Local bindings for generic parameters
   }
   deriving (Generic)
 
@@ -317,7 +317,7 @@ data DistRef a
     RuleRef Name [CTree.Node DistRef]
   deriving (Eq, Generic, Functor, Show)
 
-instance (Hashable a) => Hashable (DistRef a)
+instance Hashable a => Hashable (DistRef a)
 
 deriving instance Show (CTree DistRef)
 
@@ -382,7 +382,7 @@ data MonoRef a
 deriving instance Show (CTree MonoRef)
 
 deriving instance
-  (Show (poly (CTree.Node MonoRef))) =>
+  Show (poly (CTree.Node MonoRef)) =>
   Show (CTreeRoot' poly MonoRef)
 
 type MonoEnv = BindingEnv (ParametrisedWith [Name]) DistRef
@@ -410,8 +410,8 @@ newtype MonoM a = MonoM
   deriving
     ( HasSource
         "local"
-        (Map.Map Name (CTree.Node DistRef)),
-      HasReader
+        (Map.Map Name (CTree.Node DistRef))
+    , HasReader
         "local"
         (Map.Map Name (CTree.Node DistRef))
     )
@@ -427,8 +427,8 @@ newtype MonoM a = MonoM
   deriving
     ( HasSource
         "global"
-        (Map.Map Name (ParametrisedWith [Name] (CTree.Node DistRef))),
-      HasReader
+        (Map.Map Name (ParametrisedWith [Name] (CTree.Node DistRef)))
+    , HasReader
         "global"
         (Map.Map Name (ParametrisedWith [Name] (CTree.Node DistRef)))
     )
@@ -442,9 +442,9 @@ newtype MonoM a = MonoM
               )
           )
   deriving
-    ( HasSource "synth" MonoState,
-      HasSink "synth" MonoState,
-      HasState "synth" MonoState
+    ( HasSource "synth" MonoState
+    , HasSink "synth" MonoState
+    , HasState "synth" MonoState
     )
     via Lift
           ( ExceptT

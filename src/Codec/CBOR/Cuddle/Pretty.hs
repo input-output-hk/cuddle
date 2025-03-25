@@ -19,7 +19,7 @@ instance Pretty CDDL where
 
 deriving newtype instance Pretty Name
 
-instance (Pretty a) => Pretty (WithComments a) where
+instance Pretty a => Pretty (WithComments a) where
   pretty (WithComments a Nothing) = pretty a
   pretty (WithComments a (Just cmt)) = pretty cmt <> hardline <> pretty a
 
@@ -91,21 +91,21 @@ instance Pretty OccurrenceIndicator where
   pretty (OIBounded ml mh) = pretty ml <> "*" <> pretty mh
 
 -- | Control how to render a group
-data GroupRender = 
-    AsMap 
+data GroupRender
+  = AsMap
   | AsArray
-  | AsGroup 
+  | AsGroup
 
 prettyGroup :: GroupRender -> Group -> Doc ann
 prettyGroup gr (Group (NE.toList -> xs)) =
-    align $ encloseSep lp rp " // " (fmap prettyGrpChoice xs)
-    where
-      prettyGrpChoice = encloseSep mempty mempty ", " . fmap pretty
-      (lp, rp) = case gr of 
-        AsMap -> ("{", "}")
-        AsArray -> ("[", "]")
-        AsGroup -> ("(",")")
-         
+  align $ encloseSep lp rp " // " (fmap prettyGrpChoice xs)
+  where
+    prettyGrpChoice = encloseSep mempty mempty ", " . fmap pretty
+    (lp, rp) = case gr of
+      AsMap -> ("{", "}")
+      AsArray -> ("[", "]")
+      AsGroup -> ("(", ")")
+
 instance Pretty GroupEntry where
   pretty (GEType moi mmk t) =
     hsep $

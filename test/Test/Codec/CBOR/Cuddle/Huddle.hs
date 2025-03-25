@@ -62,8 +62,8 @@ arraySpec = describe "Arrays" $ do
       [ "asl"
           =:= arr [a VUInt, a VBool, a VText]
           / arr
-            [ a (int 1),
-              a ("Hello" :: T.Text)
+            [ a (int 1)
+            , a ("Hello" :: T.Text)
             ]
       ]
       `shouldMatchParseCDDL` "asl = [ uint, bool, text // 1, \"Hello\" ]"
@@ -86,36 +86,37 @@ mapSpec = describe "Maps" $ do
     toSortedCDDL ["mir" =:= arr [a (int 0 / int 1), a $ mp [0 <+ "test" ==> VUInt]]]
       `shouldMatchParseCDDL` "mir = [ 0 / 1, { * test : uint }]"
 
-grpSpec :: Spec 
-grpSpec = describe "Groups" $ do 
-  it "Can handle a choice in a group entry" $ 
+grpSpec :: Spec
+grpSpec = describe "Groups" $ do
+  it "Can handle a choice in a group entry" $
     let g1 = "g1" =:~ grp [a (VUInt / VBytes), a VUInt]
-    in toSortedCDDL (collectFrom ["a1" =:= arr [a g1]])
-      `shouldMatchParseCDDL` "a1 = [g1]\n g1 = ( uint / bytes, uint )"
-  it "Can handle keys in a group entry" $ 
-    let g1 = "g1" =:~ grp ["bytes"==> VBytes]
-    in toSortedCDDL (collectFrom ["a1" =:= arr [a g1]])
-      `shouldMatchParseCDDL` "a1 = [g1]\n g1 = (bytes : bytes)"
-  -- it "Can handle a group in a map" $ 
-  --   let g1 = "g1" =:~ grp ["bytes"==> VBytes]
-  --   in toSortedCDDL (collectFrom ["a1" =:= mp [g1]])
-  --     `shouldMatchParseCDDL` "a1 = [g1]\n g1 = (bytes : bytes)"
- 
+     in toSortedCDDL (collectFrom ["a1" =:= arr [a g1]])
+          `shouldMatchParseCDDL` "a1 = [g1]\n g1 = ( uint / bytes, uint )"
+  it "Can handle keys in a group entry" $
+    let g1 = "g1" =:~ grp ["bytes" ==> VBytes]
+     in toSortedCDDL (collectFrom ["a1" =:= arr [a g1]])
+          `shouldMatchParseCDDL` "a1 = [g1]\n g1 = (bytes : bytes)"
+
+-- it "Can handle a group in a map" $
+--   let g1 = "g1" =:~ grp ["bytes"==> VBytes]
+--   in toSortedCDDL (collectFrom ["a1" =:= mp [g1]])
+--     `shouldMatchParseCDDL` "a1 = [g1]\n g1 = (bytes : bytes)"
+
 nestedSpec :: Spec
 nestedSpec =
   describe "Nesting" $
     it "Handles references" $
       let headerBody = "header_body" =:= arr ["block_number" ==> VUInt, "slot" ==> VUInt]
        in toSortedCDDL
-            [ headerBody,
-              "header" =:= arr [a headerBody, "body_signature" ==> VBytes]
+            [ headerBody
+            , "header" =:= arr [a headerBody, "body_signature" ==> VBytes]
             ]
             `shouldMatchParseCDDL` "header = [header_body, body_signature : bytes]\n header_body = [block_number : uint, slot : uint]"
 
 genericSpec :: Spec
 genericSpec =
   describe "Generics" $
-    let set :: (IsType0 t0) => t0 -> GRuleCall
+    let set :: IsType0 t0 => t0 -> GRuleCall
         set = binding $ \x -> "set" =:= arr [0 <+ a x]
 
         dict :: (IsType0 t0, IsType0 t1) => t0 -> t1 -> GRuleCall
@@ -128,17 +129,18 @@ genericSpec =
             toSortedCDDL (collectFrom ["mymap" =:= dict VUInt VText])
               `shouldMatchParseCDDL` "dict<a0, b0> = {* a0 => b0}\n mymap = dict<uint, text>"
 
-constraintSpec :: Spec 
-constraintSpec = 
+constraintSpec :: Spec
+constraintSpec =
   describe "Constraints" $ do
-    it "Size can take a Word" $ 
+    it "Size can take a Word" $
       toSortedCDDL (collectFrom ["sz" =:= VUInt `sized` (2 :: Word)])
         `shouldMatchParseCDDL` "sz = uint .size 2"
 
-    it "Range bound can take a reference" $ 
-      let b = "b" =:= (16 :: Integer) in 
-      toSortedCDDL (collectFrom ["b" =:= (16 :: Integer), "c" =:= int 0 ... b])
-        `shouldMatchParseCDDL` "b = 16\n c = 0 .. b"
+    it "Range bound can take a reference" $
+      let b = "b" =:= (16 :: Integer)
+       in toSortedCDDL (collectFrom ["b" =:= (16 :: Integer), "c" =:= int 0 ... b])
+            `shouldMatchParseCDDL` "b = 16\n c = 0 .. b"
+
 --------------------------------------------------------------------------------
 -- Helper functions
 --------------------------------------------------------------------------------

@@ -8,7 +8,7 @@ let shellFor = fun ghcver =>
   let hspkg = import_hs ghcver in {
     packages = {
       haskell-language-server = hspkg "haskell-language-server",
-      ormolu = hspkg "ormolu",
+      fourmolu = hspkg "fourmolu",
       ghc = organist.import_nix "nixpkgs#haskell.compiler.%{ghcver}",
       cabal-install = hspkg "cabal-install",
       cabal-fmt = hspkg "cabal-fmt",

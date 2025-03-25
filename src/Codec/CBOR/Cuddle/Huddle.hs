@@ -16,76 +16,76 @@
 -- Haskell as about using Haskell's higher-level capabilities to express CDDL
 -- constraints. So we ditch a bunch of CDDL concepts where we can instead use
 -- Haskell's capabilities there.
-module Codec.CBOR.Cuddle.Huddle
-  ( -- * Core Types
-    Huddle,
-    HuddleItem (..),
-    Rule,
-    Named,
-    IsType0 (..),
-    Value (..),
+module Codec.CBOR.Cuddle.Huddle (
+  -- * Core Types
+  Huddle,
+  HuddleItem (..),
+  Rule,
+  Named,
+  IsType0 (..),
+  Value (..),
 
-    -- * Rules and assignment
-    (=:=),
-    (=:~),
-    comment,
+  -- * Rules and assignment
+  (=:=),
+  (=:~),
+  comment,
 
-    -- * Maps
-    (==>),
-    mp,
-    asKey,
-    idx,
+  -- * Maps
+  (==>),
+  mp,
+  asKey,
+  idx,
 
-    -- * Arrays
-    a,
-    arr,
+  -- * Arrays
+  a,
+  arr,
 
-    -- * Groups
-    Group,
-    grp,
+  -- * Groups
+  Group,
+  grp,
 
-    -- * Quantification
-    CanQuantify (..),
-    opt,
+  -- * Quantification
+  CanQuantify (..),
+  opt,
 
-    -- * Choices
-    (/),
-    seal,
-    sarr,
-    smp,
+  -- * Choices
+  (/),
+  seal,
+  sarr,
+  smp,
 
-    -- * Literals
-    Literal,
-    bstr,
-    int,
-    text,
+  -- * Literals
+  Literal,
+  bstr,
+  int,
+  text,
 
-    -- * Ctl operators
-    IsConstrainable,
-    IsSizeable,
-    sized,
-    cbor,
-    le,
+  -- * Ctl operators
+  IsConstrainable,
+  IsSizeable,
+  sized,
+  cbor,
+  le,
 
-    -- * Ranged
-    (...),
+  -- * Ranged
+  (...),
 
-    -- * Tagging
-    tag,
+  -- * Tagging
+  tag,
 
-    -- * Generics
-    GRef,
-    GRuleDef,
-    GRuleCall,
-    binding,
-    binding2,
-    callToDef,
+  -- * Generics
+  GRef,
+  GRuleDef,
+  GRuleCall,
+  binding,
+  binding2,
+  callToDef,
 
-    -- * Conversion to CDDL
-    collectFrom,
-    toCDDL,
-    toCDDLNoRoot,
-  )
+  -- * Conversion to CDDL
+  collectFrom,
+  toCDDL,
+  toCDDLNoRoot,
+)
 where
 
 import Codec.CBOR.Cuddle.CDDL (CDDL)
@@ -110,14 +110,14 @@ import Optics.Core (view, (%~), (&), (.~), (^.))
 import Prelude hiding ((/))
 
 data Named a = Named
-  { name :: T.Text,
-    value :: a,
-    description :: Maybe T.Text
+  { name :: T.Text
+  , value :: a
+  , description :: Maybe T.Text
   }
   deriving (Functor, Generic)
 
 -- | Add a description to a rule or group entry, to be included as a comment.
-comment :: (HasField' "description" a (Maybe T.Text)) => T.Text -> a -> a
+comment :: HasField' "description" a (Maybe T.Text) => T.Text -> a -> a
 comment desc n = n & field' @"description" .~ Just desc
 
 instance Show (Named a) where
@@ -133,9 +133,9 @@ data HuddleItem
 
 -- | Top-level Huddle type is a list of rules.
 data Huddle = Huddle
-  { -- | Root elements
-    roots :: [Rule],
-    items :: OMap T.Text HuddleItem
+  { roots :: [Rule]
+  -- ^ Root elements
+  , items :: OMap T.Text HuddleItem
   }
   deriving (Generic, Show)
 
@@ -154,8 +154,8 @@ instance Semigroup Huddle where
     Huddle
       { roots = case roots h2 of
           [] -> roots h1
-          xs -> xs,
-        items = OMap.unionWithL (\_ _ v2 -> v2) (items h1) (items h2)
+          xs -> xs
+      , items = OMap.unionWithL (\_ _ v2 -> v2) (items h1) (items h2)
       }
 
 -- | This instance is mostly used for testing
@@ -196,16 +196,16 @@ instance IsString Key where
 idx :: Word64 -> Key
 idx = LiteralKey . LInt
 
-asKey :: (IsType0 r) => r -> Key
+asKey :: IsType0 r => r -> Key
 asKey r = case toType0 r of
   NoChoice x -> TypeKey x
   ChoiceOf _ _ -> error "Cannot use a choice of types as a map key"
 
 data MapEntry = MapEntry
-  { key :: Key,
-    value :: Type0,
-    quantifier :: Occurs,
-    description :: Maybe T.Text
+  { key :: Key
+  , value :: Type0
+  , quantifier :: Occurs
+  , description :: Maybe T.Text
   }
   deriving (Generic, Show)
 
@@ -221,12 +221,12 @@ instance IsList MapChoice where
 type Map = Choice MapChoice
 
 data ArrayEntry = ArrayEntry
-  { -- | Arrays can have keys, but they have no semantic meaning. We add them
-    -- here because they can be illustrative in the generated CDDL.
-    key :: Maybe Key,
-    value :: Type0,
-    quantifier :: Occurs,
-    description :: Maybe T.Text
+  { key :: Maybe Key
+  -- ^ Arrays can have keys, but they have no semantic meaning. We add them
+  -- here because they can be illustrative in the generated CDDL.
+  , value :: Type0
+  , quantifier :: Occurs
+  , description :: Maybe T.Text
   }
   deriving (Generic, Show)
 
@@ -289,8 +289,8 @@ instance Num Type0 where
 
 -- | Occurrence bounds.
 data Occurs = Occurs
-  { lb :: Maybe Word64,
-    ub :: Maybe Word64
+  { lb :: Maybe Word64
+  , ub :: Maybe Word64
   }
   deriving (Eq, Generic, Show)
 
@@ -369,12 +369,12 @@ data CGRefType
 data Constrained where
   Constrained ::
     forall a.
-    { value :: Constrainable a,
-      constraint :: ValueConstraint a,
-      -- | Sometimes constraints reference rules. In this case we need to
-      -- collect the references in order to traverse them when collecting all
-      -- relevant rules.
-      refs :: [Rule]
+    { value :: Constrainable a
+    , constraint :: ValueConstraint a
+    , refs :: [Rule]
+    -- ^ Sometimes constraints reference rules. In this case we need to
+    -- collect the references in order to traverse them when collecting all
+    -- relevant rules.
     } ->
     Constrained
 
@@ -398,8 +398,8 @@ unconstrained v = Constrained (CValue v) def []
 -- | A constraint on a 'Value' is something applied via CtlOp or RangeOp on a
 -- Type2, forming a Type1.
 data ValueConstraint a = ValueConstraint
-  { applyConstraint :: C.Type2 -> C.Type1,
-    showConstraint :: String
+  { applyConstraint :: C.Type2 -> C.Type1
+  , showConstraint :: String
   }
 
 instance Show (ValueConstraint a) where
@@ -408,8 +408,8 @@ instance Show (ValueConstraint a) where
 instance Default (ValueConstraint a) where
   def =
     ValueConstraint
-      { applyConstraint = (`C.Type1` Nothing),
-        showConstraint = ""
+      { applyConstraint = (`C.Type1` Nothing)
+      , showConstraint = ""
       }
 
 -- | Marker that we can apply the size CtlOp to something. Not intended for
@@ -433,7 +433,7 @@ class IsSize a where
 
 instance IsSize Word where
   sizeAsCDDL = C.T2Value . C.VUInt . fromIntegral
-  sizeAsString = show 
+  sizeAsString = show
 
 instance IsSize Word64 where
   sizeAsCDDL = C.T2Value . C.VUInt
@@ -455,9 +455,9 @@ instance IsSize (Word64, Word64) where
 --   Since 0.3.4 this has worked for reference types as well as values.
 sized ::
   forall c a s.
-  ( IsSizeable a,
-    IsSize s,
-    IsConstrainable c a
+  ( IsSizeable a
+  , IsSize s
+  , IsConstrainable c a
   ) =>
   c ->
   s ->
@@ -469,15 +469,15 @@ sized v sz =
       { applyConstraint = \t2 ->
           C.Type1
             t2
-            (Just (C.CtrlOp CtlOp.Size, sizeAsCDDL sz)),
-        showConstraint = ".size " <> sizeAsString sz
+            (Just (C.CtrlOp CtlOp.Size, sizeAsCDDL sz))
+      , showConstraint = ".size " <> sizeAsString sz
       }
     []
 
-class IsCborable a 
-instance IsCborable ByteString 
-instance IsCborable CRef 
-instance IsCborable CGRef 
+class IsCborable a
+instance IsCborable ByteString
+instance IsCborable CRef
+instance IsCborable CGRef
 
 cbor :: (IsCborable b, IsConstrainable c b) => c -> Rule -> Constrained
 cbor v r@(Named n _ _) =
@@ -487,14 +487,14 @@ cbor v r@(Named n _ _) =
       { applyConstraint = \t2 ->
           C.Type1
             t2
-            (Just (C.CtrlOp CtlOp.Cbor, C.T2Name (C.Name n) Nothing)),
-        showConstraint = ".cbor " <> T.unpack n
+            (Just (C.CtrlOp CtlOp.Cbor, C.T2Name (C.Name n) Nothing))
+      , showConstraint = ".cbor " <> T.unpack n
       }
     [r]
 
-class IsComparable a 
-instance IsComparable Int 
-instance IsComparable CRef 
+class IsComparable a
+instance IsComparable Int
+instance IsComparable CRef
 instance IsComparable CGRef
 
 le :: (IsComparable a, IsConstrainable c a) => c -> Word64 -> Constrained
@@ -505,23 +505,23 @@ le v bound =
       { applyConstraint = \t2 ->
           C.Type1
             t2
-            (Just (C.CtrlOp CtlOp.Le, C.T2Value (C.VUInt $ fromIntegral bound))),
-        showConstraint = ".le " <> show bound
+            (Just (C.CtrlOp CtlOp.Le, C.T2Value (C.VUInt $ fromIntegral bound)))
+      , showConstraint = ".le " <> show bound
       }
     []
 
 -- Ranges
 
-data RangeBound =
-    RangeBoundLiteral Literal 
-  | RangeBoundRef (Named Type0) 
-  deriving Show
+data RangeBound
+  = RangeBoundLiteral Literal
+  | RangeBoundRef (Named Type0)
+  deriving (Show)
 
 class IsRangeBound a where
-  toRangeBound :: a -> RangeBound 
+  toRangeBound :: a -> RangeBound
 
 instance IsRangeBound Literal where
-  toRangeBound = RangeBoundLiteral 
+  toRangeBound = RangeBoundLiteral
 
 instance IsRangeBound Integer where
   toRangeBound = RangeBoundLiteral . inferInteger
@@ -531,9 +531,9 @@ instance IsRangeBound (Named Type0) where
 
 data Ranged where
   Ranged ::
-    { lb :: RangeBound,
-      ub :: RangeBound,
-      bounds :: C.RangeBound
+    { lb :: RangeBound
+    , ub :: RangeBound
+    , bounds :: C.RangeBound
     } ->
     Ranged
   Unranged :: Literal -> Ranged
@@ -608,7 +608,7 @@ instance IsType0 GRuleCall where
 instance IsType0 GRef where
   toType0 = NoChoice . T2GenericRef
 
-instance (IsType0 a) => IsType0 (Tagged a) where
+instance IsType0 a => IsType0 (Tagged a) where
   toType0 = NoChoice . T2Tagged . fmap toType0
 
 instance IsType0 HuddleItem where
@@ -629,7 +629,7 @@ infixl 7 <+
 
 infixr 6 +>
 
-opt :: (CanQuantify a) => a -> a
+opt :: CanQuantify a => a -> a
 opt r = 0 <+ r +> 1
 
 instance CanQuantify Occurs where
@@ -645,7 +645,7 @@ instance CanQuantify MapEntry where
   ae +> ub = ae & field @"quantifier" %~ (+> ub)
 
 -- | A quantifier on a choice can be rewritten as a choice of quantifiers
-instance (CanQuantify a) => CanQuantify (Choice a) where
+instance CanQuantify a => CanQuantify (Choice a) where
   lb <+ c = fmap (lb <+) c
   c +> ub = fmap (+> ub) c
 
@@ -658,11 +658,11 @@ instance IsEntryLike MapEntry where
 instance IsEntryLike ArrayEntry where
   fromMapEntry me =
     ArrayEntry
-      { key = Just $ getField @"key" me,
-        value =
-          getField @"value" me,
-        quantifier = getField @"quantifier" me,
-        description = Nothing
+      { key = Just $ getField @"key" me
+      , value =
+          getField @"value" me
+      , quantifier = getField @"quantifier" me
+      , description = Nothing
       }
 
 instance IsEntryLike Type0 where
@@ -672,16 +672,16 @@ instance IsEntryLike Type0 where
 k ==> gc =
   fromMapEntry
     MapEntry
-      { key = k,
-        value = toType0 gc,
-        quantifier = def,
-        description = Nothing
+      { key = k
+      , value = toType0 gc
+      , quantifier = def
+      , description = Nothing
       }
 
 infixl 8 ==>
 
 -- | Assign a rule
-(=:=) :: (IsType0 a) => T.Text -> a -> Rule
+(=:=) :: IsType0 a => T.Text -> a -> Rule
 n =:= b = Named n (toType0 b) Nothing
 
 infixl 1 =:=
@@ -692,15 +692,15 @@ n =:~ b = Named n b Nothing
 infixl 1 =:~
 
 class IsGroupOrArrayEntry a where
-  toGroupOrArrayEntry :: (IsType0 x) => x -> a
+  toGroupOrArrayEntry :: IsType0 x => x -> a
 
 instance IsGroupOrArrayEntry ArrayEntry where
   toGroupOrArrayEntry x =
     ArrayEntry
-      { key = Nothing,
-        value = toType0 x,
-        quantifier = def,
-        description = Nothing
+      { key = Nothing
+      , value = toType0 x
+      , quantifier = def
+      , description = Nothing
       }
 
 instance IsGroupOrArrayEntry Type0 where
@@ -743,7 +743,7 @@ instance IsChoosable ByteString Type2 where
 instance IsChoosable Constrained Type2 where
   toChoice = toChoice . T2Constrained
 
-instance (IsType0 a) => IsChoosable (Tagged a) Type2 where
+instance IsType0 a => IsChoosable (Tagged a) Type2 where
   toChoice = toChoice . T2Tagged . fmap toType0
 
 instance IsChoosable Literal Type2 where
@@ -877,8 +877,8 @@ freshName ix =
       <> T.pack (show $ ix `quot` 26)
 
 data GRule a = GRule
-  { args :: NE.NonEmpty a,
-    body :: Type0
+  { args :: NE.NonEmpty a
+  , body :: Type0
   }
   deriving (Show)
 
@@ -892,20 +892,20 @@ callToDef gr = gr {args = refs}
     refs =
       NE.unfoldr
         ( \ix ->
-            ( freshName ix,
-              if ix < NE.length (args gr) - 1 then Just (ix + 1) else Nothing
+            ( freshName ix
+            , if ix < NE.length (args gr) - 1 then Just (ix + 1) else Nothing
             )
         )
         0
 
 -- | Bind a single variable into a generic call
-binding :: (IsType0 t0) => (GRef -> Rule) -> t0 -> GRuleCall
+binding :: IsType0 t0 => (GRef -> Rule) -> t0 -> GRuleCall
 binding fRule t0 =
   Named
     (name rule)
     GRule
-      { args = t2 NE.:| [],
-        body = getField @"value" rule
+      { args = t2 NE.:| []
+      , body = getField @"value" rule
       }
     Nothing
   where
@@ -920,8 +920,8 @@ binding2 fRule t0 t1 =
   Named
     (name rule)
     GRule
-      { args = t02 NE.:| [t12],
-        body = getField @"value" rule
+      { args = t02 NE.:| [t12]
+      , body = getField @"value" rule
       }
     Nothing
   where
@@ -949,8 +949,8 @@ collectFrom topRs =
   where
     toHuddle items =
       Huddle
-        { roots = topRs,
-          items = items
+        { roots = topRs
+        , items = items
         }
     goRule r@(Named n t0 _) = do
       items <- get
@@ -960,7 +960,7 @@ collectFrom topRs =
     goChoice f (NoChoice x) = f x
     goChoice f (ChoiceOf x xs) = f x >> goChoice f xs
     goT0 = goChoice goT2
-    goT2 (T2Range r) = goRanged r 
+    goT2 (T2Range r) = goRanged r
     goT2 (T2Map m) = goChoice (mapM_ goMapEntry . unMapChoice) m
     goT2 (T2Array m) = goChoice (mapM_ goArrayEntry . unArrayChoice) m
     goT2 (T2Tagged (Tagged _ t0)) = goT0 t0
@@ -993,10 +993,10 @@ collectFrom topRs =
     goKey _ = pure ()
     goGroup (Group g) = mapM_ goArrayEntry g
     goRanged (Unranged _) = pure ()
-    goRanged (Ranged lb ub _) = goRangeBound lb >> goRangeBound ub 
+    goRanged (Ranged lb ub _) = goRangeBound lb >> goRangeBound ub
     goRangeBound (RangeBoundLiteral _) = pure ()
     goRangeBound (RangeBoundRef r) = goRule r
-    
+
 --------------------------------------------------------------------------------
 -- Conversion to CDDL
 --------------------------------------------------------------------------------
@@ -1136,7 +1136,7 @@ toCDDL' mkPseudoRoot hdl =
         (toCDDLRangeBound lb)
         (Just (C.RangeOp rop, toCDDLRangeBound ub))
 
-    toCDDLRangeBound :: RangeBound -> C.Type2 
+    toCDDLRangeBound :: RangeBound -> C.Type2
     toCDDLRangeBound (RangeBoundLiteral l) = C.T2Value $ toCDDLValue l
     toCDDLRangeBound (RangeBoundRef (Named n _ _)) = C.T2Name (C.Name n) Nothing
 

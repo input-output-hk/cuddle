@@ -3,10 +3,10 @@
 module Main (main) where
 
 import Codec.CBOR.Cuddle.CBOR.Gen (generateCBORTerm)
-import Codec.CBOR.Cuddle.CDDL (Name (..))
-import Codec.CBOR.Cuddle.CDDL.Resolve
-  ( fullResolveCDDL,
-  )
+import Codec.CBOR.Cuddle.CDDL (Name (..), sortCDDL)
+import Codec.CBOR.Cuddle.CDDL.Resolve (
+  fullResolveCDDL,
+ )
 import Codec.CBOR.Cuddle.Parser (pCDDL)
 import Codec.CBOR.Cuddle.Pretty ()
 import Codec.CBOR.FlatTerm (toFlatTerm)
@@ -22,7 +22,6 @@ import System.Exit (exitFailure, exitSuccess)
 import System.IO (hPutStrLn, stderr)
 import System.Random (getStdGen)
 import Text.Megaparsec (ParseErrorBundle, Parsec, errorBundlePretty, runParser)
-import Codec.CBOR.Cuddle.CDDL (sortCDDL)
 
 data Opts = Opts Command String
 
@@ -47,8 +46,8 @@ pCBOROutputFormat = eitherReader $ \case
   s -> Left s
 
 data GenOpts = GenOpts
-  { itemName :: T.Text,
-    outputFormat :: CBOROutputFormat
+  { itemName :: T.Text
+  , outputFormat :: CBOROutputFormat
   }
 
 pGenOpts :: Parser GenOpts
@@ -86,23 +85,20 @@ opts =
       ( command
           "format"
           ( info
-              ( Format <$> pFormatOpts)
-              ( progDesc "Format the provided CDDL file"
-              )
+              (Format <$> pFormatOpts)
+              (progDesc "Format the provided CDDL file")
           )
           <> command
             "validate"
             ( info
                 (pure Validate)
-                ( progDesc "Validate the provided CDDL file"
-                )
+                (progDesc "Validate the provided CDDL file")
             )
           <> command
             "gen"
             ( info
                 (GenerateCBOR <$> pGenOpts)
-                ( progDesc "Generate a CBOR term matching the schema"
-                )
+                (progDesc "Generate a CBOR term matching the schema")
             )
       )
     <*> argument str (metavar "CDDL_FILE")
@@ -126,8 +122,9 @@ run (Opts cmd cddlFile) = do
       putStrLnErr $ errorBundlePretty err
       exitFailure
     Right res -> case cmd of
-      Format fOpts -> let defs = if sort fOpts then sortCDDL res else res in 
-        putDocW 80 $ pretty defs
+      Format fOpts ->
+        let defs = if sort fOpts then sortCDDL res else res
+         in putDocW 80 $ pretty defs
       Validate -> case fullResolveCDDL res of
         Left err -> putStrLnErr (show err) >> exitFailure
         Right _ -> exitSuccess

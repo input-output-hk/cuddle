@@ -31,8 +31,8 @@ pRule =
           <$> pName
           <*> optcomp pGenericParam
           <*> (space *> pAssignT <* space)
-          <*> (TOGType <$> pType0 <* notFollowedBy (void (char ':') <|> void (string "=>"))),
-      Rule
+          <*> (TOGType <$> pType0 <* notFollowedBy (void (char ':') <|> void (string "=>")))
+    , Rule
         <$> pName
         <*> optcomp pGenericParam
         <*> (space *> pAssignG <* space)
@@ -58,15 +58,15 @@ pName = do
 pAssignT :: Parser Assign
 pAssignT =
   choice
-    [ AssignEq <$ char '=',
-      AssignExt <$ string "/="
+    [ AssignEq <$ char '='
+    , AssignExt <$ string "/="
     ]
 
 pAssignG :: Parser Assign
 pAssignG =
   choice
-    [ AssignEq <$ char '=',
-      AssignExt <$ string "//="
+    [ AssignEq <$ char '='
+    , AssignExt <$ string "//="
     ]
 
 pGenericParam :: Parser GenericParam
@@ -94,13 +94,13 @@ pType1 = Type1 <$> pType2 <*> optcomp ((,) <$> (space *> pTyOp <* space) <*> pTy
 pType2 :: Parser Type2
 pType2 =
   choice
-    [ try $ T2Value <$> pValue,
-      try $ T2Name <$> pName <*> optional pGenericArg,
-      try $ T2Group <$> between (char '(' <* space) (char ')' <* space) (pType0 <* space),
-      try $ T2Map <$> between (char '{' <* space) (char '}' <* space) (pGroup <* space),
-      try $ T2Array <$> between (char '[' <* space) (char ']' <* space) (pGroup <* space),
-      try $ T2Unwrapped <$> (char '~' *> space *> pName) <*> optional pGenericArg,
-      try $
+    [ try $ T2Value <$> pValue
+    , try $ T2Name <$> pName <*> optional pGenericArg
+    , try $ T2Group <$> between (char '(' <* space) (char ')' <* space) (pType0 <* space)
+    , try $ T2Map <$> between (char '{' <* space) (char '}' <* space) (pGroup <* space)
+    , try $ T2Array <$> between (char '[' <* space) (char ']' <* space) (pGroup <* space)
+    , try $ T2Unwrapped <$> (char '~' *> space *> pName) <*> optional pGenericArg
+    , try $
         T2Enum
           <$> ( char '&'
                   *> space
@@ -108,14 +108,14 @@ pType2 =
                     (char '(' <* space)
                     (char ')')
                     (pGroup <* space)
-              ),
-      try $ T2EnumRef <$> (char '&' *> space *> pName) <*> optional pGenericArg,
-      try $
+              )
+    , try $ T2EnumRef <$> (char '&' *> space *> pName) <*> optional pGenericArg
+    , try $
         T2Tag
           <$> (string "#6" *> optcomp (char '.' *> L.decimal))
-          <*> between (char '(' <* space) (char ')') (pType0 <* space),
-      try $ T2DataItem <$> (char '#' *> L.decimal) <*> optcomp (char '.' *> L.decimal),
-      T2Any <$ char '#'
+          <*> between (char '(' <* space) (char ')') (pType0 <* space)
+    , try $ T2DataItem <$> (char '#' *> L.decimal) <*> optcomp (char '.' *> L.decimal)
+    , T2Any <$ char '#'
     ]
 
 pGroup :: Parser Group
@@ -135,16 +135,16 @@ pGrpEntry =
         GEType
           <$> optcomp (pOccur <* space)
           <*> optcomp (pMemberKey <* space)
-          <*> pType0,
-      try $
+          <*> pType0
+    , try $
         GERef
           <$> optcomp (pOccur <* space)
           <*> pName
           -- We use optional here since we should not backtrack once we start
           -- consuming a generic argument - the opening '<' will not be anything
           -- else.
-          <*> optional pGenericArg,
-      GEGroup
+          <*> optional pGenericArg
+    , GEGroup
         <$> optcomp (pOccur <* space)
         <*> between
           (char '(')
@@ -155,16 +155,16 @@ pGrpEntry =
 pMemberKey :: Parser MemberKey
 pMemberKey =
   choice
-    [ try $ MKType <$> pType1 <* space <* optcomp (char '^' <* space) <* string "=>",
-      try $ MKBareword <$> pName <* space <* char ':' <* space,
-      MKValue <$> pValue <* space <* char ':' <* space
+    [ try $ MKType <$> pType1 <* space <* optcomp (char '^' <* space) <* string "=>"
+    , try $ MKBareword <$> pName <* space <* char ':' <* space
+    , MKValue <$> pValue <* space <* char ':' <* space
     ]
 
 pTyOp :: Parser TyOp
 pTyOp =
   choice
-    [ try $ RangeOp <$> pRangeBound,
-      CtrlOp <$> (char '.' *> pCtlOp)
+    [ try $ RangeOp <$> pRangeBound
+    , CtrlOp <$> (char '.' *> pCtlOp)
     ]
   where
     pRangeBound :: Parser RangeBound
@@ -174,29 +174,29 @@ pTyOp =
     pCtlOp =
       label "CtlOp" $
         choice
-          [ try $ string "cborseq" $> COp.Cborseq,
-            try $ string "cbor" $> COp.Cbor,
-            try $ string "size" $> COp.Size,
-            try $ string "bits" $> COp.Bits,
-            try $ string "within" $> COp.Within,
-            try $ string "and" $> COp.And,
-            try $ string "lt" $> COp.Lt,
-            try $ string "le" $> COp.Le,
-            try $ string "gt" $> COp.Gt,
-            try $ string "ge" $> COp.Ge,
-            try $ string "eq" $> COp.Eq,
-            try $ string "ne" $> COp.Ne,
-            try $ string "default" $> COp.Default,
-            try $ string "regexp" $> COp.Regexp
+          [ try $ string "cborseq" $> COp.Cborseq
+          , try $ string "cbor" $> COp.Cbor
+          , try $ string "size" $> COp.Size
+          , try $ string "bits" $> COp.Bits
+          , try $ string "within" $> COp.Within
+          , try $ string "and" $> COp.And
+          , try $ string "lt" $> COp.Lt
+          , try $ string "le" $> COp.Le
+          , try $ string "gt" $> COp.Gt
+          , try $ string "ge" $> COp.Ge
+          , try $ string "eq" $> COp.Eq
+          , try $ string "ne" $> COp.Ne
+          , try $ string "default" $> COp.Default
+          , try $ string "regexp" $> COp.Regexp
           ]
 
 pOccur :: Parser OccurrenceIndicator
 pOccur =
   label "OccurrenceIndicator" $
     choice
-      [ char '+' $> OIOneOrMore,
-        char '?' $> OIOptional,
-        mkBounded <$> optional L.decimal <*> (char '*' *> optional L.decimal)
+      [ char '+' $> OIOneOrMore
+      , char '?' $> OIOptional
+      , mkBounded <$> optional L.decimal <*> (char '*' *> optional L.decimal)
       ]
   where
     mkBounded mlb mub = case (mlb, mub) of
@@ -206,10 +206,10 @@ pOccur =
 pValue :: Parser Value
 pValue =
   choice
-    [ try pUInt,
-      try pNInt,
-      pFloat,
-      pText
+    [ try pUInt
+    , try pNInt
+    , pFloat
+    , pText
     ]
   where
     -- Need to ensure that number values are not actually bounds on a later
@@ -263,7 +263,7 @@ charInRange lb ub x = lb <= x && x <= ub
 
 -- | A variant of 'optional' for composite parsers, which will consume no input
 -- if it fails.
-optcomp :: (MonadParsec e s f) => f a -> f (Maybe a)
+optcomp :: MonadParsec e s f => f a -> f (Maybe a)
 optcomp = optional . try
 
 {-
@@ -380,7 +380,7 @@ RFC 8610                          CDDL                         June 2019
 -}
 
 -- | Variant on 'NE.sepEndBy1' which doesn't consume the separator
-sepBy1' :: (MonadParsec e s m) => m a -> m sep -> m (NonEmpty a)
+sepBy1' :: MonadParsec e s m => m a -> m sep -> m (NonEmpty a)
 sepBy1' p sep = NE.fromList <$> go
   where
     go = liftA2 (:) p (many (try $ sep *> p))
