@@ -14,7 +14,7 @@ import Test.Codec.CBOR.Cuddle.CDDL.Gen qualified as Gen ()
 import Test.Hspec
 import Test.Hspec.Megaparsec
 import Test.QuickCheck
-import Text.Megaparsec (errorBundlePretty, parse)
+import Text.Megaparsec (MonadParsec (..), errorBundlePretty, parse)
 
 parserSpec :: Spec
 parserSpec = do
@@ -44,7 +44,7 @@ roundtripSpec = describe "Roundtripping should be id" $ do
     trip :: forall a. (Eq a, Show a, Pretty a, Arbitrary a) => Parser a -> Property
     trip pa = property $ \(x :: a) -> within 1000000 $ do
       let printed = printText x
-      case parse pa "" printed of
+      case parse (pa <* eof) "" printed of
         Left e ->
           counterexample (show printed) $
             counterexample (errorBundlePretty e) $
@@ -379,7 +379,7 @@ type1Spec = describe "Type1" $ do
 -- | A bunch of cases found by hedgehog/QC
 qcFoundSpec :: Spec
 qcFoundSpec =
-  describe "Generated test cases" $
+  describe "Generated test cases" $ do
     it "1083150867" $
       parse pType1 "" "{} .ge & i<{}, 3>"
         `shouldParse` Type1
@@ -399,3 +399,10 @@ qcFoundSpec =
                   )
               )
           )
+    it "1046853555" $
+      parse (pRule <* eof) "" "S = 0* ()"
+        `shouldParse` Rule
+          (Name "S")
+          Nothing
+          AssignEq
+          (TOGGroup (GEGroup (Just (OIBounded (Just 0) Nothing)) (Group ([] NE.:| []))))

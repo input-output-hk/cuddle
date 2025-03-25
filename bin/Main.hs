@@ -4,6 +4,7 @@ module Main (main) where
 
 import Codec.CBOR.Cuddle.CBOR.Gen (generateCBORTerm)
 import Codec.CBOR.Cuddle.CDDL (Name (..), sortCDDL)
+import Codec.CBOR.Cuddle.CDDL.Prelude (prependPrelude)
 import Codec.CBOR.Cuddle.CDDL.Resolve (
   fullResolveCDDL,
  )
@@ -25,9 +26,11 @@ import Text.Megaparsec (ParseErrorBundle, Parsec, errorBundlePretty, runParser)
 
 data Opts = Opts Command String
 
+newtype ValidateOpts = ValidateOpts {noPrelude :: Bool}
+
 data Command
   = Format FormatOpts
-  | Validate
+  | Validate ValidateOpts
   | GenerateCBOR GenOpts
 
 -- | Various formats for outputtting CBOR
@@ -78,6 +81,14 @@ pFormatOpts =
           <> help "Sort the CDDL rule definitions before printing."
       )
 
+pValidateOpts :: Parser ValidateOpts
+pValidateOpts =
+  ValidateOpts
+    <$> switch
+      ( long "no-prelude"
+          <> help "Do not include the CDDL prelude."
+      )
+
 opts :: Parser Opts
 opts =
   Opts
@@ -91,7 +102,7 @@ opts =
           <> command
             "validate"
             ( info
-                (pure Validate)
+                (Validate <$> pValidateOpts)
                 (progDesc "Validate the provided CDDL file")
             )
           <> command
@@ -125,9 +136,15 @@ run (Opts cmd cddlFile) = do
       Format fOpts ->
         let defs = if sort fOpts then sortCDDL res else res
          in putDocW 80 $ pretty defs
-      Validate -> case fullResolveCDDL res of
-        Left err -> putStrLnErr (show err) >> exitFailure
-        Right _ -> exitSuccess
+      Validate vOpts ->
+        let
+          resWithPrelude
+            | noPrelude vOpts = res
+            | otherwise = prependPrelude res
+         in
+          case fullResolveCDDL resWithPrelude of
+            Left err -> putStrLnErr (show err) >> exitFailure
+            Right _ -> exitSuccess
       (GenerateCBOR x) -> case fullResolveCDDL res of
         Left err -> putStrLnErr (show err) >> exitFailure
         Right mt -> do
