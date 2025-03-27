@@ -7,7 +7,7 @@ import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
 import Codec.CBOR.Cuddle.Parser
 import Codec.CBOR.Cuddle.Parser.Lexer (Parser)
 import Codec.CBOR.Cuddle.Pretty ()
-import Data.List.NonEmpty (NonEmpty(..))
+import Data.List.NonEmpty (NonEmpty (..))
 import Data.Text qualified as T
 import Prettyprinter (Pretty, defaultLayoutOptions, layoutPretty, pretty)
 import Prettyprinter.Render.Text (renderStrict)
@@ -230,19 +230,19 @@ type2Spec = describe "type2" $ do
                       )
                 ]
                   :| [
-                          [ noComment $
-                              GEType
-                                Nothing
-                                Nothing
-                                ( Type0
-                                    ( Type1
-                                        (T2Name (Name "string") Nothing)
-                                        Nothing
-                                        :| []
-                                    )
+                       [ noComment $
+                          GEType
+                            Nothing
+                            Nothing
+                            ( Type0
+                                ( Type1
+                                    (T2Name (Name "string") Nothing)
+                                    Nothing
+                                    :| []
                                 )
-                          ]
-                        ]
+                            )
+                       ]
+                     ]
               )
           )
 
@@ -257,13 +257,13 @@ type2Spec = describe "type2" $ do
                       (Type0 ((:| []) (Type1 (T2Value (VUInt 0)) Nothing)))
                 ]
                   :| [
-                          [ noComment $
-                              GEType
-                                Nothing
-                                Nothing
-                                (Type0 ((:| []) (Type1 (T2Value (VUInt 1)) Nothing)))
-                          ]
-                        ]
+                       [ noComment $
+                          GEType
+                            Nothing
+                            Nothing
+                            (Type0 ((:| []) (Type1 (T2Value (VUInt 1)) Nothing)))
+                       ]
+                     ]
               )
           )
     it "Trailing commas permitted" $

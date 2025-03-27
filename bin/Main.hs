@@ -14,6 +14,8 @@ import Codec.CBOR.FlatTerm (toFlatTerm)
 import Codec.CBOR.Pretty (prettyHexEnc)
 import Codec.CBOR.Term (encodeTerm)
 import Codec.CBOR.Write (toStrictByteString)
+import Data.ByteString.Base16 qualified as Base16
+import Data.ByteString.Char8 qualified as BSC
 import Data.Text qualified as T
 import Data.Text.IO qualified as T
 import Options.Applicative
@@ -153,7 +155,7 @@ run (Opts cmd cddlFile) = do
            in case outputFormat x of
                 AsTerm -> print term
                 AsFlatTerm -> print $ toFlatTerm (encodeTerm term)
-                AsCBOR -> print . toStrictByteString $ encodeTerm term
+                AsCBOR -> BSC.putStrLn . Base16.encode . toStrictByteString $ encodeTerm term
                 AsPrettyCBOR -> putStrLn . prettyHexEnc $ encodeTerm term
 
 putStrLnErr :: String -> IO ()
