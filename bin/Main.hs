@@ -28,7 +28,7 @@ import Text.Megaparsec (ParseErrorBundle, Parsec, errorBundlePretty, runParser)
 
 data Opts = Opts Command String
 
-newtype ValidateOpts = ValidateOpts {noPrelude :: Bool}
+newtype ValidateOpts = ValidateOpts {vNoPrelude :: Bool}
 
 data Command
   = Format FormatOpts
@@ -53,6 +53,7 @@ pCBOROutputFormat = eitherReader $ \case
 data GenOpts = GenOpts
   { itemName :: T.Text
   , outputFormat :: CBOROutputFormat
+  , gNoPrelude :: Bool
   }
 
 pGenOpts :: Parser GenOpts
@@ -70,6 +71,10 @@ pGenOpts =
           <> short 'f'
           <> help "Output format"
           <> value AsCBOR
+      )
+    <*> switch
+      ( long "no-prelude"
+          <> help "Do not include the CDDL prelude."
       )
 
 newtype FormatOpts = FormatOpts
@@ -98,19 +103,19 @@ opts =
       ( command
           "format"
           ( info
-              (Format <$> pFormatOpts)
+              (Format <$> pFormatOpts <**> helper)
               (progDesc "Format the provided CDDL file")
           )
           <> command
             "validate"
             ( info
-                (Validate <$> pValidateOpts)
+                (Validate <$> pValidateOpts <**> helper)
                 (progDesc "Validate the provided CDDL file")
             )
           <> command
             "gen"
             ( info
-                (GenerateCBOR <$> pGenOpts)
+                (GenerateCBOR <$> pGenOpts <**> helper)
                 (progDesc "Generate a CBOR term matching the schema")
             )
       )
@@ -134,29 +139,40 @@ run (Opts cmd cddlFile) = do
     Left err -> do
       putStrLnErr $ errorBundlePretty err
       exitFailure
-    Right res -> case cmd of
-      Format fOpts ->
-        let defs = if sort fOpts then sortCDDL res else res
-         in putDocW 80 $ pretty defs
-      Validate vOpts ->
-        let
-          resWithPrelude
-            | noPrelude vOpts = res
-            | otherwise = prependPrelude res
-         in
-          case fullResolveCDDL resWithPrelude of
-            Left err -> putStrLnErr (show err) >> exitFailure
-            Right _ -> exitSuccess
-      (GenerateCBOR x) -> case fullResolveCDDL res of
-        Left err -> putStrLnErr (show err) >> exitFailure
-        Right mt -> do
-          stdGen <- getStdGen
-          let term = generateCBORTerm mt (Name $ itemName x) stdGen
-           in case outputFormat x of
-                AsTerm -> print term
-                AsFlatTerm -> print $ toFlatTerm (encodeTerm term)
-                AsCBOR -> BSC.putStrLn . Base16.encode . toStrictByteString $ encodeTerm term
-                AsPrettyCBOR -> putStrLn . prettyHexEnc $ encodeTerm term
+    Right res ->
+      case cmd of
+        Format fOpts ->
+          let
+            defs
+              | sort fOpts = sortCDDL res
+              | otherwise = res
+           in
+            putDocW 80 $ pretty defs
+        Validate vOpts ->
+          let
+            res'
+              | vNoPrelude vOpts = res
+              | otherwise = prependPrelude res
+           in
+            case fullResolveCDDL res' of
+              Left err -> putStrLnErr (show err) >> exitFailure
+              Right _ -> exitSuccess
+        (GenerateCBOR gOpts) ->
+          let
+            res'
+              | gNoPrelude gOpts = res
+              | otherwise = prependPrelude res
+           in
+            case fullResolveCDDL res' of
+              Left err -> putStrLnErr (show err) >> exitFailure
+              Right mt -> do
+                stdGen <- getStdGen
+                let term = generateCBORTerm mt (Name $ itemName gOpts) stdGen
+                 in case outputFormat gOpts of
+                      AsTerm -> print term
+                      AsFlatTerm -> print $ toFlatTerm (encodeTerm term)
+                      AsCBOR -> BSC.putStrLn . Base16.encode . toStrictByteString $ encodeTerm term
+                      AsPrettyCBOR -> putStrLn . prettyHexEnc $ encodeTerm term
 
 putStrLnErr :: String -> IO ()
 putStrLnErr = hPutStrLn stderr
