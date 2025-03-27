@@ -5,8 +5,9 @@ module Test.Codec.CBOR.Cuddle.CDDL.Parser where
 import Codec.CBOR.Cuddle.CDDL
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
 import Codec.CBOR.Cuddle.Parser
+import Codec.CBOR.Cuddle.Parser.Lexer (Parser)
 import Codec.CBOR.Cuddle.Pretty ()
-import Data.List.NonEmpty qualified as NE
+import Data.List.NonEmpty (NonEmpty(..))
 import Data.Text qualified as T
 import Prettyprinter (Pretty, defaultLayoutOptions, layoutPretty, pretty)
 import Prettyprinter.Render.Text (renderStrict)
@@ -113,13 +114,13 @@ genericSpec = describe "generics" $ do
                                 ( Type1
                                     (T2Value (VUInt 0))
                                     Nothing
-                                    NE.:| []
+                                    :| []
                                 )
                             )
                         )
                     )
                     Nothing
-                    NE.:| []
+                    :| []
                 )
             )
         )
@@ -139,13 +140,13 @@ genericSpec = describe "generics" $ do
                                 ( Type1
                                     (T2Value (VUInt 0))
                                     (Just (RangeOp ClOpen, T2Value (VUInt 1)))
-                                    NE.:| []
+                                    :| []
                                 )
                             )
                         )
                     )
                     Nothing
-                    NE.:| []
+                    :| []
                 )
             )
         )
@@ -160,12 +161,12 @@ type2Spec = describe "type2" $ do
       parse pType2 "" "{ int => string }"
         `shouldParse` T2Map
           ( Group
-              ( (NE.:| [])
+              ( (:| [])
                   [ noComment $
                       GEType
                         Nothing
                         (Just (MKType (Type1 (T2Name (Name "int") Nothing) Nothing)))
-                        (Type0 ((NE.:| []) (Type1 (T2Name (Name "string") Nothing) Nothing)))
+                        (Type0 ((:| []) (Type1 (T2Name (Name "string") Nothing) Nothing)))
                   ]
               )
           )
@@ -173,12 +174,12 @@ type2Spec = describe "type2" $ do
       parse pType2 "" "{ * int => string }"
         `shouldParse` T2Map
           ( Group
-              ( (NE.:| [])
+              ( (:| [])
                   [ noComment $
                       GEType
                         (Just OIZeroOrMore)
                         (Just (MKType (Type1 (T2Name (Name "int") Nothing) Nothing)))
-                        (Type0 ((NE.:| []) (Type1 (T2Name (Name "string") Nothing) Nothing)))
+                        (Type0 ((:| []) (Type1 (T2Name (Name "string") Nothing) Nothing)))
                   ]
               )
           )
@@ -190,25 +191,25 @@ type2Spec = describe "type2" $ do
                     ( GEType
                         Nothing
                         (Just (MKType (Type1 (T2Value (VUInt 1)) Nothing)))
-                        (Type0 (Type1 (T2Name (Name "string") Nothing) Nothing NE.:| []))
+                        (Type0 (Type1 (T2Name (Name "string") Nothing) Nothing :| []))
                     )
                     Nothing
                 , WithComments
                     ( GEType
                         Nothing
                         (Just (MKType (Type1 (T2Value (VUInt 2)) Nothing)))
-                        (Type0 (Type1 (T2Name (Name "int") Nothing) Nothing NE.:| []))
+                        (Type0 (Type1 (T2Name (Name "int") Nothing) Nothing :| []))
                     )
                     Nothing
                 , WithComments
                     ( GEType
                         Nothing
                         (Just (MKType (Type1 (T2Value (VUInt 3)) Nothing)))
-                        (Type0 (Type1 (T2Name (Name "bytes") Nothing) Nothing NE.:| []))
+                        (Type0 (Type1 (T2Name (Name "bytes") Nothing) Nothing :| []))
                     )
                     Nothing
                 ]
-                  NE.:| []
+                  :| []
               )
           )
   describe "Array" $ do
@@ -224,11 +225,11 @@ type2Spec = describe "type2" $ do
                           ( Type1
                               (T2Name (Name "int") Nothing)
                               Nothing
-                              NE.:| []
+                              :| []
                           )
                       )
                 ]
-                  NE.:| [
+                  :| [
                           [ noComment $
                               GEType
                                 Nothing
@@ -237,7 +238,7 @@ type2Spec = describe "type2" $ do
                                     ( Type1
                                         (T2Name (Name "string") Nothing)
                                         Nothing
-                                        NE.:| []
+                                        :| []
                                     )
                                 )
                           ]
@@ -253,14 +254,14 @@ type2Spec = describe "type2" $ do
                     GEType
                       Nothing
                       Nothing
-                      (Type0 ((NE.:| []) (Type1 (T2Value (VUInt 0)) Nothing)))
+                      (Type0 ((:| []) (Type1 (T2Value (VUInt 0)) Nothing)))
                 ]
-                  NE.:| [
+                  :| [
                           [ noComment $
                               GEType
                                 Nothing
                                 Nothing
-                                (Type0 ((NE.:| []) (Type1 (T2Value (VUInt 1)) Nothing)))
+                                (Type0 ((:| []) (Type1 (T2Value (VUInt 1)) Nothing)))
                           ]
                         ]
               )
@@ -273,9 +274,33 @@ type2Spec = describe "type2" $ do
                     GEType
                       Nothing
                       Nothing
-                      (Type0 ((NE.:| []) (Type1 (T2Value (VUInt 1)) Nothing)))
+                      (Type0 ((:| []) (Type1 (T2Value (VUInt 1)) Nothing)))
                 ]
-                  NE.:| []
+                  :| []
+              )
+          )
+    it "Values don't need a space" $
+      parse pType2 "" "[ 2soon ]"
+        `shouldParse` T2Array
+          ( Group
+              ( [ WithComments
+                    ( GEType
+                        Nothing
+                        Nothing
+                        (Type0 (Type1 (T2Value (VUInt 2)) Nothing :| []))
+                    )
+                    Nothing
+                , WithComments
+                    ( GEType
+                        Nothing
+                        Nothing
+                        ( Type0
+                            (Type1 (T2Name (Name "soon") Nothing) Nothing :| [])
+                        )
+                    )
+                    Nothing
+                ]
+                  :| []
               )
           )
 
@@ -290,7 +315,7 @@ grpEntrySpec = describe "GroupEntry" $ do
             ( Type1
                 (T2Name (Name "int") Nothing)
                 Nothing
-                NE.:| []
+                :| []
             )
         )
   it "Should parse part of a group alternative" $
@@ -302,7 +327,7 @@ grpEntrySpec = describe "GroupEntry" $ do
             ( Type1
                 (T2Name (Name "int") Nothing)
                 Nothing
-                NE.:| []
+                :| []
             )
         )
   it "Should parse a generic" $
@@ -320,16 +345,16 @@ grpEntrySpec = describe "GroupEntry" $ do
                                 (T2Value (VUInt 0))
                                 ( Just
                                     ( RangeOp ClOpen
-                                    , T2Tag Nothing (Type0 (Type1 (T2Value (VUInt 0)) Nothing NE.:| []))
+                                    , T2Tag Nothing (Type0 (Type1 (T2Value (VUInt 0)) Nothing :| []))
                                     )
                                 )
-                                NE.:| []
+                                :| []
                             )
                         )
                     )
                 )
                 Nothing
-                NE.:| []
+                :| []
             )
         )
   it "Parses a GEType with an Occurrence Indicator" $
@@ -337,7 +362,7 @@ grpEntrySpec = describe "GroupEntry" $ do
       `shouldParse` GEType
         (Just (OIBounded (Just 0) Nothing))
         Nothing
-        (Type0 (Type1 (T2Name (Name "a") Nothing) Nothing NE.:| []))
+        (Type0 (Type1 (T2Name (Name "a") Nothing) Nothing :| []))
 
 grpChoiceSpec :: SpecWith ()
 grpChoiceSpec = describe "GroupChoice" $ do
@@ -351,7 +376,7 @@ grpChoiceSpec = describe "GroupChoice" $ do
                               ( Type1
                                   (T2Name (Name "int") Nothing)
                                   Nothing
-                                  NE.:| []
+                                  :| []
                               )
                           )
                     ]
@@ -376,33 +401,50 @@ type1Spec = describe "Type1" $ do
           (T2Value (VUInt 0))
           (Just (RangeOp ClOpen, T2Value (VUInt 3)))
 
+parseExample :: (Show a, Eq a) => T.Text -> Parser a -> a -> Spec
+parseExample str parser val =
+  it (T.unpack str) $
+    parse (parser <* eof) "" str `shouldParse` val
+
 -- | A bunch of cases found by hedgehog/QC
 qcFoundSpec :: Spec
 qcFoundSpec =
   describe "Generated test cases" $ do
-    it "1083150867" $
-      parse pType1 "" "{} .ge & i<{}, 3>"
-        `shouldParse` Type1
-          (T2Map (Group ([] NE.:| [])))
-          ( Just
-              ( CtrlOp CtlOp.Ge
-              , T2EnumRef
-                  (Name "i")
-                  ( Just
-                      ( GenericArg
-                          ( Type1
-                              (T2Map (Group ([] NE.:| [])))
-                              Nothing
-                              NE.:| [Type1 (T2Value (VUInt 3)) Nothing]
-                          )
-                      )
-                  )
-              )
-          )
-    it "1046853555" $
-      parse (pRule <* eof) "" "S = 0* ()"
-        `shouldParse` Rule
-          (Name "S")
-          Nothing
-          AssignEq
-          (TOGGroup (GEGroup (Just (OIBounded (Just 0) Nothing)) (Group ([] NE.:| []))))
+    parseExample "{} .ge & i<{}, 3>" pType1 $
+      Type1
+        (T2Map (Group ([] :| [])))
+        ( Just
+            ( CtrlOp CtlOp.Ge
+            , T2EnumRef
+                (Name "i")
+                ( Just
+                    ( GenericArg
+                        ( Type1
+                            (T2Map (Group ([] :| [])))
+                            Nothing
+                            :| [Type1 (T2Value (VUInt 3)) Nothing]
+                        )
+                    )
+                )
+            )
+        )
+    parseExample "S = 0* ()" pRule $
+      Rule
+        (Name "S")
+        Nothing
+        AssignEq
+        (TOGGroup (GEGroup (Just (OIBounded (Just 0) Nothing)) (Group ([] :| []))))
+    parseExample
+      "W = \"6 ybe2ddl8frq0vqa8zgrk07khrljq7p plrufpd1sff3p95\" : \"u\""
+      pRule
+      $ Rule
+        (Name "W")
+        Nothing
+        AssignEq
+        ( TOGGroup
+            ( GEType
+                Nothing
+                (Just (MKValue (VText "6 ybe2ddl8frq0vqa8zgrk07khrljq7p plrufpd1sff3p95")))
+                (Type0 (Type1 (T2Value (VText "u")) Nothing :| []))
+            )
+        )

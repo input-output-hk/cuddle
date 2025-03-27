@@ -54,6 +54,7 @@ library
     Codec.CBOR.Cuddle.Huddle.HuddleM
     Codec.CBOR.Cuddle.Huddle.Optics
     Codec.CBOR.Cuddle.Parser
+    Codec.CBOR.Cuddle.Parser.Lexer
     Codec.CBOR.Cuddle.Pretty
 
   other-modules:

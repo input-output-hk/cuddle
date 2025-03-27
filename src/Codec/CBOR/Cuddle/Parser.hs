@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -Wno-unused-imports #-}
 
@@ -6,24 +7,24 @@ module Codec.CBOR.Cuddle.Parser where
 import Codec.CBOR.Cuddle.CDDL
 import Codec.CBOR.Cuddle.CDDL.CtlOp (CtlOp)
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as COp
+import Codec.CBOR.Cuddle.Parser.Lexer (Parser, charInRange, space, (|||))
 import Control.Applicative (liftA2)
 import Control.Applicative.Combinators.NonEmpty qualified as NE
 import Data.ByteString qualified as B
 import Data.Functor (void, ($>))
 import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NE
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, isJust, isNothing)
 import Data.Scientific qualified as Sci
 import Data.String (IsString (..))
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Encoding (encodeUtf8)
 import Data.Void (Void)
+import GHC.Word (Word64)
 import Text.Megaparsec
 import Text.Megaparsec.Char hiding (space)
 import Text.Megaparsec.Char.Lexer qualified as L
-
-type Parser = Parsec Void Text
 
 pCDDL :: Parser CDDL
 pCDDL = CDDL . fmap noComment <$> (space *> NE.some (pRule <* space) <* eof)
@@ -32,18 +33,20 @@ pRule :: Parser Rule
 pRule = do
   name <- pName
   genericParam <- optcomp pGenericParam
+  space
   (assign, typeOrGrp) <-
     choice
       [ try $
           (,)
-            <$> (space *> pAssignT <* space)
-            <*> (TOGType <$> pType0 <* notFollowedBy (void (char ':') <|> void (string "=>")))
-      , (,) <$> (space *> pAssignG <* space) <*> (TOGGroup <$> pGrpEntry)
+            <$> pAssignT
+            <* space
+            <*> (TOGType <$> pType0 <* notFollowedBy (space >> (":" <|> "=>")))
+      , (,) <$> pAssignG <* space <*> (TOGGroup <$> pGrpEntry)
       ]
   pure $ Rule name genericParam assign typeOrGrp
 
 pName :: Parser Name
-pName = do
+pName = label "Name" $ do
   fc <- firstChar
   rest <- many midChar
   pure $ Name . T.pack $ (fc : rest)
@@ -54,182 +57,158 @@ pName = do
         <|> char '@'
         <|> char '_'
         <|> char '$'
-        <|> ( (char '.' <|> char '-')
-                <* notFollowedBy (space1 <|> eof <|> void eol)
-            )
+        <|> ((char '.' <|> char '-') <* notFollowedBy (space1 <|> eof <|> void eol))
 
 pAssignT :: Parser Assign
 pAssignT =
   choice
-    [ AssignEq <$ char '='
-    , AssignExt <$ string "/="
+    [ AssignEq <$ "="
+    , AssignExt <$ "/="
     ]
 
 pAssignG :: Parser Assign
 pAssignG =
   choice
-    [ AssignEq <$ char '='
-    , AssignExt <$ string "//="
+    [ AssignEq <$ "="
+    , AssignExt <$ "//="
     ]
 
 pGenericParam :: Parser GenericParam
 pGenericParam =
   GenericParam
-    <$> between
-      (char '<' <* space)
-      (char '>')
-      (NE.sepBy1 (pName <* space) (char ',' <* space))
+    <$> between "<" ">" (NE.sepBy1 (space *> pName <* space) ",")
 
 pGenericArg :: Parser GenericArg
 pGenericArg =
   GenericArg
-    <$> between
-      (char '<' <* space)
-      (char '>')
-      (NE.sepBy1 (pType1 <* space) (char ',' <* space))
+    <$> between "<" ">" (NE.sepBy1 (space *> pType1 <* space) ",")
 
 pType0 :: Parser Type0
-pType0 = Type0 <$> sepBy1' (pType1 <* space) (char '/' <* space)
+pType0 = Type0 <$> sepBy1' pType1 (space *> "/" <* space)
 
 pType1 :: Parser Type1
-pType1 = Type1 <$> pType2 <*> optcomp ((,) <$> (space *> pTyOp <* space) <*> pType2)
+pType1 = Type1 <$> pType2 <*> optcomp ((,) <$> (space *> pTyOp) <*> (space *> pType2))
 
 pType2 :: Parser Type2
 pType2 =
   choice
     [ try $ T2Value <$> pValue
     , try $ T2Name <$> pName <*> optional pGenericArg
-    , try $ T2Group <$> between (char '(' <* space) (char ')' <* space) (pType0 <* space)
-    , try $ T2Map <$> between (char '{' <* space) (char '}' <* space) (pGroup <* space)
-    , try $ T2Array <$> between (char '[' <* space) (char ']' <* space) (pGroup <* space)
-    , try $ T2Unwrapped <$> (char '~' *> space *> pName) <*> optional pGenericArg
-    , try $
-        T2Enum
-          <$> (char '&' *> space *> between (char '(' <* space) (char ')') (pGroup <* space))
-    , try $ T2EnumRef <$> (char '&' *> space *> pName) <*> optional pGenericArg
+    , try $ T2Group <$> ("(" *> space *> pType0 <* space <* ")")
+    , try $ T2Map <$> ("{" *> space *> pGroup <* space <* "}")
+    , try $ T2Array <$> ("[" *> space *> pGroup <* space <* "]")
+    , try $ T2Unwrapped <$> ("~" *> space *> pName) <*> optional pGenericArg
+    , try $ T2Enum <$> ("&" *> space *> "(" *> space *> pGroup <* space <* ")")
+    , try $ T2EnumRef <$> ("&" *> space *> pName) <*> optional pGenericArg
     , try $
         T2Tag
-          <$> (string "#6" *> optcomp (char '.' *> L.decimal))
-          <*> between (char '(' <* space) (char ')') (pType0 <* space)
-    , try $ T2DataItem <$> (char '#' *> L.decimal) <*> optcomp (char '.' *> L.decimal)
-    , T2Any <$ char '#'
+          <$> ("#6" *> optcomp ("." *> pHeadNumber))
+          <*> ("(" *> space *> pType0 <* space <* ")")
+    , try $ T2DataItem <$> ("#7" $> 7) <*> optcomp ("." *> pHeadNumber)
+    , try $ T2DataItem <$> ("#" *> L.decimal) <*> optcomp ("." *> L.decimal)
+    , T2Any <$ "#"
     ]
 
+pHeadNumber :: Parser Word64
+pHeadNumber = L.decimal
+
+pRangeOp :: Parser RangeBound
+pRangeOp = try ("..." $> ClOpen) <|> (".." $> Closed)
+
+pCtlOp :: Parser CtlOp
+pCtlOp =
+  label "Control operator" $
+    "."
+      *> choice
+        ( try
+            <$> [ "cborseq" $> COp.Cborseq
+                , "cbor" $> COp.Cbor
+                , "size" $> COp.Size
+                , "bits" $> COp.Bits
+                , "within" $> COp.Within
+                , "and" $> COp.And
+                , "lt" $> COp.Lt
+                , "le" $> COp.Le
+                , "gt" $> COp.Gt
+                , "ge" $> COp.Ge
+                , "eq" $> COp.Eq
+                , "ne" $> COp.Ne
+                , "default" $> COp.Default
+                , "regexp" $> COp.Regexp
+                ]
+        )
+
 pGroup :: Parser Group
-pGroup = Group <$> NE.sepBy1 pGrpChoice (space *> string "//" <* space)
+pGroup = Group <$> NE.sepBy1 pGrpChoice (space >> "//" >> space)
 
 pGrpChoice :: Parser GrpChoice
-pGrpChoice =
-  many $ (noComment <$> pGrpEntry) <* space <* optional (char ',' >> space)
+pGrpChoice = sepEndBy (noComment <$> pGrpEntry) pOptCom
 
 pGrpEntry :: Parser GroupEntry
-pGrpEntry =
+pGrpEntry = do
+  occur <- optcomp (pOccur <* space)
   choice
-    [ try $
-        GEType
-          <$> optcomp (pOccur <* space)
-          <*> optcomp (pMemberKey <* space)
-          <*> pType0
-    , try $
-        GERef
-          <$> optcomp (pOccur <* space)
-          <*> pName
-          -- We use optional here since we should not backtrack once we start
-          -- consuming a generic argument - the opening '<' will not be anything
-          -- else.
-          <*> optional pGenericArg
-    , GEGroup
-        <$> optcomp (pOccur <* space)
-        <*> between
-          (char '(')
-          (char ')')
-          (space *> pGroup <* space)
+    [ try $ GEType occur <$> optcomp (pMemberKey <* space) <*> pType0
+    , try $ GERef occur <$> pName <*> optional pGenericArg
+    , GEGroup occur <$> ("(" *> space *> pGroup <* space <* ")")
     ]
 
 pMemberKey :: Parser MemberKey
 pMemberKey =
   choice
-    [ try $ MKType <$> pType1 <* space <* optcomp (char '^' <* space) <* string "=>"
-    , try $ MKBareword <$> pName <* space <* char ':' <* space
-    , MKValue <$> pValue <* space <* char ':' <* space
+    [ try $ MKType <$> pType1 <* space <* optcomp ("^" >> space) <* "=>"
+    , try $ MKBareword <$> pName <* space <* ":"
+    , MKValue <$> pValue <* space <* ":"
     ]
 
-pTyOp :: Parser TyOp
-pTyOp =
-  choice
-    [ try $ RangeOp <$> pRangeBound
-    , CtrlOp <$> (char '.' *> pCtlOp)
-    ]
-  where
-    pRangeBound :: Parser RangeBound
-    pRangeBound = label "RangeBound" $ try (string "..." $> ClOpen) <|> (string ".." $> Closed)
-
-    pCtlOp :: Parser CtlOp
-    pCtlOp =
-      label "CtlOp" $
-        choice
-          [ try $ string "cborseq" $> COp.Cborseq
-          , try $ string "cbor" $> COp.Cbor
-          , try $ string "size" $> COp.Size
-          , try $ string "bits" $> COp.Bits
-          , try $ string "within" $> COp.Within
-          , try $ string "and" $> COp.And
-          , try $ string "lt" $> COp.Lt
-          , try $ string "le" $> COp.Le
-          , try $ string "gt" $> COp.Gt
-          , try $ string "ge" $> COp.Ge
-          , try $ string "eq" $> COp.Eq
-          , try $ string "ne" $> COp.Ne
-          , try $ string "default" $> COp.Default
-          , try $ string "regexp" $> COp.Regexp
-          ]
+pOptCom :: Parser ()
+pOptCom = void $ space >> optional ("," >> space)
 
 pOccur :: Parser OccurrenceIndicator
 pOccur =
-  label "OccurrenceIndicator" $
+  label "Occurrence indicator" $
     choice
       [ char '+' $> OIOneOrMore
       , char '?' $> OIOptional
-      , mkBounded <$> optional L.decimal <*> (char '*' *> optional L.decimal)
+      , pBounded
       ]
-  where
-    mkBounded mlb mub = case (mlb, mub) of
-      (Nothing, Nothing) -> OIZeroOrMore
-      (x, y) -> OIBounded x y
 
 pValue :: Parser Value
 pValue =
   label "Value" $
     choice
       [ try pFloat
-      , try (pUInt <* notFollowedBy (char '*'))
-      , try (pNInt <* notFollowedBy (char '*'))
+      , try pInt
       , try pBytes
       , pText
       ]
   where
+    pSignedNum :: Num a => Parser a -> Parser (Bool, a)
+    pSignedNum valParser = do
+      sign <- optional "-"
+      val <- valParser <* notFollowedBy "*"
+      pure (isJust sign, val)
     -- Need to ensure that number values are not actually bounds on a later
     -- value.
-    pUInt = VUInt <$> L.decimal
-    pNInt = VNInt <$> (char '-' *> L.decimal)
-    pFloat = do
-      sign <- optional $ char '-'
-      _ <- space
-      val <- L.float
-      pure . VFloat64 $ case sign of
-        Just _ -> -val
-        Nothing -> val
-    pText = VText <$> (char '"' *> pSChar <* char '"')
+    pInt =
+      pSignedNum L.decimal >>= \case
+        (False, val) -> pure $ VUInt val
+        (True, val) -> pure $ VNInt val
+    pFloat =
+      pSignedNum L.float >>= \case
+        (False, val) -> pure $ VFloat64 val
+        (True, val) -> pure . VFloat64 $ negate val
     -- Currently this doesn't allow string escaping
     pSChar :: Parser Text
-    pSChar =
-      takeWhileP
-        (Just "character")
-        ( charInRange '\x20' '\x21'
-            ||| charInRange '\x23' '\x5b'
-            ||| charInRange '\x5d' '\x7e'
-            ||| charInRange '\x80' '\x10fffd'
-        )
+    pSChar = takeWhileP (Just "character") $ \x ->
+      or $
+        [ charInRange '\x20' '\x21'
+        , charInRange '\x23' '\x5b'
+        , charInRange '\x5d' '\x7e'
+        , charInRange '\x80' '\x10fffd'
+        ]
+          <*> pure x
+    pText = VText <$> ("\"" *> pSChar <* "\"")
     pSByte = takeWhileP (Just "byte character") $ \x ->
       or $
         [ charInRange '\x20' '\x26'
@@ -238,24 +217,24 @@ pValue =
         ]
           <*> pure x
     pBytes = do
-      _qualifier <- optional (string "h" <|> string "b64")
+      _qualifier <- optional ("h" <|> "b64")
       between "'" "'" $ VBytes . encodeUtf8 <$> pSByte
 
-space :: Parser ()
-space = L.space space1 (void pComment) (fail "No block comments")
+pTyOp :: Parser TyOp
+pTyOp =
+  choice
+    [ try $ RangeOp <$> pRangeOp
+    , CtrlOp <$> pCtlOp
+    ]
 
-pComment :: Parser Comment
-pComment =
-  Comment
-    <$> (char ';' *> takeWhileP Nothing validChar <* eol)
-  where
-    validChar = charInRange '\x20' '\x7e' ||| charInRange '\x80' '\x10fffd'
-
-charInRange :: Char -> Char -> Char -> Bool
-charInRange lb ub x = lb <= x && x <= ub
-
-(|||) :: (a -> Bool) -> (a -> Bool) -> (a -> Bool)
-(x ||| y) a = x a || y a
+pBounded :: Parser OccurrenceIndicator
+pBounded = do
+  lo <- optional L.decimal
+  _ <- char '*'
+  hi <- optional L.decimal
+  pure $ case (lo, hi) of
+    (Nothing, Nothing) -> OIZeroOrMore
+    (x, y) -> OIBounded x y
 
 -- | A variant of 'optional' for composite parsers, which will consume no input
 -- if it fails.
@@ -263,116 +242,116 @@ optcomp :: MonadParsec e s f => f a -> f (Maybe a)
 optcomp = optional . try
 
 {-
-Appendix B.  ABNF Grammar
+cddl = S *(rule S)
+rule = typename [genericparm] S assignt S type
+     / groupname [genericparm] S assigng S grpent
 
-   This appendix is normative.
+typename = id
+groupname = id
 
-   The following is a formal definition of the CDDL syntax in ABNF
-   [RFC5234].  Note that, as is defined in ABNF, the quote-delimited
-   strings below are case insensitive (while string values and names are
-   case sensitive in CDDL).
+assignt = "=" / "/="
+assigng = "=" / "//="
 
-     cddl = S 1*(rule S)
-     rule = typename [genericparm] S assignt S type
-          / groupname [genericparm] S assigng S grpent
+genericparm = "<" S id S *("," S id S ) ">"
+genericarg = "<" S type1 S *("," S type1 S ) ">"
 
-     typename = id
-     groupname = id
+type = type1 *(S "/" S type1)
 
-     assignt = "=" / "/="
-     assigng = "=" / "//="
+type1 = type2 [S (rangeop / ctlop) S type2]
+; space may be needed before the operator if type2 ends in a name
 
-     genericparm = "<" S id S *("," S id S ) ">"
-     genericarg = "<" S type1 S *("," S type1 S ) ">"
+type2 = value
+      / typename [genericarg]
+      / "(" S type S ")"
+      / "{" S group S "}"
+      / "[" S group S "]"
+      / "~" S typename [genericarg]
+      / "&" S "(" S group S ")"
+      / "&" S groupname [genericarg]
+      / "#" "6" ["." head-number] "(" S type S ")"
+      / "#" "7" ["." head-number]
+      / "#" DIGIT ["." uint]                ; major/ai
+      / "#"                                 ; any
+head-number = uint / ("<" type ">")
 
-     type = type1 *(S "/" S type1)
+rangeop = "..." / ".."
 
-     type1 = type2 [S (rangeop / ctlop) S type2]
-     ; space may be needed before the operator if type2 ends in a name
+ctlop = "." id
 
-     type2 = value
-           / typename [genericarg]
-           / "(" S type S ")"
-           / "{" S group S "}"
-           / "[" S group S "]"
-           / "~" S typename [genericarg]
-           / "&" S "(" S group S ")"
-           / "&" S groupname [genericarg]
-           / "#" "6" ["." uint] "(" S type S ")"
-           / "#" DIGIT ["." uint]                ; major/ai
-           / "#"                                 ; any
+group = grpchoice *(S "//" S grpchoice)
 
-     rangeop = "..." / ".."
+grpchoice = *(grpent optcom)
 
-     ctlop = "." id
+grpent = [occur S] [memberkey S] type
+       / [occur S] groupname [genericarg]  ; preempted by above
+       / [occur S] "(" S group S ")"
 
-     group = grpchoice *(S "//" S grpchoice)
+memberkey = type1 S ["^" S] "=>"
+          / bareword S ":"
+          / value S ":"
 
-     grpchoice = *(grpent optcom)
+bareword = id
 
-Birkholz, et al.             Standards Track                   [Page 45]
-RFC 8610                          CDDL                         June 2019
+optcom = S ["," S]
 
-     grpent = [occur S] [memberkey S] type
-            / [occur S] groupname [genericarg]  ; preempted by above
-            / [occur S] "(" S group S ")"
+occur = [uint] "*" [uint]
+      / "+"
+      / "?"
 
-     memberkey = type1 S ["^" S] "=>"
-               / bareword S ":"
-               / value S ":"
+uint = DIGIT1 *DIGIT
+     / "0x" 1*HEXDIG
+     / "0b" 1*BINDIG
+     / "0"
 
-     bareword = id
+value = number
+      / text
+      / bytes
 
-     optcom = S ["," S]
+int = ["-"] uint
 
-     occur = [uint] "*" [uint]
-           / "+"
-           / "?"
+; This is a float if it has fraction or exponent; int otherwise
+number = hexfloat / (int ["." fraction] ["e" exponent ])
+hexfloat = ["-"] "0x" 1*HEXDIG ["." 1*HEXDIG] "p" exponent
+fraction = 1*DIGIT
+exponent = ["+"/"-"] 1*DIGIT
 
-     uint = DIGIT1 *DIGIT
-          / "0x" 1*HEXDIG
-          / "0b" 1*BINDIG
-          / "0"
+text = %x22 *SCHAR %x22
+SCHAR = %x20-21 / %x23-5B / %x5D-7E / NONASCII / SESC
 
-     value = number
-           / text
-           / bytes
+SESC = "\" ( %x22 / "/" / "\" /                 ; \" \/ \\
+             %x62 / %x66 / %x6E / %x72 / %x74 / ; \b \f \n \r \t
+             (%x75 hexchar) )                   ; \uXXXX
 
-     int = ["-"] uint
+hexchar = "{" (1*"0" [ hexscalar ] / hexscalar) "}" /
+          non-surrogate / (high-surrogate "\" %x75 low-surrogate)
+non-surrogate = ((DIGIT / "A"/"B"/"C" / "E"/"F") 3HEXDIG) /
+                ("D" %x30-37 2HEXDIG )
+high-surrogate = "D" ("8"/"9"/"A"/"B") 2HEXDIG
+low-surrogate = "D" ("C"/"D"/"E"/"F") 2HEXDIG
+hexscalar = "10" 4HEXDIG / HEXDIG1 4HEXDIG
+          / non-surrogate / 1*3HEXDIG
 
-     ; This is a float if it has fraction or exponent; int otherwise
-     number = hexfloat / (int ["." fraction] ["e" exponent ])
-     hexfloat = ["-"] "0x" 1*HEXDIG ["." 1*HEXDIG] "p" exponent
-     fraction = 1*DIGIT
-     exponent = ["+"/"-"] 1*DIGIT
+bytes = [bsqual] %x27 *BCHAR %x27
+BCHAR = %x20-26 / %x28-5B / %x5D-7E / NONASCII / SESC / "\'" / CRLF
+bsqual = "h" / "b64"
 
-     text = %x22 *SCHAR %x22
-     SCHAR = %x20-21 / %x23-5B / %x5D-7E / %x80-10FFFD / SESC
-     SESC = "\" (%x20-7E / %x80-10FFFD)
+id = EALPHA *(*("-" / ".") (EALPHA / DIGIT))
+ALPHA = %x41-5A / %x61-7A
+EALPHA = ALPHA / "@" / "_" / "$"
+DIGIT = %x30-39
+DIGIT1 = %x31-39
+HEXDIG = DIGIT / "A" / "B" / "C" / "D" / "E" / "F"
+HEXDIG1 = DIGIT1 / "A" / "B" / "C" / "D" / "E" / "F"
+BINDIG = %x30-31
 
-     bytes = [bsqual] %x27 *BCHAR %x27
-     BCHAR = %x20-26 / %x28-5B / %x5D-10FFFD / SESC / CRLF
-     bsqual = "h" / "b64"
-
-Birkholz, et al.             Standards Track                   [Page 46]
-RFC 8610                          CDDL                         June 2019
-
-     id = EALPHA *(*("-" / ".") (EALPHA / DIGIT))
-     ALPHA = %x41-5A / %x61-7A
-     EALPHA = ALPHA / "@" / "_" / "$"
-     DIGIT = %x30-39
-     DIGIT1 = %x31-39
-     HEXDIG = DIGIT / "A" / "B" / "C" / "D" / "E" / "F"
-     BINDIG = %x30-31
-
-     S = *WS
-     WS = SP / NL
-     SP = %x20
-     NL = COMMENT / CRLF
-     COMMENT = ";" *PCHAR CRLF
-     PCHAR = %x20-7E / %x80-10FFFD
-     CRLF = %x0A / %x0D.0A
-
+S = *WS
+WS = SP / NL
+SP = %x20
+NL = COMMENT / CRLF
+COMMENT = ";" *PCHAR CRLF
+PCHAR = %x20-7E / NONASCII
+NONASCII = %xA0-D7FF / %xE000-10FFFD
+CRLF = %x0A / %x0D.0A
 -}
 
 -- | Variant on 'NE.sepEndBy1' which doesn't consume the separator
