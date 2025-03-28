@@ -1,19 +1,24 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module Codec.CBOR.Cuddle.Parser.Lexer (
   Parser,
   charInRange,
   (|||),
   space,
-  lexeme,
-  symbol,
+  (<*!),
+  (!*>),
+  space_,
 ) where
 
-import Codec.CBOR.Cuddle.CDDL (Comment (..))
-import Control.Monad (void)
+import Codec.CBOR.Cuddle.CDDL (Comment (..), WithComments (..))
+import Data.Foldable (Foldable (..))
+import Data.List.NonEmpty qualified as NE
 import Data.Text (Text)
+import Data.Text qualified as T
 import Data.Void (Void)
-import Text.Megaparsec (MonadParsec (..), Parsec)
-import Text.Megaparsec.Char (char, eol, space1)
-import Text.Megaparsec.Char.Lexer qualified as L
+import Text.Megaparsec (MonadParsec (..), Parsec, sepEndBy)
+import Text.Megaparsec.Char (char, eol)
+import Text.Megaparsec.Char qualified as L
 
 type Parser = Parsec Void Text
 
@@ -25,16 +30,27 @@ charInRange lb ub x = lb <= x && x <= ub
 
 pComment :: Parser Comment
 pComment =
-  Comment
-    <$> (char ';' *> takeWhileP Nothing validChar <* eol)
+  Comment . NE.singleton
+    <$> label "comment" (char ';' *> takeWhileP Nothing validChar <* eol)
   where
     validChar = charInRange '\x20' '\x7e' ||| charInRange '\x80' '\x10fffd'
 
-space :: Parser ()
-space = L.space space1 (void pComment) (fail "No block comments")
+space :: Parser (Maybe Comment)
+space = foldMap Just <$> (L.space *> sepEndBy pComment L.space)
 
-lexeme :: Parser a -> Parser a
-lexeme = L.lexeme space
+space_ :: Parser ()
+space_ =
+  -- TODO handle this more gracefully
+  maybe
+    ()
+    ( \(Comment e) -> error $ "Could not attach the comments to a term:\n" <> unlines (T.unpack <$> toList e)
+    )
+    <$> space
 
-symbol :: Text -> Parser Text
-symbol = L.symbol space
+(<*!) :: Parser a -> Parser (Maybe Comment) -> Parser (WithComments a)
+x <*! c = WithComments <$> x <*> c
+
+(!*>) :: Parser (Maybe Comment) -> Parser a -> Parser (WithComments a)
+c !*> x = do
+  c' <- c
+  (`WithComments` c') <$> x

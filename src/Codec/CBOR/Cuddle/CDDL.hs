@@ -5,6 +5,7 @@ module Codec.CBOR.Cuddle.CDDL where
 import Codec.CBOR.Cuddle.CDDL.CtlOp (CtlOp)
 import Data.ByteString qualified as B
 import Data.Hashable (Hashable)
+import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NE
 import Data.Text qualified as T
 import Data.Word (Word64, Word8)
@@ -316,5 +317,5 @@ data Value
 
 instance Hashable Value
 
-newtype Comment = Comment T.Text
-  deriving (Eq, Generic, Show)
+newtype Comment = Comment (NonEmpty T.Text)
+  deriving (Eq, Generic, Show, Semigroup)

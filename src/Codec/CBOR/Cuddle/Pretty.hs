@@ -8,6 +8,7 @@ module Codec.CBOR.Cuddle.Pretty where
 import Codec.CBOR.Cuddle.CDDL
 import Codec.CBOR.Cuddle.CDDL.CtlOp (CtlOp)
 import Data.ByteString.Char8 qualified as BS
+import Data.Foldable (Foldable (..))
 import Data.List.NonEmpty qualified as NE
 import Data.Maybe (catMaybes)
 import Data.String (fromString)
@@ -24,9 +25,7 @@ instance Pretty a => Pretty (WithComments a) where
   pretty (WithComments a (Just cmt)) = pretty cmt <> hardline <> pretty a
 
 instance Pretty Comment where
-  pretty (Comment t) =
-    let clines = T.splitOn "\n" t
-     in vsep $ fmap (("; " <>) . pretty) clines
+  pretty (Comment t) = vsep . toList $ fmap (("; " <>) . pretty) t
 
 instance Pretty Rule where
   pretty (Rule n mgen assign tog) =
