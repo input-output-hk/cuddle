@@ -147,8 +147,8 @@ buildRefCTree rules = CTreeRoot $ fmap toCTreeRule rules
     toCTreeTOG (TOGGroup ge) = toCTreeGroupEntry ge
 
     toCTreeT0 :: Type0 -> CTree.Node OrRef
-    toCTreeT0 (Type0 (t1 NE.:| [])) = toCTreeT1 t1
-    toCTreeT0 (Type0 xs) = It . CTree.Choice $ toCTreeT1 <$> xs
+    toCTreeT0 (Type0 (t1 NE.:| [])) = toCTreeT1 (stripComment t1)
+    toCTreeT0 (Type0 xs) = It . CTree.Choice $ toCTreeT1 . stripComment <$> xs
 
     toCTreeT1 :: Type1 -> CTree.Node OrRef
     toCTreeT1 (Type1 t2 Nothing) = toCTreeT2 t2

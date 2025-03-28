@@ -96,7 +96,6 @@ import Control.Monad.State (MonadState (get), execState, modify)
 import Data.ByteString (ByteString)
 import Data.Default.Class (Default (..))
 import Data.Generics.Product (HasField' (field'), field, getField)
-import Data.List (singleton)
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Ordered.Strict (OMap)
 import Data.Map.Ordered.Strict qualified as OMap
@@ -444,9 +443,11 @@ instance IsSize (Word64, Word64) where
   sizeAsCDDL (x, y) =
     C.T2Group
       ( C.Type0
-          ( C.Type1
-              (C.T2Value (C.VUInt x))
-              (Just (C.RangeOp C.Closed, C.T2Value (C.VUInt y)))
+          ( C.noComment
+              ( C.Type1
+                  (C.T2Value (C.VUInt x))
+                  (Just (C.RangeOp C.Closed, C.T2Value (C.VUInt y)))
+              )
               NE.:| []
           )
       )
@@ -1034,9 +1035,9 @@ toCDDL' mkPseudoRoot hdl =
         ( C.Rule (C.Name n) Nothing C.AssignEq
             . C.TOGType
             . C.Type0
-            $ toCDDLType1 <$> choiceToNE t0
+            $ C.noComment . toCDDLType1 <$> choiceToNE t0
         )
-        (fmap (C.Comment . NE.singleton) c)
+        (fmap C.comment c)
     toCDDLValue :: Literal -> C.Value
     toCDDLValue (LInt i) = C.VUInt i
     toCDDLValue (LNInt i) = C.VNInt i
@@ -1060,7 +1061,7 @@ toCDDL' mkPseudoRoot hdl =
             (Just $ toMemberKey k)
             (toCDDLType0 v)
         )
-        (fmap (C.Comment . NE.singleton) cmnt)
+        (fmap C.comment cmnt)
 
     toOccurrenceIndicator :: Occurs -> Maybe C.OccurrenceIndicator
     toOccurrenceIndicator (Occurs Nothing Nothing) = Nothing
@@ -1093,7 +1094,7 @@ toCDDL' mkPseudoRoot hdl =
     toMemberKey (TypeKey t) = C.MKType (toCDDLType1 t)
 
     toCDDLType0 :: Type0 -> C.Type0
-    toCDDLType0 = C.Type0 . fmap toCDDLType1 . choiceToNE
+    toCDDLType0 = C.Type0 . fmap (C.noComment . toCDDLType1) . choiceToNE
 
     arrayToCDDLGroup :: Array -> C.Group
     arrayToCDDLGroup xs = C.Group $ arrayChoiceToCDDL <$> choiceToNE xs
@@ -1109,7 +1110,7 @@ toCDDL' mkPseudoRoot hdl =
             (fmap toMemberKey k)
             (toCDDLType0 v)
         )
-        (fmap (C.Comment . NE.singleton) cmnt)
+        (fmap C.comment cmnt)
 
     toCDDLPostlude :: Value a -> C.Name
     toCDDLPostlude VBool = C.Name "bool"
@@ -1151,7 +1152,7 @@ toCDDL' mkPseudoRoot hdl =
             . (NE.:| [])
             $ fmap arrayEntryToCDDL t0s
         )
-        (fmap (C.Comment . NE.singleton) c)
+        (fmap C.comment c)
 
     toGenericCall :: GRuleCall -> C.Type2
     toGenericCall (Named n gr _) =
@@ -1165,9 +1166,9 @@ toCDDL' mkPseudoRoot hdl =
         ( C.Rule (C.Name n) (Just gps) C.AssignEq
             . C.TOGType
             . C.Type0
-            $ toCDDLType1 <$> choiceToNE (body gr)
+            $ C.noComment . toCDDLType1 <$> choiceToNE (body gr)
         )
-        (fmap (C.Comment . NE.singleton) c)
+        (fmap C.comment c)
       where
         gps =
           C.GenericParam $ fmap (\(GRef t) -> C.Name t) (args gr)

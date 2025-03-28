@@ -84,10 +84,10 @@ pGenericArg =
     <$> between "<" ">" (NE.sepBy1 (space_ *> pType1 <* space_) ",")
 
 pType0 :: Parser Type0
-pType0 = Type0 <$> sepBy1' pType1 (space_ *> "/" <* space_)
+pType0 = Type0 <$> sepBy1' (pType1 <*! space) ("/" >> space_)
 
 pType1 :: Parser Type1
-pType1 = Type1 <$> pType2 <*> optcomp ((,) <$> (space_ *> pTyOp) <*> (space_ *> pType2))
+pType1 = Type1 <$> pType2 <*> optcomp (space_ >> (,) <$> pTyOp <*> (space_ *> pType2))
 
 pType2 :: Parser Type2
 pType2 =

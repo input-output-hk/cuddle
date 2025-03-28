@@ -107,7 +107,7 @@ instance Arbitrary TypeOrGroup where
   shrink = genericShrink
 
 genType0 :: Gen Type0
-genType0 = Type0 <$> nonEmpty genType1
+genType0 = Type0 <$> nonEmpty (noComment <$> genType1)
 
 instance Arbitrary Type0 where
   arbitrary = genType0

@@ -10,17 +10,23 @@ module Codec.CBOR.Cuddle.Parser.Lexer (
   space_,
 ) where
 
-import Codec.CBOR.Cuddle.CDDL (Comment (..), WithComments (..))
+import Codec.CBOR.Cuddle.CDDL (Comment, WithComments (..), comment, unComment)
 import Data.Foldable (Foldable (..))
-import Data.List.NonEmpty qualified as NE
 import Data.Text (Text)
 import Data.Text qualified as T
-import Data.Void (Void)
-import Text.Megaparsec (MonadParsec (..), Parsec, sepEndBy)
+import Text.Megaparsec (MonadParsec (..), Parsec, ShowErrorComponent (..), customFailure, sepEndBy)
 import Text.Megaparsec.Char (char, eol)
 import Text.Megaparsec.Char qualified as L
 
-type Parser = Parsec Void Text
+newtype CDDLParserFailure
+  = UnattachableComment Comment
+  deriving (Eq, Ord)
+
+instance ShowErrorComponent CDDLParserFailure where
+  showErrorComponent (UnattachableComment cmt) =
+    "Could not attach the comments to a term:\n" <> unlines (T.unpack <$> toList (unComment cmt))
+
+type Parser = Parsec CDDLParserFailure Text
 
 charInRange :: Char -> Char -> Char -> Bool
 charInRange lb ub x = lb <= x && x <= ub
@@ -30,8 +36,7 @@ charInRange lb ub x = lb <= x && x <= ub
 
 pComment :: Parser Comment
 pComment =
-  Comment . NE.singleton
-    <$> label "comment" (char ';' *> takeWhileP Nothing validChar <* eol)
+  comment <$> label "comment" (char ';' *> takeWhileP Nothing validChar <* eol)
   where
     validChar = charInRange '\x20' '\x7e' ||| charInRange '\x80' '\x10fffd'
 
@@ -39,13 +44,11 @@ space :: Parser (Maybe Comment)
 space = foldMap Just <$> (L.space *> sepEndBy pComment L.space)
 
 space_ :: Parser ()
-space_ =
-  -- TODO handle this more gracefully
-  maybe
-    ()
-    ( \(Comment e) -> error $ "Could not attach the comments to a term:\n" <> unlines (T.unpack <$> toList e)
-    )
-    <$> space
+space_ = do
+  spc <- space
+  case spc of
+    Nothing -> pure ()
+    Just cmt -> customFailure (UnattachableComment cmt)
 
 (<*!) :: Parser a -> Parser (Maybe Comment) -> Parser (WithComments a)
 x <*! c = WithComments <$> x <*> c
