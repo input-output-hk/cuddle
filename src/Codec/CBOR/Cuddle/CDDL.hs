@@ -1,10 +1,39 @@
 -- | This module defined the data structure of CDDL as specified in
 --   https://datatracker.ietf.org/doc/rfc8610/
-module Codec.CBOR.Cuddle.CDDL where
+module Codec.CBOR.Cuddle.CDDL (
+  CDDL (..),
+  Name (..),
+  WithComments (..),
+  Comment,
+  Rule (..),
+  TypeOrGroup (..),
+  Assign (..),
+  GenericArg (..),
+  GenericParam (..),
+  Type0 (..),
+  Type1 (..),
+  Type2 (..),
+  TyOp (..),
+  RangeBound (..),
+  OccurrenceIndicator (..),
+  Group (..),
+  GroupEntry (..),
+  MemberKey (..),
+  Value (..),
+  GrpChoice,
+
+  sortCDDL,
+  stripComment,
+  noComment,
+  unwrap,
+  comment,
+  unComment,
+) where
 
 import Codec.CBOR.Cuddle.CDDL.CtlOp (CtlOp)
 import Data.ByteString qualified as B
 import Data.Hashable (Hashable)
+import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NE
 import Data.Text qualified as T
 import Data.Word (Word64, Word8)
@@ -190,10 +219,10 @@ data TypeOrGroup = TOGType Type0 | TOGGroup GroupEntry
    described as "threading in" the group or type inside the referenced type,
    which suggested the thread-like "~" character.)
 -}
-unwrap :: TypeOrGroup -> Maybe Group
-unwrap (TOGType (Type0 ((Type1 t2 Nothing) NE.:| []))) = case t2 of
-  T2Map g -> Just g
-  T2Array g -> Just g
+unwrap :: TypeOrGroup -> Maybe (WithComments Group)
+unwrap (TOGType (Type0 (WithComments (Type1 t2 Nothing) cmt NE.:| []))) = case t2 of
+  T2Map g -> Just (WithComments g cmt)
+  T2Array g -> Just (WithComments g cmt)
   _ -> Nothing
 unwrap _ = Nothing
 
@@ -201,7 +230,7 @@ unwrap _ = Nothing
 -- A type can be given as a choice between one or more types.  The
 --   choice matches a data item if the data item matches any one of the
 --   types given in the choice.
-newtype Type0 = Type0 (NE.NonEmpty Type1)
+newtype Type0 = Type0 (NE.NonEmpty (WithComments Type1))
   deriving (Eq, Generic, Show, Semigroup)
 
 -- |
@@ -316,5 +345,11 @@ data Value
 
 instance Hashable Value
 
-newtype Comment = Comment T.Text
-  deriving (Eq, Generic, Show)
+newtype Comment = Comment (NonEmpty T.Text)
+  deriving (Eq, Ord, Generic, Show, Semigroup)
+
+comment :: T.Text -> Comment
+comment = Comment . NE.singleton . T.strip
+
+unComment :: Comment -> NonEmpty T.Text
+unComment (Comment x) = x

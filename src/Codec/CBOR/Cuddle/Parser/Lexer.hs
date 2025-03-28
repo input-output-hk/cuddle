@@ -1,21 +1,32 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module Codec.CBOR.Cuddle.Parser.Lexer (
   Parser,
   charInRange,
   (|||),
   space,
-  lexeme,
-  symbol,
+  (<*!),
+  (!*>),
+  space_,
 ) where
 
-import Codec.CBOR.Cuddle.CDDL (Comment (..))
-import Control.Monad (void)
+import Codec.CBOR.Cuddle.CDDL (Comment, WithComments (..), comment, unComment)
+import Data.Foldable (Foldable (..))
 import Data.Text (Text)
-import Data.Void (Void)
-import Text.Megaparsec (MonadParsec (..), Parsec)
-import Text.Megaparsec.Char (char, eol, space1)
-import Text.Megaparsec.Char.Lexer qualified as L
+import Data.Text qualified as T
+import Text.Megaparsec (MonadParsec (..), Parsec, ShowErrorComponent (..), customFailure, sepEndBy)
+import Text.Megaparsec.Char (char, eol)
+import Text.Megaparsec.Char qualified as L
 
-type Parser = Parsec Void Text
+newtype CDDLParserFailure
+  = UnattachableComment Comment
+  deriving (Eq, Ord)
+
+instance ShowErrorComponent CDDLParserFailure where
+  showErrorComponent (UnattachableComment cmt) =
+    "Could not attach the comments to a term:\n" <> unlines (T.unpack <$> toList (unComment cmt))
+
+type Parser = Parsec CDDLParserFailure Text
 
 charInRange :: Char -> Char -> Char -> Bool
 charInRange lb ub x = lb <= x && x <= ub
@@ -25,16 +36,24 @@ charInRange lb ub x = lb <= x && x <= ub
 
 pComment :: Parser Comment
 pComment =
-  Comment
-    <$> (char ';' *> takeWhileP Nothing validChar <* eol)
+  comment <$> label "comment" (char ';' *> takeWhileP Nothing validChar <* eol)
   where
     validChar = charInRange '\x20' '\x7e' ||| charInRange '\x80' '\x10fffd'
 
-space :: Parser ()
-space = L.space space1 (void pComment) (fail "No block comments")
+space :: Parser (Maybe Comment)
+space = foldMap Just <$> (L.space *> sepEndBy pComment L.space)
 
-lexeme :: Parser a -> Parser a
-lexeme = L.lexeme space
+space_ :: Parser ()
+space_ = do
+  spc <- space
+  case spc of
+    Nothing -> pure ()
+    Just cmt -> customFailure (UnattachableComment cmt)
 
-symbol :: Text -> Parser Text
-symbol = L.symbol space
+(<*!) :: Parser a -> Parser (Maybe Comment) -> Parser (WithComments a)
+x <*! c = WithComments <$> x <*> c
+
+(!*>) :: Parser (Maybe Comment) -> Parser a -> Parser (WithComments a)
+c !*> x = do
+  c' <- c
+  (`WithComments` c') <$> x

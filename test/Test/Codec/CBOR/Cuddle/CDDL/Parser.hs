@@ -106,20 +106,22 @@ genericSpec = describe "generics" $ do
         AssignEq
         ( TOGType
             ( Type0
-                ( Type1
-                    ( T2Name
-                        (Name "b")
-                        ( Just
-                            ( GenericArg
-                                ( Type1
-                                    (T2Value (VUInt 0))
-                                    Nothing
-                                    :| []
+                ( noComment
+                    ( Type1
+                        ( T2Name
+                            (Name "b")
+                            ( Just
+                                ( GenericArg
+                                    ( Type1
+                                        (T2Value (VUInt 0))
+                                        Nothing
+                                        :| []
+                                    )
                                 )
                             )
                         )
+                        Nothing
                     )
-                    Nothing
                     :| []
                 )
             )
@@ -132,20 +134,22 @@ genericSpec = describe "generics" $ do
         AssignEq
         ( TOGType
             ( Type0
-                ( Type1
-                    ( T2Name
-                        (Name "b")
-                        ( Just
-                            ( GenericArg
-                                ( Type1
-                                    (T2Value (VUInt 0))
-                                    (Just (RangeOp ClOpen, T2Value (VUInt 1)))
-                                    :| []
+                ( noComment
+                    ( Type1
+                        ( T2Name
+                            (Name "b")
+                            ( Just
+                                ( GenericArg
+                                    ( Type1
+                                        (T2Value (VUInt 0))
+                                        (Just (RangeOp ClOpen, T2Value (VUInt 1)))
+                                        :| []
+                                    )
                                 )
                             )
                         )
+                        Nothing
                     )
-                    Nothing
                     :| []
                 )
             )
@@ -166,7 +170,7 @@ type2Spec = describe "type2" $ do
                       GEType
                         Nothing
                         (Just (MKType (Type1 (T2Name (Name "int") Nothing) Nothing)))
-                        (Type0 ((:| []) (Type1 (T2Name (Name "string") Nothing) Nothing)))
+                        (Type0 ((:| []) (noComment $ Type1 (T2Name (Name "string") Nothing) Nothing)))
                   ]
               )
           )
@@ -179,7 +183,7 @@ type2Spec = describe "type2" $ do
                       GEType
                         (Just OIZeroOrMore)
                         (Just (MKType (Type1 (T2Name (Name "int") Nothing) Nothing)))
-                        (Type0 ((:| []) (Type1 (T2Name (Name "string") Nothing) Nothing)))
+                        (Type0 ((:| []) (noComment $ Type1 (T2Name (Name "string") Nothing) Nothing)))
                   ]
               )
           )
@@ -191,21 +195,21 @@ type2Spec = describe "type2" $ do
                     ( GEType
                         Nothing
                         (Just (MKType (Type1 (T2Value (VUInt 1)) Nothing)))
-                        (Type0 (Type1 (T2Name (Name "string") Nothing) Nothing :| []))
+                        (Type0 (noComment (Type1 (T2Name (Name "string") Nothing) Nothing) :| []))
                     )
                     Nothing
                 , WithComments
                     ( GEType
                         Nothing
                         (Just (MKType (Type1 (T2Value (VUInt 2)) Nothing)))
-                        (Type0 (Type1 (T2Name (Name "int") Nothing) Nothing :| []))
+                        (Type0 (noComment (Type1 (T2Name (Name "int") Nothing) Nothing) :| []))
                     )
                     Nothing
                 , WithComments
                     ( GEType
                         Nothing
                         (Just (MKType (Type1 (T2Value (VUInt 3)) Nothing)))
-                        (Type0 (Type1 (T2Name (Name "bytes") Nothing) Nothing :| []))
+                        (Type0 (noComment (Type1 (T2Name (Name "bytes") Nothing) Nothing) :| []))
                     )
                     Nothing
                 ]
@@ -222,9 +226,11 @@ type2Spec = describe "type2" $ do
                       Nothing
                       Nothing
                       ( Type0
-                          ( Type1
-                              (T2Name (Name "int") Nothing)
-                              Nothing
+                          ( noComment
+                              ( Type1
+                                  (T2Name (Name "int") Nothing)
+                                  Nothing
+                              )
                               :| []
                           )
                       )
@@ -235,9 +241,11 @@ type2Spec = describe "type2" $ do
                             Nothing
                             Nothing
                             ( Type0
-                                ( Type1
-                                    (T2Name (Name "string") Nothing)
-                                    Nothing
+                                ( noComment
+                                    ( Type1
+                                        (T2Name (Name "string") Nothing)
+                                        Nothing
+                                    )
                                     :| []
                                 )
                             )
@@ -254,14 +262,14 @@ type2Spec = describe "type2" $ do
                     GEType
                       Nothing
                       Nothing
-                      (Type0 ((:| []) (Type1 (T2Value (VUInt 0)) Nothing)))
+                      (Type0 ((:| []) (noComment $ Type1 (T2Value (VUInt 0)) Nothing)))
                 ]
                   :| [
                        [ noComment $
                           GEType
                             Nothing
                             Nothing
-                            (Type0 ((:| []) (Type1 (T2Value (VUInt 1)) Nothing)))
+                            (Type0 ((:| []) (noComment $ Type1 (T2Value (VUInt 1)) Nothing)))
                        ]
                      ]
               )
@@ -274,7 +282,7 @@ type2Spec = describe "type2" $ do
                     GEType
                       Nothing
                       Nothing
-                      (Type0 ((:| []) (Type1 (T2Value (VUInt 1)) Nothing)))
+                      (Type0 ((:| []) (noComment $ Type1 (T2Value (VUInt 1)) Nothing)))
                 ]
                   :| []
               )
@@ -287,7 +295,7 @@ type2Spec = describe "type2" $ do
                     ( GEType
                         Nothing
                         Nothing
-                        (Type0 (Type1 (T2Value (VUInt 2)) Nothing :| []))
+                        (Type0 (noComment (Type1 (T2Value (VUInt 2)) Nothing) :| []))
                     )
                     Nothing
                 , WithComments
@@ -295,7 +303,7 @@ type2Spec = describe "type2" $ do
                         Nothing
                         Nothing
                         ( Type0
-                            (Type1 (T2Name (Name "soon") Nothing) Nothing :| [])
+                            (noComment (Type1 (T2Name (Name "soon") Nothing) Nothing) :| [])
                         )
                     )
                     Nothing
@@ -312,9 +320,11 @@ grpEntrySpec = describe "GroupEntry" $ do
         Nothing
         Nothing
         ( Type0
-            ( Type1
-                (T2Name (Name "int") Nothing)
-                Nothing
+            ( noComment
+                ( Type1
+                    (T2Name (Name "int") Nothing)
+                    Nothing
+                )
                 :| []
             )
         )
@@ -324,9 +334,11 @@ grpEntrySpec = describe "GroupEntry" $ do
         Nothing
         Nothing
         ( Type0
-            ( Type1
-                (T2Name (Name "int") Nothing)
-                Nothing
+            ( noComment
+                ( Type1
+                    (T2Name (Name "int") Nothing)
+                    Nothing
+                )
                 :| []
             )
         )
@@ -336,24 +348,26 @@ grpEntrySpec = describe "GroupEntry" $ do
         Nothing
         Nothing
         ( Type0
-            ( Type1
-                ( T2Name
-                    (Name "a")
-                    ( Just
-                        ( GenericArg
-                            ( Type1
-                                (T2Value (VUInt 0))
-                                ( Just
-                                    ( RangeOp ClOpen
-                                    , T2Tag Nothing (Type0 (Type1 (T2Value (VUInt 0)) Nothing :| []))
+            ( noComment
+                ( Type1
+                    ( T2Name
+                        (Name "a")
+                        ( Just
+                            ( GenericArg
+                                ( Type1
+                                    (T2Value (VUInt 0))
+                                    ( Just
+                                        ( RangeOp ClOpen
+                                        , T2Tag Nothing (Type0 (noComment (Type1 (T2Value (VUInt 0)) Nothing) :| []))
+                                        )
                                     )
+                                    :| []
                                 )
-                                :| []
                             )
                         )
                     )
+                    Nothing
                 )
-                Nothing
                 :| []
             )
         )
@@ -362,7 +376,7 @@ grpEntrySpec = describe "GroupEntry" $ do
       `shouldParse` GEType
         (Just (OIBounded (Just 0) Nothing))
         Nothing
-        (Type0 (Type1 (T2Name (Name "a") Nothing) Nothing :| []))
+        (Type0 (noComment (Type1 (T2Name (Name "a") Nothing) Nothing) :| []))
 
 grpChoiceSpec :: SpecWith ()
 grpChoiceSpec = describe "GroupChoice" $ do
@@ -373,9 +387,11 @@ grpChoiceSpec = describe "GroupChoice" $ do
                           Nothing
                           Nothing
                           ( Type0
-                              ( Type1
-                                  (T2Name (Name "int") Nothing)
-                                  Nothing
+                              ( noComment
+                                  ( Type1
+                                      (T2Name (Name "int") Nothing)
+                                      Nothing
+                                  )
                                   :| []
                               )
                           )
@@ -445,6 +461,6 @@ qcFoundSpec =
             ( GEType
                 Nothing
                 (Just (MKValue (VText "6 ybe2ddl8frq0vqa8zgrk07khrljq7p plrufpd1sff3p95")))
-                (Type0 (Type1 (T2Value (VText "u")) Nothing :| []))
+                (Type0 (noComment (Type1 (T2Value (VText "u")) Nothing) :| []))
             )
         )

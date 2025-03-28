@@ -8,6 +8,7 @@ module Codec.CBOR.Cuddle.Pretty where
 import Codec.CBOR.Cuddle.CDDL
 import Codec.CBOR.Cuddle.CDDL.CtlOp (CtlOp)
 import Data.ByteString.Char8 qualified as BS
+import Data.Foldable (Foldable (..))
 import Data.List.NonEmpty qualified as NE
 import Data.Maybe (catMaybes)
 import Data.String (fromString)
@@ -15,18 +16,23 @@ import Data.Text qualified as T
 import Prettyprinter
 
 instance Pretty CDDL where
-  pretty (CDDL (NE.toList -> xs)) = vsep . punctuate hardline $ fmap pretty xs
+  pretty (CDDL (NE.toList -> xs)) =
+    vsep . punctuate hardline $
+      fmap (prettyWithComments PreComment) xs
 
 deriving newtype instance Pretty Name
 
-instance Pretty a => Pretty (WithComments a) where
-  pretty (WithComments a Nothing) = pretty a
-  pretty (WithComments a (Just cmt)) = pretty cmt <> hardline <> pretty a
+data CommentRender
+  = PreComment
+  | PostComment
+
+prettyWithComments :: Pretty a => CommentRender -> WithComments a -> Doc ann
+prettyWithComments _ (WithComments a Nothing) = pretty a
+prettyWithComments PostComment (WithComments a (Just cmt)) = pretty a <> space <> pretty cmt
+prettyWithComments PreComment (WithComments a (Just cmt)) = pretty cmt <> hardline <> pretty a
 
 instance Pretty Comment where
-  pretty (Comment t) =
-    let clines = T.splitOn "\n" t
-     in vsep $ fmap (("; " <>) . pretty) clines
+  pretty = align . vsep . toList . fmap (("; " <>) . pretty) . unComment
 
 instance Pretty Rule where
   pretty (Rule n mgen assign tog) =
@@ -48,7 +54,7 @@ instance Pretty GenericParam where
   pretty (GenericParam (NE.toList -> l)) = align . encloseSep "<" ">" ", " $ fmap pretty l
 
 instance Pretty Type0 where
-  pretty (Type0 (NE.toList -> l)) = align . encloseSep mempty mempty " / " $ fmap pretty l
+  pretty (Type0 (NE.toList -> l)) = align . nest (-2) . cEncloseSep mempty mempty "/ " $ fmap (prettyWithComments PostComment) l
 
 instance Pretty CtlOp where
   pretty = pretty . T.toLower . T.pack . show
@@ -96,15 +102,28 @@ data GroupRender
   | AsArray
   | AsGroup
 
+cEncloseSep :: Doc ann -> Doc ann -> Doc ann -> [Doc ann] -> Doc ann
+cEncloseSep l r _ [] = l <> r
+cEncloseSep l r _ [x] = l <> x <> r
+cEncloseSep l r s (x : xs) =
+  group $
+    vsep ((l <> x) : map (s <>) xs <> [r])
+
+cEncloseSepAlt :: Doc ann -> Doc ann -> Doc ann -> [Doc ann] -> Doc ann
+cEncloseSepAlt l = cEncloseSep lAlt
+  where
+    lAlt = flatAlt (l <> space) l
+    --rAlt = flatAlt (space <> r) r
+
 prettyGroup :: GroupRender -> Group -> Doc ann
 prettyGroup gr (Group (NE.toList -> xs)) =
-  align $ encloseSep lp rp " // " (fmap prettyGrpChoice xs)
+  nest 1 $ enclose' "// " (fmap prettyGrpChoice xs)
   where
-    prettyGrpChoice = encloseSep mempty mempty ", " . fmap pretty
-    (lp, rp) = case gr of
-      AsMap -> ("{", "}")
-      AsArray -> ("[", "]")
-      AsGroup -> ("(", ")")
+    prettyGrpChoice = nest 1 . cEncloseSep mempty mempty ", " . fmap (prettyWithComments PostComment)
+    enclose' = case gr of
+      AsMap -> cEncloseSepAlt "{" "}"
+      AsArray -> cEncloseSepAlt "[" "]"
+      AsGroup -> cEncloseSepAlt "(" ")"
 
 instance Pretty GroupEntry where
   pretty (GEType moi mmk t) =
