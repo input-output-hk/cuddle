@@ -82,8 +82,11 @@ parameters (Unparametrised _) = mempty
 parameters (Parametrised _ ps) = ps
 
 asMap :: CDDL -> CDDLMap
-asMap (CDDL rules) = foldl' assignOrExtend Map.empty (stripComment <$> rules)
+asMap (CDDL rules) = foldl' go Map.empty rules
   where
+    go x (TopLevelComment _) = x
+    go x (TopLevelRule _ r _) = assignOrExtend x r
+
     assignOrExtend :: CDDLMap -> Rule -> CDDLMap
     assignOrExtend m (Rule n gps assign tog) = case assign of
       -- Equals assignment

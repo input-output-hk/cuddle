@@ -1,17 +1,55 @@
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DerivingStrategies #-}
+
 -- | This module defined the data structure of CDDL as specified in
 --   https://datatracker.ietf.org/doc/rfc8610/
-module Codec.CBOR.Cuddle.CDDL where
+module Codec.CBOR.Cuddle.CDDL (
+  CDDL (..),
+  TopLevel (..),
+  Name (..),
+  WithComments (..),
+  Comment (..),
+  Rule (..),
+  TypeOrGroup (..),
+  Assign (..),
+  GenericArg (..),
+  GenericParam (..),
+  Type0 (..),
+  Type1 (..),
+  Type2 (..),
+  TyOp (..),
+  RangeBound (..),
+  OccurrenceIndicator (..),
+  Group (..),
+  GroupEntry (..),
+  MemberKey (..),
+  Value (..),
+  GrpChoice,
+  sortCDDL,
+  comment,
+  stripComment,
+  noComment,
+  unwrap,
+  groupEntryOccurrenceIndicator,
+) where
 
 import Codec.CBOR.Cuddle.CDDL.CtlOp (CtlOp)
 import Data.ByteString qualified as B
 import Data.Hashable (Hashable)
+import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NE
 import Data.Text qualified as T
+import Data.TreeDiff (ToExpr)
 import Data.Word (Word64, Word8)
 import GHC.Generics (Generic)
 
-newtype CDDL = CDDL (NE.NonEmpty (WithComments Rule))
+newtype CDDL = CDDL (NE.NonEmpty TopLevel)
   deriving (Eq, Generic, Show)
+
+data TopLevel
+  = TopLevelRule (Maybe Comment) Rule (Maybe Comment)
+  | TopLevelComment Comment
+  deriving (Eq, Ord, Generic, Show)
 
 -- | Sort the CDDL Rules on the basis of their names
 sortCDDL :: CDDL -> CDDL
@@ -19,6 +57,7 @@ sortCDDL (CDDL xs) = CDDL $ NE.sort xs
 
 data WithComments a = WithComments a (Maybe Comment)
   deriving (Eq, Show, Generic)
+  deriving anyclass (ToExpr)
 
 instance Ord a => Ord (WithComments a) where
   compare (WithComments a1 _) (WithComments a2 _) = compare a1 a2
@@ -54,6 +93,7 @@ noComment a = WithComments a Nothing
 --      encoding, but names used as "barewords" in member keys do.
 newtype Name = Name T.Text
   deriving (Eq, Generic, Ord, Show)
+  deriving anyclass (ToExpr)
 
 instance Hashable Name
 
@@ -72,6 +112,7 @@ instance Hashable Name
 --   side the first entry in the choice being created.)
 data Assign = AssignEq | AssignExt
   deriving (Eq, Generic, Show)
+  deriving anyclass (ToExpr)
 
 -- |
 --  Generics
@@ -90,10 +131,14 @@ data Assign = AssignEq | AssignExt
 --   Generic rules can be used for establishing names for both types and
 --   groups.
 newtype GenericParam = GenericParam (NE.NonEmpty Name)
-  deriving (Eq, Generic, Show, Semigroup)
+  deriving (Eq, Generic, Show)
+  deriving newtype (Semigroup)
+  deriving anyclass (ToExpr)
 
 newtype GenericArg = GenericArg (NE.NonEmpty Type1)
-  deriving (Eq, Generic, Show, Semigroup)
+  deriving (Eq, Generic, Show)
+  deriving newtype (Semigroup)
+  deriving anyclass (ToExpr)
 
 -- |
 --  rule = typename [genericparm] S assignt S type
@@ -120,6 +165,7 @@ newtype GenericArg = GenericArg (NE.NonEmpty Type1)
 --   definitions before a determination can be made.)
 data Rule = Rule Name (Maybe GenericParam) Assign TypeOrGroup
   deriving (Eq, Generic, Show)
+  deriving anyclass (ToExpr)
 
 instance Ord Rule where
   compare (Rule n1 _ _ _) (Rule n2 _ _ _) = compare n1 n2
@@ -132,14 +178,17 @@ instance Ord Rule where
 --   included for ".." and excluded for "...".
 data RangeBound = ClOpen | Closed
   deriving (Eq, Generic, Show)
+  deriving anyclass (ToExpr)
 
 instance Hashable RangeBound
 
 data TyOp = RangeOp RangeBound | CtrlOp CtlOp
   deriving (Eq, Generic, Show)
+  deriving anyclass (ToExpr)
 
 data TypeOrGroup = TOGType Type0 | TOGGroup GroupEntry
   deriving (Eq, Generic, Show)
+  deriving anyclass (ToExpr)
 
 {-- |
    The group that is used to define a map or an array can often be reused in the
@@ -191,7 +240,7 @@ data TypeOrGroup = TOGType Type0 | TOGGroup GroupEntry
    which suggested the thread-like "~" character.)
 -}
 unwrap :: TypeOrGroup -> Maybe Group
-unwrap (TOGType (Type0 ((Type1 t2 Nothing) NE.:| []))) = case t2 of
+unwrap (TOGType (Type0 (Type1 t2 Nothing NE.:| []))) = case t2 of
   T2Map g -> Just g
   T2Array g -> Just g
   _ -> Nothing
@@ -202,12 +251,15 @@ unwrap _ = Nothing
 --   choice matches a data item if the data item matches any one of the
 --   types given in the choice.
 newtype Type0 = Type0 (NE.NonEmpty Type1)
-  deriving (Eq, Generic, Show, Semigroup)
+  deriving (Eq, Generic, Show)
+  deriving newtype (Semigroup)
+  deriving anyclass (ToExpr)
 
 -- |
 -- Two types can be combined with a range operator (see below)
 data Type1 = Type1 Type2 (Maybe (TyOp, Type2))
   deriving (Eq, Generic, Show)
+  deriving anyclass (ToExpr)
 
 data Type2
   = -- | A type can be just a single value (such as 1 or "icecream" or
@@ -244,6 +296,7 @@ data Type2
   | -- | Any data item
     T2Any
   deriving (Eq, Generic, Show)
+  deriving anyclass (ToExpr)
 
 -- |
 --  An optional _occurrence_ indicator can be given in front of a group
@@ -265,6 +318,7 @@ data OccurrenceIndicator
   | OIOneOrMore
   | OIBounded (Maybe Word64) (Maybe Word64)
   deriving (Eq, Generic, Show)
+  deriving anyclass (ToExpr)
 
 instance Hashable OccurrenceIndicator
 
@@ -272,7 +326,9 @@ instance Hashable OccurrenceIndicator
 --   A group matches any sequence of key/value pairs that matches any of
 --   the choices given (again using PEG semantics).
 newtype Group = Group (NE.NonEmpty GrpChoice)
-  deriving (Eq, Generic, Show, Semigroup)
+  deriving (Eq, Generic, Show)
+  deriving newtype (Semigroup)
+  deriving anyclass (ToExpr)
 
 type GrpChoice = [WithComments GroupEntry]
 
@@ -288,6 +344,12 @@ data GroupEntry
   | GERef (Maybe OccurrenceIndicator) Name (Maybe GenericArg)
   | GEGroup (Maybe OccurrenceIndicator) Group
   deriving (Eq, Generic, Show)
+  deriving anyclass (ToExpr)
+
+groupEntryOccurrenceIndicator :: GroupEntry -> Maybe OccurrenceIndicator
+groupEntryOccurrenceIndicator (GEType oi _ _) = oi
+groupEntryOccurrenceIndicator (GERef oi _ _) = oi
+groupEntryOccurrenceIndicator (GEGroup oi _) = oi
 
 -- |
 --  Key types can be given by a type expression, a bareword (which stands
@@ -302,6 +364,7 @@ data MemberKey
   | MKBareword Name
   | MKValue Value
   deriving (Eq, Generic, Show)
+  deriving anyclass (ToExpr)
 
 data Value
   = VUInt Word64
@@ -313,8 +376,14 @@ data Value
   | VText T.Text
   | VBytes B.ByteString
   deriving (Eq, Generic, Show)
+  deriving anyclass (ToExpr)
 
 instance Hashable Value
 
-newtype Comment = Comment T.Text
-  deriving (Eq, Generic, Show)
+newtype Comment = Comment {unComment :: NonEmpty T.Text}
+  deriving (Eq, Ord, Generic, Show)
+  deriving newtype (Semigroup)
+  deriving anyclass (ToExpr)
+
+comment :: T.Text -> Comment
+comment t = Comment $ t NE.:| []

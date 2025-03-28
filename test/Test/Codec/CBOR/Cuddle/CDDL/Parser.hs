@@ -9,7 +9,9 @@ import Codec.CBOR.Cuddle.Parser.Lexer (Parser)
 import Codec.CBOR.Cuddle.Pretty ()
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Text qualified as T
+import Data.TreeDiff (ToExpr (..), ansiWlBgEditExprCompact, exprDiff)
 import Prettyprinter (Pretty, defaultLayoutOptions, layoutPretty, pretty)
+import Prettyprinter.Render.String (renderString)
 import Prettyprinter.Render.Text (renderStrict)
 import Test.Codec.CBOR.Cuddle.CDDL.Gen qualified as Gen ()
 import Test.Hspec
@@ -42,7 +44,7 @@ roundtripSpec = describe "Roundtripping should be id" $ do
     -- that we do not show that parse (print p) is p for a given generated
     -- 'CDDL' doc, since CDDL contains some statements that allow multiple
     -- parsings.
-    trip :: forall a. (Eq a, Show a, Pretty a, Arbitrary a) => Parser a -> Property
+    trip :: forall a. (Eq a, ToExpr a, Show a, Pretty a, Arbitrary a) => Parser a -> Property
     trip pa = property $ \(x :: a) -> within 1000000 $ do
       let printed = printText x
       case parse (pa <* eof) "" printed of
@@ -51,8 +53,11 @@ roundtripSpec = describe "Roundtripping should be id" $ do
             counterexample (errorBundlePretty e) $
               property False
         Right parsed ->
-          counterexample (show parsed) $
-            printed === printText parsed
+          counterexample
+            ( renderString . layoutPretty defaultLayoutOptions . ansiWlBgEditExprCompact $
+                toExpr x `exprDiff` toExpr parsed
+            )
+            $ printed `shouldBe` printText parsed
     printText :: Pretty a => a -> T.Text
     printText = renderStrict . layoutPretty defaultLayoutOptions . pretty
 

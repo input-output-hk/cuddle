@@ -546,8 +546,7 @@ constr<a> =
   / #6.124([* a])
   / #6.125([* a])
   / #6.126([* a])
-  / #6.127([* a])
-  ; similarly for tag range: 6.1280 .. 6.1400 inclusive
+  / #6.127([* a]) ; similarly for tag range: 6.1280 .. 6.1400 inclusive
   / #6.102([uint, [* a]])
 
 redeemers =

@@ -88,7 +88,7 @@ module Codec.CBOR.Cuddle.Huddle (
 )
 where
 
-import Codec.CBOR.Cuddle.CDDL (CDDL)
+import Codec.CBOR.Cuddle.CDDL (CDDL, TopLevel (..), WithComments (..))
 import Codec.CBOR.Cuddle.CDDL qualified as C
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
 import Control.Monad (when)
@@ -476,8 +476,8 @@ sized v sz =
 
 class IsCborable a
 instance IsCborable ByteString
-instance IsCborable CRef
-instance IsCborable CGRef
+instance IsCborable (AnyRef a)
+instance IsCborable GRef
 
 cbor :: (IsCborable b, IsConstrainable c b) => c -> Rule -> Constrained
 cbor v r@(Named n _ _) =
@@ -494,8 +494,8 @@ cbor v r@(Named n _ _) =
 
 class IsComparable a
 instance IsComparable Int
-instance IsComparable CRef
-instance IsComparable CGRef
+instance IsComparable (AnyRef a)
+instance IsComparable GRef
 
 le :: (IsComparable a, IsConstrainable c a) => c -> Word64 -> Constrained
 le v bound =
@@ -1012,7 +1012,7 @@ toCDDLNoRoot = toCDDL' False
 -- | Convert from Huddle to CDDL for the purpose of pretty-printing.
 toCDDL' :: Bool -> Huddle -> CDDL
 toCDDL' mkPseudoRoot hdl =
-  C.CDDL
+  C.CDDL . fmap (\(WithComments x cmt) -> TopLevelRule cmt x Nothing)
     $ ( if mkPseudoRoot
           then (toTopLevelPseudoRoot (roots hdl) NE.<|)
           else id
@@ -1035,7 +1035,7 @@ toCDDL' mkPseudoRoot hdl =
             . C.Type0
             $ toCDDLType1 <$> choiceToNE t0
         )
-        (fmap C.Comment c)
+        (fmap C.comment c)
     toCDDLValue :: Literal -> C.Value
     toCDDLValue (LInt i) = C.VUInt i
     toCDDLValue (LNInt i) = C.VNInt i
@@ -1059,7 +1059,7 @@ toCDDL' mkPseudoRoot hdl =
             (Just $ toMemberKey k)
             (toCDDLType0 v)
         )
-        (fmap C.Comment cmnt)
+        (fmap C.comment cmnt)
 
     toOccurrenceIndicator :: Occurs -> Maybe C.OccurrenceIndicator
     toOccurrenceIndicator (Occurs Nothing Nothing) = Nothing
@@ -1108,7 +1108,7 @@ toCDDL' mkPseudoRoot hdl =
             (fmap toMemberKey k)
             (toCDDLType0 v)
         )
-        (fmap C.Comment cmnt)
+        (fmap C.comment cmnt)
 
     toCDDLPostlude :: Value a -> C.Name
     toCDDLPostlude VBool = C.Name "bool"
@@ -1150,7 +1150,7 @@ toCDDL' mkPseudoRoot hdl =
             . (NE.:| [])
             $ fmap arrayEntryToCDDL t0s
         )
-        (fmap C.Comment c)
+        (fmap C.comment c)
 
     toGenericCall :: GRuleCall -> C.Type2
     toGenericCall (Named n gr _) =
@@ -1166,7 +1166,7 @@ toCDDL' mkPseudoRoot hdl =
             . C.Type0
             $ toCDDLType1 <$> choiceToNE (body gr)
         )
-        (fmap C.Comment c)
+        (fmap C.comment c)
       where
         gps =
           C.GenericParam $ fmap (\(GRef t) -> C.Name t) (args gr)
