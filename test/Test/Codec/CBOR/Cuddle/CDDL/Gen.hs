@@ -15,7 +15,6 @@ where
 
 import Codec.CBOR.Cuddle.CDDL
 import Codec.CBOR.Cuddle.CDDL.CtlOp
-import Data.List (inits)
 import Data.List.NonEmpty qualified as NE
 import Data.Maybe (mapMaybe)
 import Data.Text qualified as T
@@ -24,25 +23,37 @@ import Test.QuickCheck qualified as Gen
 import Prelude hiding (maybe)
 
 genCDDL :: Gen CDDL
-genCDDL = CDDL . fmap noComment <$> nonEmpty genRule
+genCDDL = CDDL . fmap (\x -> TopLevelRule Nothing x Nothing) <$> nonEmpty genRule
+
+nameFstChars :: [Char]
+nameFstChars = ['a' .. 'z'] <> ['A' .. 'Z'] <> ['@', '_', '$']
+
+nameMidChars :: [Char]
+nameMidChars = nameFstChars <> ['1' .. '9'] <> ['-', '.']
+
+nameEndChars :: [Char]
+nameEndChars = nameFstChars <> ['1' .. '9']
 
 genName :: Gen Name
 genName =
-  let endChars = ['a' .. 'z'] <> ['A' .. 'Z'] <> ['@', '_', '$']
-      midChars = ['1' .. '9'] <> ['-', '.']
-      veryShortListOf = resize 3 . listOf
+  let veryShortListOf = resize 3 . listOf
    in do
-        fstChar <- elements endChars
-        midChar <- veryShortListOf . elements $ endChars <> midChars
-        lastChar <- elements $ endChars <> ['1' .. '9']
+        fstChar <- elements nameFstChars
+        midChar <- veryShortListOf . elements $ nameMidChars
+        lastChar <- elements nameEndChars
         pure $ Name . T.pack $ fstChar : midChar <> [lastChar]
 
 instance Arbitrary Name where
   arbitrary = genName
 
-  shrink (Name (T.unpack -> t)) = case t of
-    [_] -> []
-    xs -> Name . T.pack <$> drop 1 (inits xs)
+  shrink (Name (T.unpack -> xs)) = Name . T.pack <$> filter isValidName (shrink xs)
+    where
+      isValidName [] = False
+      isValidName (h : tl) = h `elem` nameFstChars && isValidNameTail tl
+
+      isValidNameTail [] = True
+      isValidNameTail [x] = x `elem` nameEndChars
+      isValidNameTail (h : tl) = h `elem` nameMidChars && isValidNameTail tl
 
 genAssign :: Gen Assign
 genAssign = Gen.elements [AssignEq, AssignExt]
@@ -243,7 +254,8 @@ instance Arbitrary CtlOp where
 
 instance Arbitrary a => Arbitrary (WithComments a) where
   arbitrary = noComment <$> arbitrary
-  shrink (WithComments x _) = noComment <$> shrink x
+  shrink (WithComments _ Nothing) = []
+  shrink (WithComments x (Just _)) = noComment <$> shrink x
 
 --------------------------------------------------------------------------------
 -- Utility

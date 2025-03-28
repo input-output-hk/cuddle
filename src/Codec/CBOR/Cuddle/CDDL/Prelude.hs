@@ -4,12 +4,12 @@ module Codec.CBOR.Cuddle.CDDL.Prelude (prependPrelude) where
 
 import Codec.CBOR.Cuddle.CDDL (CDDL (..))
 import Codec.CBOR.Cuddle.Parser (pCDDL)
-import Text.Megaparsec (parse)
+import Text.Megaparsec (errorBundlePretty, parse)
 
 -- TODO switch to quasiquotes
 cddlPrelude :: CDDL
 cddlPrelude =
-  either (error . show) id $
+  either (error . errorBundlePretty) id $
     parse
       pCDDL
       "<HARDCODED>"

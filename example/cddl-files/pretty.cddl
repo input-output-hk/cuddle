@@ -1,0 +1,11 @@
+a = [ 2*30 2 : uint
+  , ? 33 : bytes
+  , 4444 : set<uint>
+  , * 55 => uint
+  ]
+
+b = [1,uint,(3,4)]
+
+c = { x 
+, y ; hello
+}

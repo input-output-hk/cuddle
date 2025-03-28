@@ -33,3 +33,20 @@ set<a> = [ * a]
 set2<a> = set<a>
 
 coin_bag = set2<coin>
+
+big_group = (
+  "hello",
+  32,
+  8* 4,
+  & group,
+  uint,
+  unit_interval<uint>,
+  5 ...10,
+  h'11aaff3351bc'
+)
+
+test = ~ aaaa .. "j" / 
+# /
+{xco, lhXH // // } .cborseq # /
+& (* kkhw // // ) /
+"b"
