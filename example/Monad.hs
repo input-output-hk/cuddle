@@ -7,6 +7,7 @@
 
 module Monad where
 
+import Codec.CBOR.Cuddle.Comments ((//-))
 import Codec.CBOR.Cuddle.Huddle qualified as Huddle
 import Codec.CBOR.Cuddle.Huddle.HuddleM
 import Data.Word (Word64)
@@ -43,9 +44,9 @@ spec2 =
           _transaction <-
             "transaction"
               =:= mp
-                [ comment "Transaction inputs" $ idx 0 ==> set txIn
-                , comment "Transaction outputs" $ idx 1 ==> set txOut
-                , comment "Metadata" $ idx 2 ==> metadata
+                [ idx 0 ==> set txIn //- "Transaction inputs"
+                , idx 1 ==> set txOut //- "Transaction outputs"
+                , idx 2 ==> metadata //- "Metadata"
                 ]
           metadata <- "metadata" =:= VBytes
           _value <- "value" =:= mp ["token" ==> VText, "quantity" ==> VUInt]

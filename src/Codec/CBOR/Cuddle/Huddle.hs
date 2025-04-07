@@ -20,6 +20,7 @@ module Codec.CBOR.Cuddle.Huddle (
   -- * Core Types
   Huddle,
   HuddleItem (..),
+  huddleJoin,
   Rule,
   Named,
   IsType0 (..),
@@ -83,21 +84,25 @@ module Codec.CBOR.Cuddle.Huddle (
 
   -- * Conversion to CDDL
   collectFrom,
+  collectFromInit,
   toCDDL,
   toCDDLNoRoot,
 )
 where
 
-import Codec.CBOR.Cuddle.CDDL (CDDL, TopLevel (..), WithComments (..))
+import Codec.CBOR.Cuddle.CDDL (CDDL)
 import Codec.CBOR.Cuddle.CDDL qualified as C
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
+import Codec.CBOR.Cuddle.Comments qualified as C
 import Control.Monad (when)
 import Control.Monad.State (MonadState (get), execState, modify)
 import Data.ByteString (ByteString)
 import Data.Default.Class (Default (..))
+import Data.Function (on)
 import Data.Generics.Product (HasField' (field'), field, getField)
+import Data.List qualified as L
 import Data.List.NonEmpty qualified as NE
-import Data.Map.Ordered.Strict (OMap)
+import Data.Map.Ordered.Strict (OMap, (|<>))
 import Data.Map.Ordered.Strict qualified as OMap
 import Data.String (IsString (fromString))
 import Data.Text qualified as T
@@ -106,7 +111,7 @@ import Data.Void (Void)
 import Data.Word (Word64)
 import GHC.Exts (IsList (Item, fromList, toList))
 import GHC.Generics (Generic)
-import Optics.Core (view, (%~), (&), (.~), (^.))
+import Optics.Core (lens, view, (%~), (&), (.~), (^.))
 import Prelude hiding ((/))
 
 data Named a = Named
@@ -138,6 +143,10 @@ data Huddle = Huddle
   , items :: OMap T.Text HuddleItem
   }
   deriving (Generic, Show)
+
+huddleJoin :: Huddle -> Huddle -> Huddle
+huddleJoin (Huddle rootsL itemsL) (Huddle rootsR itemsR) =
+  Huddle (L.nubBy ((==) `on` name) $ rootsL <> rootsR) (itemsL |<> itemsR)
 
 -- | This semigroup instance:
 --   - Takes takes the roots from the RHS unless they are empty, in which case
@@ -190,11 +199,11 @@ data Key
 
 -- | Instance for the very general case where we use text keys
 instance IsString Key where
-  fromString = LiteralKey . LText . T.pack
+  fromString x = LiteralKey $ Literal (LText $ T.pack x) mempty
 
 -- | Use a number as a key
 idx :: Word64 -> Key
-idx = LiteralKey . LInt
+idx x = LiteralKey $ Literal (LInt x) mempty
 
 asKey :: IsType0 r => r -> Key
 asKey r = case toType0 r of
@@ -205,9 +214,12 @@ data MapEntry = MapEntry
   { key :: Key
   , value :: Type0
   , quantifier :: Occurs
-  , description :: Maybe T.Text
+  , meDescription :: C.Comment
   }
   deriving (Generic, Show)
+
+instance C.HasComment MapEntry where
+  commentL = lens meDescription (\x y -> x {meDescription = y})
 
 newtype MapChoice = MapChoice {unMapChoice :: [MapEntry]}
   deriving (Show)
@@ -226,31 +238,46 @@ data ArrayEntry = ArrayEntry
   -- here because they can be illustrative in the generated CDDL.
   , value :: Type0
   , quantifier :: Occurs
-  , description :: Maybe T.Text
+  , aeDescription :: C.Comment
   }
   deriving (Generic, Show)
+
+instance C.HasComment ArrayEntry where
+  commentL = lens aeDescription (\x y -> x {aeDescription = y})
 
 instance Num ArrayEntry where
   fromInteger i =
     ArrayEntry
       Nothing
-      (NoChoice . T2Range . Unranged $ LInt (fromIntegral i))
+      (NoChoice . T2Range . Unranged $ Literal (LInt (fromIntegral i)) mempty)
       def
-      Nothing
+      mempty
   (+) = error "Cannot treat ArrayEntry as a number"
   (*) = error "Cannot treat ArrayEntry as a number"
   abs = error "Cannot treat ArrayEntry as a number"
   signum = error "Cannot treat ArrayEntry as a number"
   negate = error "Cannot treat ArrayEntry as a number"
 
-newtype ArrayChoice = ArrayChoice {unArrayChoice :: [ArrayEntry]}
-  deriving (Show, Monoid, Semigroup)
+data ArrayChoice = ArrayChoice
+  { unArrayChoice :: [ArrayEntry]
+  , acComment :: C.Comment
+  }
+  deriving (Show)
+
+instance Semigroup ArrayChoice where
+  ArrayChoice x xc <> ArrayChoice y yc = ArrayChoice (x <> y) (xc <> yc)
+
+instance Monoid ArrayChoice where
+  mempty = ArrayChoice mempty mempty
+
+instance C.HasComment ArrayChoice where
+  commentL = lens acComment (\x y -> x {acComment = y})
 
 instance IsList ArrayChoice where
   type Item ArrayChoice = ArrayEntry
 
-  fromList = ArrayChoice
-  toList (ArrayChoice l) = l
+  fromList = (`ArrayChoice` mempty)
+  toList (ArrayChoice l _) = l
 
 type Array = Choice ArrayChoice
 
@@ -280,7 +307,7 @@ data Type2
 type Type0 = Choice Type2
 
 instance Num Type0 where
-  fromInteger i = NoChoice . T2Range . Unranged $ LInt (fromIntegral i)
+  fromInteger i = NoChoice . T2Range . Unranged $ Literal (LInt (fromIntegral i)) mempty
   (+) = error "Cannot treat Type0 as a number"
   (*) = error "Cannot treat Type0 as a number"
   abs = error "Cannot treat Type0 as a number"
@@ -318,32 +345,41 @@ deriving instance Show (Value a)
 -- Literals
 --------------------------------------------------------------------------------
 
-data Literal where
+data Literal = Literal
+  { litVariant :: LiteralVariant
+  , litComment :: C.Comment
+  }
+  deriving (Show)
+
+instance C.HasComment Literal where
+  commentL = lens litComment (\x y -> x {litComment = y})
+
+data LiteralVariant where
   -- | We store both int and nint as a Word64, since the sign is indicated in
   -- the type.
-  LInt :: Word64 -> Literal
-  LNInt :: Word64 -> Literal
-  LBignum :: Integer -> Literal
-  LText :: T.Text -> Literal
-  LFloat :: Float -> Literal
-  LDouble :: Double -> Literal
-  LBytes :: ByteString -> Literal
+  LInt :: Word64 -> LiteralVariant
+  LNInt :: Word64 -> LiteralVariant
+  LBignum :: Integer -> LiteralVariant
+  LText :: T.Text -> LiteralVariant
+  LFloat :: Float -> LiteralVariant
+  LDouble :: Double -> LiteralVariant
+  LBytes :: ByteString -> LiteralVariant
   deriving (Show)
 
 int :: Integer -> Literal
 int = inferInteger
 
 bstr :: ByteString -> Literal
-bstr = LBytes
+bstr x = Literal (LBytes x) mempty
 
 text :: T.Text -> Literal
-text = LText
+text x = Literal (LText x) mempty
 
 inferInteger :: Integer -> Literal
 inferInteger i
-  | i >= 0 && i < fromIntegral (maxBound @Word64) = LInt (fromInteger i)
-  | i < 0 && (-i) < fromIntegral (maxBound @Word64) = LNInt (fromInteger (-i))
-  | otherwise = LBignum i
+  | i >= 0 && i < fromIntegral (maxBound @Word64) = Literal (LInt (fromInteger i)) mempty
+  | i < 0 && (-i) < fromIntegral (maxBound @Word64) = Literal (LNInt (fromInteger (-i))) mempty
+  | otherwise = Literal (LBignum i) mempty
 
 --------------------------------------------------------------------------------
 -- Constraints and Ranges
@@ -408,7 +444,7 @@ instance Show (ValueConstraint a) where
 instance Default (ValueConstraint a) where
   def =
     ValueConstraint
-      { applyConstraint = (`C.Type1` Nothing)
+      { applyConstraint = \x -> C.Type1 x Nothing mempty
       , showConstraint = ""
       }
 
@@ -432,11 +468,11 @@ class IsSize a where
   sizeAsString :: a -> String
 
 instance IsSize Word where
-  sizeAsCDDL = C.T2Value . C.VUInt . fromIntegral
+  sizeAsCDDL x = C.T2Value $ C.Value (C.VUInt $ fromIntegral x) mempty
   sizeAsString = show
 
 instance IsSize Word64 where
-  sizeAsCDDL = C.T2Value . C.VUInt
+  sizeAsCDDL x = C.T2Value $ C.Value (C.VUInt x) mempty
   sizeAsString = show
 
 instance IsSize (Word64, Word64) where
@@ -444,8 +480,9 @@ instance IsSize (Word64, Word64) where
     C.T2Group
       ( C.Type0
           ( C.Type1
-              (C.T2Value (C.VUInt x))
-              (Just (C.RangeOp C.Closed, C.T2Value (C.VUInt y)))
+              (C.T2Value (C.Value (C.VUInt x) mempty))
+              (Just (C.RangeOp C.Closed, C.T2Value (C.Value (C.VUInt y) mempty)))
+              mempty
               NE.:| []
           )
       )
@@ -470,6 +507,7 @@ sized v sz =
           C.Type1
             t2
             (Just (C.CtrlOp CtlOp.Size, sizeAsCDDL sz))
+            mempty
       , showConstraint = ".size " <> sizeAsString sz
       }
     []
@@ -487,7 +525,8 @@ cbor v r@(Named n _ _) =
       { applyConstraint = \t2 ->
           C.Type1
             t2
-            (Just (C.CtrlOp CtlOp.Cbor, C.T2Name (C.Name n) Nothing))
+            (Just (C.CtrlOp CtlOp.Cbor, C.T2Name (C.Name n mempty) Nothing))
+            mempty
       , showConstraint = ".cbor " <> T.unpack n
       }
     [r]
@@ -505,7 +544,8 @@ le v bound =
       { applyConstraint = \t2 ->
           C.Type1
             t2
-            (Just (C.CtrlOp CtlOp.Le, C.T2Value (C.VUInt $ fromIntegral bound)))
+            (Just (C.CtrlOp CtlOp.Le, C.T2Value (C.Value (C.VUInt $ fromIntegral bound) mempty)))
+            mempty
       , showConstraint = ".le " <> show bound
       }
     []
@@ -585,16 +625,16 @@ instance IsType0 Integer where
 
 instance IsType0 T.Text where
   toType0 :: T.Text -> Type0
-  toType0 = NoChoice . T2Range . Unranged . LText
+  toType0 x = NoChoice . T2Range . Unranged $ Literal (LText x) mempty
 
 instance IsType0 ByteString where
-  toType0 = NoChoice . T2Range . Unranged . LBytes
+  toType0 x = NoChoice . T2Range . Unranged $ Literal (LBytes x) mempty
 
 instance IsType0 Float where
-  toType0 = NoChoice . T2Range . Unranged . LFloat
+  toType0 x = NoChoice . T2Range . Unranged $ Literal (LFloat x) mempty
 
 instance IsType0 Double where
-  toType0 = NoChoice . T2Range . Unranged . LDouble
+  toType0 x = NoChoice . T2Range . Unranged $ Literal (LDouble x) mempty
 
 instance IsType0 (Value a) where
   toType0 = NoChoice . T2Constrained . unconstrained
@@ -662,7 +702,7 @@ instance IsEntryLike ArrayEntry where
       , value =
           getField @"value" me
       , quantifier = getField @"quantifier" me
-      , description = Nothing
+      , aeDescription = mempty
       }
 
 instance IsEntryLike Type0 where
@@ -675,7 +715,7 @@ k ==> gc =
       { key = k
       , value = toType0 gc
       , quantifier = def
-      , description = Nothing
+      , meDescription = mempty
       }
 
 infixl 8 ==>
@@ -700,7 +740,7 @@ instance IsGroupOrArrayEntry ArrayEntry where
       { key = Nothing
       , value = toType0 x
       , quantifier = def
-      , description = Nothing
+      , aeDescription = mempty
       }
 
 instance IsGroupOrArrayEntry Type0 where
@@ -738,7 +778,7 @@ instance IsChoosable GRef Type2 where
   toChoice = toChoice . T2GenericRef
 
 instance IsChoosable ByteString Type2 where
-  toChoice = toChoice . T2Range . Unranged . LBytes
+  toChoice x = toChoice . T2Range . Unranged $ Literal (LBytes x) mempty
 
 instance IsChoosable Constrained Type2 where
   toChoice = toChoice . T2Constrained
@@ -937,21 +977,33 @@ binding2 fRule t0 t1 =
 -- Collecting all top-level rules
 --------------------------------------------------------------------------------
 
+hiRule :: HuddleItem -> [Rule]
+hiRule (HIRule r) = [r]
+hiRule _ = []
+
+hiName :: HuddleItem -> T.Text
+hiName (HIRule (Named n _ _)) = n
+hiName (HIGroup (Named n _ _)) = n
+hiName (HIGRule (Named n _ _)) = n
+
 -- | Collect all rules starting from a given point. This will also insert a
 --   single pseudo-rule as the first element which references the specified
 --   top-level rules.
-collectFrom :: [Rule] -> Huddle
+collectFrom :: [HuddleItem] -> Huddle
 collectFrom topRs =
   toHuddle $
     execState
-      (traverse goRule topRs)
+      (traverse goHuddleItem topRs)
       OMap.empty
   where
     toHuddle items =
       Huddle
-        { roots = topRs
+        { roots = concatMap hiRule topRs
         , items = items
         }
+    goHuddleItem (HIRule r) = goRule r
+    goHuddleItem (HIGroup g) = goNamedGroup g
+    goHuddleItem (HIGRule (Named _ (GRule _ t0) _)) = goT0 t0
     goRule r@(Named n t0 _) = do
       items <- get
       when (OMap.notMember n items) $ do
@@ -960,17 +1012,12 @@ collectFrom topRs =
     goChoice f (NoChoice x) = f x
     goChoice f (ChoiceOf x xs) = f x >> goChoice f xs
     goT0 = goChoice goT2
-    goT2 (T2Range r) = goRanged r
-    goT2 (T2Map m) = goChoice (mapM_ goMapEntry . unMapChoice) m
-    goT2 (T2Array m) = goChoice (mapM_ goArrayEntry . unArrayChoice) m
-    goT2 (T2Tagged (Tagged _ t0)) = goT0 t0
-    goT2 (T2Ref n) = goRule n
-    goT2 (T2Group r@(Named n g _)) = do
+    goNamedGroup r@(Named n g _) = do
       items <- get
       when (OMap.notMember n items) $ do
         modify (OMap.|> (n, HIGroup r))
         goGroup g
-    goT2 (T2Generic r@(Named n g _)) = do
+    goGRule r@(Named n g _) = do
       items <- get
       when (OMap.notMember n items) $ do
         modify (OMap.|> (n, HIGRule $ fmap callToDef r))
@@ -978,6 +1025,13 @@ collectFrom topRs =
       -- Note that the parameters here may be different, so this doesn't live
       -- under the guard
       mapM_ goT2 $ args g
+    goT2 (T2Range r) = goRanged r
+    goT2 (T2Map m) = goChoice (mapM_ goMapEntry . unMapChoice) m
+    goT2 (T2Array m) = goChoice (mapM_ goArrayEntry . unArrayChoice) m
+    goT2 (T2Tagged (Tagged _ t0)) = goT0 t0
+    goT2 (T2Ref n) = goRule n
+    goT2 (T2Group r) = goNamedGroup r
+    goT2 (T2Generic x) = goGRule x
     goT2 (T2Constrained (Constrained c _ refs)) =
       ( case c of
           CValue _ -> pure ()
@@ -997,6 +1051,14 @@ collectFrom topRs =
     goRangeBound (RangeBoundLiteral _) = pure ()
     goRangeBound (RangeBoundRef r) = goRule r
 
+-- | Same as `collectFrom`, but the rules passed into this function will be put
+--   at the top of the Huddle, and all of their dependencies will be added at
+--   the end in depth-first order.
+collectFromInit :: [HuddleItem] -> Huddle
+collectFromInit rules =
+  Huddle (concatMap hiRule rules) (OMap.fromList $ (\x -> (hiName x, x)) <$> rules)
+    `huddleJoin` collectFrom rules
+
 --------------------------------------------------------------------------------
 -- Conversion to CDDL
 --------------------------------------------------------------------------------
@@ -1012,7 +1074,7 @@ toCDDLNoRoot = toCDDL' False
 -- | Convert from Huddle to CDDL for the purpose of pretty-printing.
 toCDDL' :: Bool -> Huddle -> CDDL
 toCDDL' mkPseudoRoot hdl =
-  C.CDDL . fmap (\(WithComments x cmt) -> TopLevelRule cmt x Nothing)
+  C.fromRules
     $ ( if mkPseudoRoot
           then (toTopLevelPseudoRoot (roots hdl) NE.<|)
           else id
@@ -1022,44 +1084,39 @@ toCDDL' mkPseudoRoot hdl =
     toCDDLItem (HIRule r) = toCDDLRule r
     toCDDLItem (HIGroup g) = toCDDLGroup g
     toCDDLItem (HIGRule g) = toGenRuleDef g
-    toTopLevelPseudoRoot :: [Rule] -> C.WithComments C.Rule
+    toTopLevelPseudoRoot :: [Rule] -> C.Rule
     toTopLevelPseudoRoot topRs =
       toCDDLRule $
         comment "Pseudo-rule introduced by Cuddle to collect root elements" $
           "huddle_root_defs" =:= arr (fromList (fmap a topRs))
-    toCDDLRule :: Rule -> C.WithComments C.Rule
+    toCDDLRule :: Rule -> C.Rule
     toCDDLRule (Named n t0 c) =
-      C.WithComments
-        ( C.Rule (C.Name n) Nothing C.AssignEq
-            . C.TOGType
-            . C.Type0
-            $ toCDDLType1 <$> choiceToNE t0
-        )
-        (fmap C.comment c)
+      (\x -> C.Rule (C.Name n mempty) Nothing C.AssignEq x (foldMap C.Comment c))
+        . C.TOGType
+        . C.Type0
+        $ toCDDLType1 <$> choiceToNE t0
     toCDDLValue :: Literal -> C.Value
-    toCDDLValue (LInt i) = C.VUInt i
-    toCDDLValue (LNInt i) = C.VNInt i
-    toCDDLValue (LBignum i) = C.VBignum i
-    toCDDLValue (LFloat i) = C.VFloat32 i
-    toCDDLValue (LDouble d) = C.VFloat64 d
-    toCDDLValue (LText t) = C.VText t
-    toCDDLValue (LBytes b) = C.VBytes b
+    toCDDLValue (Literal x cmt) = C.Value (toCDDLValue' x) cmt
+    toCDDLValue' (LInt i) = C.VUInt i
+    toCDDLValue' (LNInt i) = C.VNInt i
+    toCDDLValue' (LBignum i) = C.VBignum i
+    toCDDLValue' (LFloat i) = C.VFloat32 i
+    toCDDLValue' (LDouble d) = C.VFloat64 d
+    toCDDLValue' (LText t) = C.VText t
+    toCDDLValue' (LBytes b) = C.VBytes b
 
     mapToCDDLGroup :: Map -> C.Group
     mapToCDDLGroup xs = C.Group $ mapChoiceToCDDL <$> choiceToNE xs
 
     mapChoiceToCDDL :: MapChoice -> C.GrpChoice
-    mapChoiceToCDDL (MapChoice entries) = fmap mapEntryToCDDL entries
+    mapChoiceToCDDL (MapChoice entries) = C.GrpChoice (fmap mapEntryToCDDL entries) mempty
 
-    mapEntryToCDDL :: MapEntry -> C.WithComments C.GroupEntry
+    mapEntryToCDDL :: MapEntry -> C.GroupEntry
     mapEntryToCDDL (MapEntry k v occ cmnt) =
-      C.WithComments
-        ( C.GEType
-            (toOccurrenceIndicator occ)
-            (Just $ toMemberKey k)
-            (toCDDLType0 v)
-        )
-        (fmap C.comment cmnt)
+      C.GroupEntry
+        (toOccurrenceIndicator occ)
+        cmnt
+        (C.GEType (Just $ toMemberKey k) (toCDDLType0 v))
 
     toOccurrenceIndicator :: Occurs -> Maybe C.OccurrenceIndicator
     toOccurrenceIndicator (Occurs Nothing Nothing) = Nothing
@@ -1078,16 +1135,17 @@ toCDDL' mkPseudoRoot hdl =
         C.Type1
           (C.T2Map $ mapToCDDLGroup m)
           Nothing
-      T2Array x -> C.Type1 (C.T2Array $ arrayToCDDLGroup x) Nothing
+          mempty
+      T2Array x -> C.Type1 (C.T2Array $ arrayToCDDLGroup x) Nothing mempty
       T2Tagged (Tagged mmin x) ->
-        C.Type1 (C.T2Tag mmin $ toCDDLType0 x) Nothing
-      T2Ref (Named n _ _) -> C.Type1 (C.T2Name (C.Name n) Nothing) Nothing
-      T2Group (Named n _ _) -> C.Type1 (C.T2Name (C.Name n) Nothing) Nothing
-      T2Generic g -> C.Type1 (toGenericCall g) Nothing
-      T2GenericRef (GRef n) -> C.Type1 (C.T2Name (C.Name n) Nothing) Nothing
+        C.Type1 (C.T2Tag mmin $ toCDDLType0 x) Nothing mempty
+      T2Ref (Named n _ _) -> C.Type1 (C.T2Name (C.Name n mempty) Nothing) Nothing mempty
+      T2Group (Named n _ _) -> C.Type1 (C.T2Name (C.Name n mempty) Nothing) Nothing mempty
+      T2Generic g -> C.Type1 (toGenericCall g) Nothing mempty
+      T2GenericRef (GRef n) -> C.Type1 (C.T2Name (C.Name n mempty) Nothing) Nothing mempty
 
     toMemberKey :: Key -> C.MemberKey
-    toMemberKey (LiteralKey (LText t)) = C.MKBareword (C.Name t)
+    toMemberKey (LiteralKey (Literal (LText t) _)) = C.MKBareword (C.Name t mempty)
     toMemberKey (LiteralKey v) = C.MKValue $ toCDDLValue v
     toMemberKey (TypeKey t) = C.MKType (toCDDLType1 t)
 
@@ -1098,75 +1156,81 @@ toCDDL' mkPseudoRoot hdl =
     arrayToCDDLGroup xs = C.Group $ arrayChoiceToCDDL <$> choiceToNE xs
 
     arrayChoiceToCDDL :: ArrayChoice -> C.GrpChoice
-    arrayChoiceToCDDL (ArrayChoice entries) = fmap arrayEntryToCDDL entries
+    arrayChoiceToCDDL (ArrayChoice entries cmt) = C.GrpChoice (fmap arrayEntryToCDDL entries) cmt
 
-    arrayEntryToCDDL :: ArrayEntry -> C.WithComments C.GroupEntry
+    arrayEntryToCDDL :: ArrayEntry -> C.GroupEntry
     arrayEntryToCDDL (ArrayEntry k v occ cmnt) =
-      C.WithComments
-        ( C.GEType
-            (toOccurrenceIndicator occ)
-            (fmap toMemberKey k)
-            (toCDDLType0 v)
-        )
-        (fmap C.comment cmnt)
+      C.GroupEntry
+        (toOccurrenceIndicator occ)
+        cmnt
+        (C.GEType (fmap toMemberKey k) (toCDDLType0 v))
 
     toCDDLPostlude :: Value a -> C.Name
-    toCDDLPostlude VBool = C.Name "bool"
-    toCDDLPostlude VUInt = C.Name "uint"
-    toCDDLPostlude VNInt = C.Name "nint"
-    toCDDLPostlude VInt = C.Name "int"
-    toCDDLPostlude VHalf = C.Name "half"
-    toCDDLPostlude VFloat = C.Name "float"
-    toCDDLPostlude VDouble = C.Name "double"
-    toCDDLPostlude VBytes = C.Name "bytes"
-    toCDDLPostlude VText = C.Name "text"
-    toCDDLPostlude VAny = C.Name "any"
-    toCDDLPostlude VNil = C.Name "nil"
+    toCDDLPostlude VBool = C.Name "bool" mempty
+    toCDDLPostlude VUInt = C.Name "uint" mempty
+    toCDDLPostlude VNInt = C.Name "nint" mempty
+    toCDDLPostlude VInt = C.Name "int" mempty
+    toCDDLPostlude VHalf = C.Name "half" mempty
+    toCDDLPostlude VFloat = C.Name "float" mempty
+    toCDDLPostlude VDouble = C.Name "double" mempty
+    toCDDLPostlude VBytes = C.Name "bytes" mempty
+    toCDDLPostlude VText = C.Name "text" mempty
+    toCDDLPostlude VAny = C.Name "any" mempty
+    toCDDLPostlude VNil = C.Name "nil" mempty
 
     toCDDLConstrainable c = case c of
       CValue v -> toCDDLPostlude v
-      CRef r -> C.Name $ name r
-      CGRef (GRef n) -> C.Name n
+      CRef r -> C.Name (name r) mempty
+      CGRef (GRef n) -> C.Name n mempty
 
     toCDDLRanged :: Ranged -> C.Type1
     toCDDLRanged (Unranged x) =
-      C.Type1 (C.T2Value $ toCDDLValue x) Nothing
+      C.Type1 (C.T2Value $ toCDDLValue x) Nothing mempty
     toCDDLRanged (Ranged lb ub rop) =
       C.Type1
         (toCDDLRangeBound lb)
         (Just (C.RangeOp rop, toCDDLRangeBound ub))
+        mempty
 
     toCDDLRangeBound :: RangeBound -> C.Type2
     toCDDLRangeBound (RangeBoundLiteral l) = C.T2Value $ toCDDLValue l
-    toCDDLRangeBound (RangeBoundRef (Named n _ _)) = C.T2Name (C.Name n) Nothing
+    toCDDLRangeBound (RangeBoundRef (Named n _ _)) = C.T2Name (C.Name n mempty) Nothing
 
-    toCDDLGroup :: Named Group -> C.WithComments C.Rule
+    toCDDLGroup :: Named Group -> C.Rule
     toCDDLGroup (Named n (Group t0s) c) =
-      C.WithComments
-        ( C.Rule (C.Name n) Nothing C.AssignEq
-            . C.TOGGroup
-            . C.GEGroup Nothing
+      C.Rule
+        (C.Name n mempty)
+        Nothing
+        C.AssignEq
+        ( C.TOGGroup
+            . C.GroupEntry Nothing mempty
+            . C.GEGroup
             . C.Group
             . (NE.:| [])
-            $ fmap arrayEntryToCDDL t0s
+            . (`C.GrpChoice` mempty)
+            $ fmap
+              arrayEntryToCDDL
+              t0s
         )
-        (fmap C.comment c)
+        (foldMap C.Comment c)
 
     toGenericCall :: GRuleCall -> C.Type2
     toGenericCall (Named n gr _) =
       C.T2Name
-        (C.Name n)
+        (C.Name n mempty)
         (Just . C.GenericArg $ fmap toCDDLType1 (args gr))
 
-    toGenRuleDef :: GRuleDef -> C.WithComments C.Rule
+    toGenRuleDef :: GRuleDef -> C.Rule
     toGenRuleDef (Named n gr c) =
-      C.WithComments
-        ( C.Rule (C.Name n) (Just gps) C.AssignEq
-            . C.TOGType
+      C.Rule
+        (C.Name n mempty)
+        (Just gps)
+        C.AssignEq
+        ( C.TOGType
             . C.Type0
             $ toCDDLType1 <$> choiceToNE (body gr)
         )
-        (fmap C.comment c)
+        (foldMap C.Comment c)
       where
         gps =
-          C.GenericParam $ fmap (\(GRef t) -> C.Name t) (args gr)
+          C.GenericParam $ fmap (\(GRef t) -> C.Name t mempty) (args gr)

@@ -2,28 +2,42 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 -- | Hedgehog generators for CDDL
-module Test.Codec.CBOR.Cuddle.CDDL.Gen (
-  genCDDL,
-  genRule,
-  genName,
-  genValue,
-  --
-  genType0,
-  genGroupEntry,
-)
-where
+module Test.Codec.CBOR.Cuddle.CDDL.Gen () where
 
 import Codec.CBOR.Cuddle.CDDL
 import Codec.CBOR.Cuddle.CDDL.CtlOp
+import Codec.CBOR.Cuddle.Comments (Comment (..))
+import Data.ByteString (ByteString)
+import Data.ByteString qualified as BS
 import Data.List.NonEmpty qualified as NE
 import Data.Maybe (mapMaybe)
 import Data.Text qualified as T
 import Test.QuickCheck
 import Test.QuickCheck qualified as Gen
-import Prelude hiding (maybe)
 
-genCDDL :: Gen CDDL
-genCDDL = CDDL . fmap (\x -> TopLevelRule Nothing x Nothing) <$> nonEmpty genRule
+instance Arbitrary CDDL where
+  arbitrary = CDDL <$> arbitrary <*> arbitrary <*> arbitrary
+  shrink = genericShrink
+
+instance Arbitrary TopLevel where
+  arbitrary =
+    Gen.oneof
+      [ TopLevelComment <$> arbitrary
+      , TopLevelRule <$> arbitrary
+      ]
+  shrink = genericShrink
+
+instance Arbitrary T.Text where
+  arbitrary = T.pack <$> arbitrary
+  shrink = fmap T.pack . shrink . T.unpack
+
+instance Arbitrary ByteString where
+  arbitrary = BS.pack <$> arbitrary
+  shrink = fmap BS.pack . shrink . BS.unpack
+
+instance Arbitrary Comment where
+  arbitrary = Comment <$> arbitrary
+  shrink = genericShrink
 
 nameFstChars :: [Char]
 nameFstChars = ['a' .. 'z'] <> ['A' .. 'Z'] <> ['@', '_', '$']
@@ -34,19 +48,19 @@ nameMidChars = nameFstChars <> ['1' .. '9'] <> ['-', '.']
 nameEndChars :: [Char]
 nameEndChars = nameFstChars <> ['1' .. '9']
 
-genName :: Gen Name
-genName =
-  let veryShortListOf = resize 3 . listOf
-   in do
-        fstChar <- elements nameFstChars
-        midChar <- veryShortListOf . elements $ nameMidChars
-        lastChar <- elements nameEndChars
-        pure $ Name . T.pack $ fstChar : midChar <> [lastChar]
-
 instance Arbitrary Name where
-  arbitrary = genName
+  arbitrary =
+    let veryShortListOf = resize 3 . listOf
+     in do
+          fstChar <- elements nameFstChars
+          midChar <- veryShortListOf . elements $ nameMidChars
+          lastChar <- elements nameEndChars
+          pure $ Name (T.pack $ fstChar : midChar <> [lastChar]) mempty
 
-  shrink (Name (T.unpack -> xs)) = Name . T.pack <$> filter isValidName (shrink xs)
+  shrink (Name xs cmt) =
+    Name
+      <$> fmap T.pack (filter isValidName (shrink $ T.unpack xs))
+      <*> shrink cmt
     where
       isValidName [] = False
       isValidName (h : tl) = h `elem` nameFstChars && isValidNameTail tl
@@ -55,207 +69,169 @@ instance Arbitrary Name where
       isValidNameTail [x] = x `elem` nameEndChars
       isValidNameTail (h : tl) = h `elem` nameMidChars && isValidNameTail tl
 
-genAssign :: Gen Assign
-genAssign = Gen.elements [AssignEq, AssignExt]
-
 instance Arbitrary Assign where
-  arbitrary = genAssign
+  arbitrary = Gen.elements [AssignEq, AssignExt]
   shrink = genericShrink
-
-genGenericParams :: Gen GenericParam
-genGenericParams = GenericParam <$> nonEmpty genName
 
 instance Arbitrary GenericParam where
-  arbitrary = genGenericParams
+  arbitrary = GenericParam <$> nonEmpty arbitrary
   shrink (GenericParam neName) = GenericParam <$> shrinkNE neName
 
-genGenericArg :: Gen GenericArg
-genGenericArg = GenericArg <$> nonEmpty genType1
-
 instance Arbitrary GenericArg where
-  arbitrary = genGenericArg
+  arbitrary = GenericArg <$> nonEmpty arbitrary
   shrink (GenericArg neArg) = GenericArg <$> shrinkNE neArg
 
-genRule :: Gen Rule
-genRule =
-  Rule
-    <$> genName
-    <*> maybe genGenericParams
-    <*> genAssign
-    <*> genTypeOrGroup
-
 instance Arbitrary Rule where
-  arbitrary = genRule
+  arbitrary =
+    Rule
+      <$> arbitrary
+      <*> arbitrary
+      <*> arbitrary
+      <*> arbitrary
+      <*> arbitrary
   shrink = genericShrink
-
-genRangeBound :: Gen RangeBound
-genRangeBound = Gen.elements [ClOpen, Closed]
 
 instance Arbitrary RangeBound where
-  arbitrary = genRangeBound
+  arbitrary = Gen.elements [ClOpen, Closed]
   shrink = genericShrink
-
-genTyOp :: Gen TyOp
-genTyOp =
-  Gen.oneof
-    [ RangeOp <$> genRangeBound
-    , CtrlOp <$> genCtlOp
-    ]
 
 instance Arbitrary TyOp where
-  arbitrary = genTyOp
+  arbitrary =
+    Gen.oneof
+      [ RangeOp <$> arbitrary
+      , CtrlOp <$> arbitrary
+      ]
   shrink = genericShrink
-
-genTypeOrGroup :: Gen TypeOrGroup
-genTypeOrGroup =
-  Gen.oneof
-    [ TOGGroup <$> genGroupEntry
-    , TOGType <$> genType0
-    ]
 
 instance Arbitrary TypeOrGroup where
-  arbitrary = genTypeOrGroup
+  arbitrary =
+    Gen.oneof
+      [ TOGGroup <$> arbitrary
+      , TOGType <$> arbitrary
+      ]
   shrink = genericShrink
-
-genType0 :: Gen Type0
-genType0 = Type0 <$> nonEmpty genType1
 
 instance Arbitrary Type0 where
-  arbitrary = genType0
+  arbitrary = Type0 <$> nonEmpty arbitrary
   shrink (Type0 neType1) = Type0 <$> shrinkNE neType1
 
-genType1 :: Gen Type1
-genType1 = Type1 <$> genType2 <*> maybe ((,) <$> genTyOp <*> genType2)
-
 instance Arbitrary Type1 where
-  arbitrary = genType1
+  arbitrary = Type1 <$> arbitrary <*> arbitrary <*> arbitrary
   shrink = genericShrink
-
-genType2 :: Gen Type2
-genType2 =
-  recursive
-    Gen.oneof
-    [ T2Value <$> genValue
-    , T2Map <$> genGroup
-    , T2Array <$> genGroup
-    , T2Enum <$> genGroup
-    , T2DataItem
-        <$> elements [0 .. 7]
-        <*> maybe Gen.arbitrarySizedBoundedIntegral
-    , T2Name <$> genName <*> maybeRec genGenericArg
-    , T2Unwrapped <$> genName <*> maybeRec genGenericArg
-    , T2EnumRef <$> genName <*> maybeRec genGenericArg
-    , pure T2Any
-    ]
-    [ T2Group <$> genType0
-    , T2Tag <$> maybe arbitrary <*> genType0
-    ]
 
 instance Arbitrary Type2 where
-  arbitrary = genType2
+  arbitrary =
+    recursive
+      Gen.oneof
+      [ T2Value <$> arbitrary
+      , T2Map <$> arbitrary
+      , T2Array <$> arbitrary
+      , T2Enum <$> arbitrary
+      , T2DataItem
+          <$> elements [0 .. 7]
+          <*> genMaybe Gen.arbitrarySizedBoundedIntegral
+      , T2Name <$> arbitrary <*> maybeRec arbitrary
+      , T2Unwrapped <$> arbitrary <*> maybeRec arbitrary
+      , T2EnumRef <$> arbitrary <*> maybeRec arbitrary
+      , pure T2Any
+      ]
+      [ T2Group <$> arbitrary
+      , T2Tag <$> arbitrary <*> arbitrary
+      ]
   shrink = genericShrink
-
-genOccurrenceIndicator :: Gen OccurrenceIndicator
-genOccurrenceIndicator =
-  Gen.oneof
-    [ pure OIOptional
-    , pure OIZeroOrMore
-    , pure OIOneOrMore
-    , OIBounded
-        <$> maybe arbitrary
-        <*> maybe arbitrary
-    ]
 
 instance Arbitrary OccurrenceIndicator where
-  arbitrary = genOccurrenceIndicator
-  shrink = genericShrink
+  arbitrary =
+    Gen.oneof
+      [ pure OIOptional
+      , pure OIZeroOrMore
+      , pure OIOneOrMore
+      , OIBounded
+          <$> arbitrary
+          <*> arbitrary
+      ]
 
-genGroup :: Gen Group
-genGroup = Group <$> nonEmpty genGrpChoice
+  shrink = genericShrink
 
 instance Arbitrary Group where
-  arbitrary = genGroup
+  arbitrary = Group <$> nonEmpty arbitrary
   shrink (Group gr) = Group <$> shrinkNE gr
 
-genGrpChoice :: Gen GrpChoice
-genGrpChoice = listOf' (noComment <$> genGroupEntry)
+instance Arbitrary GrpChoice where
+  arbitrary = GrpChoice <$> listOf' arbitrary <*> pure mempty
+  shrink = genericShrink
 
-genGroupEntry :: Gen GroupEntry
-genGroupEntry =
-  recursive
-    Gen.oneof
-    [ GERef
-        <$> maybe genOccurrenceIndicator
-        <*> genName
-        <*> maybeRec genGenericArg
-    ]
-    [ GEType
-        <$> maybe genOccurrenceIndicator
-        <*> maybe genMemberKey
-        <*> genType0
-    , GEGroup <$> maybe genOccurrenceIndicator <*> genGroup
-    ]
+instance Arbitrary GroupEntryVariant where
+  arbitrary =
+    recursive
+      Gen.oneof
+      [ GERef
+          <$> arbitrary
+          <*> maybeRec arbitrary
+      ]
+      [ GEType
+          <$> arbitrary
+          <*> arbitrary
+      , GEGroup <$> arbitrary
+      ]
+  shrink = genericShrink
 
 instance Arbitrary GroupEntry where
-  arbitrary = genGroupEntry
+  arbitrary =
+    GroupEntry
+      <$> arbitrary
+      <*> pure mempty
+      <*> arbitrary
   shrink = genericShrink
-
-genMemberKey :: Gen MemberKey
-genMemberKey =
-  recursive
-    Gen.oneof
-    [ MKBareword <$> genName
-    , MKValue <$> genValue
-    ]
-    [ MKType <$> genType1
-    ]
 
 instance Arbitrary MemberKey where
-  arbitrary = genMemberKey
-  shrink = genericShrink
+  arbitrary =
+    recursive
+      Gen.oneof
+      [ MKBareword <$> arbitrary
+      , MKValue <$> arbitrary
+      ]
+      [ MKType <$> arbitrary
+      ]
 
-genValue :: Gen Value
-genValue =
-  Gen.oneof
-    [ VUInt <$> arbitrary
-    , VNInt <$> arbitrary
-    , VFloat16 <$> arbitrary
-    , VFloat32 <$> arbitrary
-    , VFloat64 <$> arbitrary
-    , VText . T.pack <$> listOf (elements $ ['a' .. 'z'] <> ['0' .. '9'] <> [' '])
-    -- VBytes <$> Gen.bytes (Range.linear 0 1100)
-    ]
+  shrink = genericShrink
 
 instance Arbitrary Value where
-  arbitrary = genValue
-
-genCtlOp :: Gen CtlOp
-genCtlOp =
-  Gen.elements
-    [ Size
-    , Bits
-    , Regexp
-    , Cbor
-    , Cborseq
-    , Within
-    , And
-    , Lt
-    , Le
-    , Gt
-    , Ge
-    , Eq
-    , Ne
-    , Default
-    ]
-
-instance Arbitrary CtlOp where
-  arbitrary = genCtlOp
+  arbitrary = Value <$> arbitrary <*> arbitrary
   shrink = genericShrink
 
-instance Arbitrary a => Arbitrary (WithComments a) where
-  arbitrary = noComment <$> arbitrary
-  shrink (WithComments _ Nothing) = []
-  shrink (WithComments x (Just _)) = noComment <$> shrink x
+instance Arbitrary ValueVariant where
+  arbitrary =
+    Gen.oneof
+      [ VUInt <$> arbitrary
+      , VNInt <$> arbitrary
+      , VFloat16 <$> arbitrary
+      , VFloat32 <$> arbitrary
+      , VFloat64 <$> arbitrary
+      , VText . T.pack <$> listOf (elements $ ['a' .. 'z'] <> ['0' .. '9'] <> [' '])
+      -- VBytes <$> Gen.bytes (Range.linear 0 1100)
+      ]
+  shrink = genericShrink
+
+instance Arbitrary CtlOp where
+  arbitrary =
+    Gen.elements
+      [ Size
+      , Bits
+      , Regexp
+      , Cbor
+      , Cborseq
+      , Within
+      , And
+      , Lt
+      , Le
+      , Gt
+      , Ge
+      , Eq
+      , Ne
+      , Default
+      ]
+  shrink = genericShrink
 
 --------------------------------------------------------------------------------
 -- Utility
@@ -271,8 +247,8 @@ nonEmpty f = do
   (sing NE.:|) <$> vectorOf k (scale (scaleBy k) f)
 
 -- | Generates 'Nothing' some of the time
-maybe :: Gen a -> Gen (Maybe a)
-maybe f = Gen.oneof [Just <$> f, pure Nothing]
+genMaybe :: Gen a -> Gen (Maybe a)
+genMaybe f = Gen.oneof [Just <$> f, pure Nothing]
 
 -- | Variant on maybe which shrinks the size whenever it selects the 'Just'
 -- option. When the size gets to five or less, the Just constructor is no longer

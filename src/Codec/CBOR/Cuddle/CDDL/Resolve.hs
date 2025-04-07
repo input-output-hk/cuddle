@@ -54,7 +54,6 @@ import Codec.CBOR.Cuddle.CDDL.Postlude (PTerm (..))
 import Control.Monad.Except (ExceptT (..), runExceptT)
 import Control.Monad.Reader (Reader, ReaderT (..), runReader)
 import Control.Monad.State.Strict (StateT (..))
-import Data.Foldable (foldl')
 import Data.Functor.Identity (Identity (..))
 import Data.Generics.Product
 import Data.Generics.Sum
@@ -64,6 +63,7 @@ import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import GHC.Generics (Generic)
 import Optics.Core
+import Data.List (foldl')
 
 --------------------------------------------------------------------------------
 -- 1. Rule extensions
@@ -82,13 +82,14 @@ parameters (Unparametrised _) = mempty
 parameters (Parametrised _ ps) = ps
 
 asMap :: CDDL -> CDDLMap
-asMap (CDDL rules) = foldl' go Map.empty rules
+asMap cddl = foldl' go Map.empty rules
   where
+    rules = cddlTopLevel cddl
     go x (TopLevelComment _) = x
-    go x (TopLevelRule _ r _) = assignOrExtend x r
+    go x (TopLevelRule r) = assignOrExtend x r
 
     assignOrExtend :: CDDLMap -> Rule -> CDDLMap
-    assignOrExtend m (Rule n gps assign tog) = case assign of
+    assignOrExtend m (Rule n gps assign tog _) = case assign of
       -- Equals assignment
       AssignEq -> Map.insert n (toParametrised tog gps) m
       AssignExt -> Map.alter (extend tog gps) n m
@@ -154,8 +155,8 @@ buildRefCTree rules = CTreeRoot $ fmap toCTreeRule rules
     toCTreeT0 (Type0 xs) = It . CTree.Choice $ toCTreeT1 <$> xs
 
     toCTreeT1 :: Type1 -> CTree.Node OrRef
-    toCTreeT1 (Type1 t2 Nothing) = toCTreeT2 t2
-    toCTreeT1 (Type1 t2 (Just (op, t2'))) = case op of
+    toCTreeT1 (Type1 t2 Nothing _) = toCTreeT2 t2
+    toCTreeT1 (Type1 t2 (Just (op, t2')) _) = case op of
       RangeOp bound ->
         It $
           CTree.Range
@@ -199,9 +200,9 @@ buildRefCTree rules = CTreeRoot $ fmap toCTreeRule rules
     toCTreeT2 T2Any = It $ CTree.Postlude PTAny
 
     toCTreeDataItem 20 =
-      It . CTree.Literal $ VBool False
+      It . CTree.Literal $ Value (VBool False) mempty
     toCTreeDataItem 21 =
-      It . CTree.Literal $ VBool True
+      It . CTree.Literal $ Value (VBool True) mempty
     toCTreeDataItem 25 =
       It $ CTree.Postlude PTHalf
     toCTreeDataItem 26 =
@@ -213,31 +214,31 @@ buildRefCTree rules = CTreeRoot $ fmap toCTreeRule rules
     toCTreeDataItem _ =
       It $ CTree.Postlude PTAny
 
-    toCTreeGroupEntryNC :: WithComments GroupEntry -> CTree.Node OrRef
-    toCTreeGroupEntryNC = toCTreeGroupEntry . stripComment
+    toCTreeGroupEntryNC :: GroupEntry -> CTree.Node OrRef
+    toCTreeGroupEntryNC = toCTreeGroupEntry
 
     toCTreeGroupEntry :: GroupEntry -> CTree.Node OrRef
-    toCTreeGroupEntry (GEType (Just occi) mmkey t0) =
+    toCTreeGroupEntry (GroupEntry (Just occi) _ (GEType mmkey t0)) =
       It $
         CTree.Occur
           { CTree.item = toKVPair mmkey t0
           , CTree.occurs = occi
           }
-    toCTreeGroupEntry (GEType Nothing mmkey t0) = toKVPair mmkey t0
-    toCTreeGroupEntry (GERef (Just occi) n margs) =
+    toCTreeGroupEntry (GroupEntry Nothing _ (GEType mmkey t0)) = toKVPair mmkey t0
+    toCTreeGroupEntry (GroupEntry (Just occi) _ (GERef n margs)) =
       It $
         CTree.Occur
           { CTree.item = Ref n (fromGenArgs margs)
           , CTree.occurs = occi
           }
-    toCTreeGroupEntry (GERef Nothing n margs) = Ref n (fromGenArgs margs)
-    toCTreeGroupEntry (GEGroup (Just occi) g) =
+    toCTreeGroupEntry (GroupEntry Nothing _ (GERef n margs)) = Ref n (fromGenArgs margs)
+    toCTreeGroupEntry (GroupEntry (Just occi) _ (GEGroup g)) =
       It $
         CTree.Occur
           { CTree.item = groupToGroup g
           , CTree.occurs = occi
           }
-    toCTreeGroupEntry (GEGroup Nothing g) = groupToGroup g
+    toCTreeGroupEntry (GroupEntry Nothing _ (GEGroup g)) = groupToGroup g
 
     fromGenArgs :: Maybe GenericArg -> [CTree.Node OrRef]
     fromGenArgs = maybe [] (\(GenericArg xs) -> NE.toList $ fmap toCTreeT1 xs)
@@ -246,18 +247,20 @@ buildRefCTree rules = CTreeRoot $ fmap toCTreeRule rules
     -- choice options
     toCTreeEnum :: Group -> CTree.Node OrRef
     toCTreeEnum (Group (a NE.:| [])) =
-      It . CTree.Enum . It . CTree.Group $ fmap toCTreeGroupEntryNC a
+      It . CTree.Enum . It . CTree.Group $ toCTreeGroupEntryNC <$> gcGroupEntries a
     toCTreeEnum (Group xs) =
       It . CTree.Choice $
-        fmap (It . CTree.Enum . It . CTree.Group . fmap toCTreeGroupEntryNC) xs
+        It . CTree.Enum . It . CTree.Group . fmap toCTreeGroupEntryNC <$> groupEntries
+      where
+        groupEntries = fmap gcGroupEntries xs
 
     -- Embed a group in another group, again floating out the choice options
     groupToGroup :: Group -> CTree.Node OrRef
     groupToGroup (Group (a NE.:| [])) =
-      It . CTree.Group $ fmap toCTreeGroupEntryNC a
+      It . CTree.Group $ fmap toCTreeGroupEntryNC (gcGroupEntries a)
     groupToGroup (Group xs) =
       It . CTree.Choice $
-        fmap (It . CTree.Group . fmap toCTreeGroupEntryNC) xs
+        fmap (It . CTree.Group . fmap toCTreeGroupEntryNC) (gcGroupEntries <$> xs)
 
     toKVPair :: Maybe MemberKey -> Type0 -> CTree.Node OrRef
     toKVPair Nothing t0 = toCTreeT0 t0
@@ -272,24 +275,24 @@ buildRefCTree rules = CTreeRoot $ fmap toCTreeRule rules
 
     -- Interpret a group as a map. Note that we float out the choice options
     toCTreeMap :: Group -> CTree.Node OrRef
-    toCTreeMap (Group (a NE.:| [])) = It . CTree.Map $ fmap toCTreeGroupEntryNC a
+    toCTreeMap (Group (a NE.:| [])) = It . CTree.Map $ fmap toCTreeGroupEntryNC (gcGroupEntries a)
     toCTreeMap (Group xs) =
       It
         . CTree.Choice
-        $ fmap (It . CTree.Map . fmap toCTreeGroupEntryNC) xs
+        $ fmap (It . CTree.Map . fmap toCTreeGroupEntryNC) (gcGroupEntries <$> xs)
 
     -- Interpret a group as an array. Note that we float out the choice
     -- options
     toCTreeArray :: Group -> CTree.Node OrRef
     toCTreeArray (Group (a NE.:| [])) =
-      It . CTree.Array $ fmap toCTreeGroupEntryNC a
+      It . CTree.Array $ fmap toCTreeGroupEntryNC (gcGroupEntries a)
     toCTreeArray (Group xs) =
       It . CTree.Choice $
-        fmap (It . CTree.Array . fmap toCTreeGroupEntryNC) xs
+        fmap (It . CTree.Array . fmap toCTreeGroupEntryNC) (gcGroupEntries <$> xs)
 
     toCTreeMemberKey :: MemberKey -> CTree.Node OrRef
     toCTreeMemberKey (MKValue v) = It $ CTree.Literal v
-    toCTreeMemberKey (MKBareword (Name n)) = It $ CTree.Literal (VText n)
+    toCTreeMemberKey (MKBareword (Name n _)) = It $ CTree.Literal (Value (VText n) mempty)
     toCTreeMemberKey (MKType t1) = toCTreeT1 t1
 
 --------------------------------------------------------------------------------
@@ -305,20 +308,20 @@ data NameResolutionFailure
 postludeBinding :: Map.Map Name PTerm
 postludeBinding =
   Map.fromList
-    [ (Name "bool", PTBool)
-    , (Name "uint", PTUInt)
-    , (Name "nint", PTNInt)
-    , (Name "int", PTInt)
-    , (Name "half", PTHalf)
-    , (Name "float", PTFloat)
-    , (Name "double", PTDouble)
-    , (Name "bytes", PTBytes)
-    , (Name "bstr", PTBytes)
-    , (Name "text", PTText)
-    , (Name "tstr", PTText)
-    , (Name "any", PTAny)
-    , (Name "nil", PTNil)
-    , (Name "null", PTNil)
+    [ (Name "bool" mempty, PTBool)
+    , (Name "uint" mempty, PTUInt)
+    , (Name "nint" mempty, PTNInt)
+    , (Name "int" mempty, PTInt)
+    , (Name "half" mempty, PTHalf)
+    , (Name "float" mempty, PTFloat)
+    , (Name "double" mempty, PTDouble)
+    , (Name "bytes" mempty, PTBytes)
+    , (Name "bstr" mempty, PTBytes)
+    , (Name "text" mempty, PTText)
+    , (Name "tstr" mempty, PTText)
+    , (Name "any" mempty, PTAny)
+    , (Name "nil" mempty, PTNil)
+    , (Name "null" mempty, PTNil)
     ]
 
 data BindingEnv poly f = BindingEnv
@@ -477,10 +480,10 @@ throwNR = throw @"nameResolution"
 
 -- | Synthesize a monomorphic rule definition, returning the name
 synthMono :: Name -> [CTree.Node DistRef] -> MonoM Name
-synthMono n@(Name origName) args =
+synthMono n@(Name origName _) args =
   let fresh =
         -- % is not a valid CBOR name, so this should avoid conflict
-        Name (origName <> "%" <> T.pack (show $ hash args))
+        Name (origName <> "%" <> T.pack (show $ hash args)) mempty
    in do
         -- Lookup the original name in the global bindings
         globalBinds <- ask @"global"

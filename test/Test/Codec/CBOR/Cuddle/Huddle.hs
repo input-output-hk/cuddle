@@ -10,6 +10,7 @@ import Codec.CBOR.Cuddle.CDDL (CDDL, sortCDDL)
 import Codec.CBOR.Cuddle.Huddle
 import Codec.CBOR.Cuddle.Parser
 import Data.Text qualified as T
+import Test.Codec.CBOR.Cuddle.CDDL.Pretty qualified as Pretty
 import Test.Hspec
 import Test.Hspec.Megaparsec
 import Text.Megaparsec
@@ -24,6 +25,7 @@ huddleSpec = describe "huddle" $ do
   nestedSpec
   genericSpec
   constraintSpec
+  Pretty.spec
 
 basicAssign :: Spec
 basicAssign = describe "basic assignment" $ do
@@ -90,11 +92,11 @@ grpSpec :: Spec
 grpSpec = describe "Groups" $ do
   it "Can handle a choice in a group entry" $
     let g1 = "g1" =:~ grp [a (VUInt / VBytes), a VUInt]
-     in toSortedCDDL (collectFrom ["a1" =:= arr [a g1]])
+     in toSortedCDDL (collectFrom [HIRule $ "a1" =:= arr [a g1]])
           `shouldMatchParseCDDL` "a1 = [g1]\n g1 = ( uint / bytes, uint )"
   it "Can handle keys in a group entry" $
     let g1 = "g1" =:~ grp ["bytes" ==> VBytes]
-     in toSortedCDDL (collectFrom ["a1" =:= arr [a g1]])
+     in toSortedCDDL (collectFrom [HIRule $ "a1" =:= arr [a g1]])
           `shouldMatchParseCDDL` "a1 = [g1]\n g1 = (bytes : bytes)"
 
 -- it "Can handle a group in a map" $
@@ -123,22 +125,22 @@ genericSpec =
         dict = binding2 $ \k v -> "dict" =:= mp [0 <+ asKey k ==> v]
      in do
           it "Should bind a single parameter" $
-            toSortedCDDL (collectFrom ["intset" =:= set VUInt])
+            toSortedCDDL (collectFrom [HIRule $ "intset" =:= set VUInt])
               `shouldMatchParseCDDL` "intset = set<uint>\n set<a0> = [* a0]"
           it "Should bind two parameters" $
-            toSortedCDDL (collectFrom ["mymap" =:= dict VUInt VText])
+            toSortedCDDL (collectFrom [HIRule $ "mymap" =:= dict VUInt VText])
               `shouldMatchParseCDDL` "dict<a0, b0> = {* a0 => b0}\n mymap = dict<uint, text>"
 
 constraintSpec :: Spec
 constraintSpec =
   describe "Constraints" $ do
     it "Size can take a Word" $
-      toSortedCDDL (collectFrom ["sz" =:= VUInt `sized` (2 :: Word)])
+      toSortedCDDL (collectFrom [HIRule $ "sz" =:= VUInt `sized` (2 :: Word)])
         `shouldMatchParseCDDL` "sz = uint .size 2"
 
     it "Range bound can take a reference" $
       let b = "b" =:= (16 :: Integer)
-       in toSortedCDDL (collectFrom ["b" =:= (16 :: Integer), "c" =:= int 0 ... b])
+       in toSortedCDDL (collectFrom [HIRule $ "b" =:= (16 :: Integer), HIRule $ "c" =:= int 0 ... b])
             `shouldMatchParseCDDL` "b = 16\n c = 0 .. b"
 
 --------------------------------------------------------------------------------

@@ -21,6 +21,7 @@ import Codec.CBOR.Cuddle.CDDL (
   Name (..),
   OccurrenceIndicator (..),
   Value (..),
+  ValueVariant (..),
  )
 import Codec.CBOR.Cuddle.CDDL.CTree (CTree, CTreeRoot' (..))
 import Codec.CBOR.Cuddle.CDDL.CTree qualified as CTree
@@ -38,7 +39,6 @@ import Data.ByteString (ByteString)
 import Data.ByteString.Base16 qualified as Base16
 import Data.Functor ((<&>))
 import Data.Functor.Identity (Identity (runIdentity))
-import Data.List (foldl')
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
@@ -155,7 +155,7 @@ genDepthBiasedRM bounds = do
 genDepthBiasedBool :: forall g. RandomGen g => M g Bool
 genDepthBiasedBool = do
   d <- get @"depth"
-  foldl' (&&) True <$> replicateM d genRandomM
+  and <$> replicateM d genRandomM
 
 genRandomM :: forall g a. (Random a, RandomGen g) => M g a
 genRandomM = asksM @"fakeSeed" randomM
@@ -304,15 +304,15 @@ genForCTree (CTree.Control op target controller) = do
   tt <- resolveIfRef target
   ct <- resolveIfRef controller
   case (op, ct) of
-    (CtlOp.Le, CTree.Literal (VUInt n)) -> case tt of
+    (CtlOp.Le, CTree.Literal (Value (VUInt n) _)) -> case tt of
       CTree.Postlude PTUInt -> S . TInteger <$> genUniformRM (0, fromIntegral n)
       _ -> error "Cannot apply le operator to target"
     (CtlOp.Le, _) -> error $ "Invalid controller for .le operator: " <> show controller
-    (CtlOp.Lt, CTree.Literal (VUInt n)) -> case tt of
+    (CtlOp.Lt, CTree.Literal (Value (VUInt n) _)) -> case tt of
       CTree.Postlude PTUInt -> S . TInteger <$> genUniformRM (0, fromIntegral n - 1)
       _ -> error "Cannot apply lt operator to target"
     (CtlOp.Lt, _) -> error $ "Invalid controller for .lt operator: " <> show controller
-    (CtlOp.Size, CTree.Literal (VUInt n)) -> case tt of
+    (CtlOp.Size, CTree.Literal (Value (VUInt n) _)) -> case tt of
       CTree.Postlude PTText -> S . TString <$> genText (fromIntegral n)
       CTree.Postlude PTBytes -> S . TBytes <$> genBytes (fromIntegral n)
       CTree.Postlude PTUInt -> S . TInteger <$> genUniformRM (0, 2 ^ n - 1)
@@ -321,7 +321,7 @@ genForCTree (CTree.Control op target controller) = do
       f <- resolveIfRef from
       t <- resolveIfRef to
       case (f, t) of
-        (CTree.Literal (VUInt f1), CTree.Literal (VUInt t1)) -> case tt of
+        (CTree.Literal (Value (VUInt f1) _), CTree.Literal (Value (VUInt t1) _)) -> case tt of
           CTree.Postlude PTText ->
             genUniformRM (fromIntegral f1, fromIntegral t1)
               >>= (fmap (S . TString) . genText)
@@ -418,17 +418,20 @@ applyOccurenceIndicator (OIBounded mlb mub) oldGen =
     >>= \i -> G <$> replicateM (fromIntegral i) oldGen
 
 genValue :: RandomGen g => Value -> M g Term
-genValue (VUInt i) = pure . TInt $ fromIntegral i
-genValue (VNInt i) = pure . TInt $ fromIntegral (-i)
-genValue (VBignum i) = pure $ TInteger i
-genValue (VFloat16 i) = pure . THalf $ i
-genValue (VFloat32 i) = pure . TFloat $ i
-genValue (VFloat64 i) = pure . TDouble $ i
-genValue (VText t) = pure $ TString t
-genValue (VBytes b) = case Base16.decode b of
+genValue (Value x _) = genValueVariant x
+
+genValueVariant :: RandomGen g => ValueVariant -> M g Term
+genValueVariant (VUInt i) = pure . TInt $ fromIntegral i
+genValueVariant (VNInt i) = pure . TInt $ fromIntegral (-i)
+genValueVariant (VBignum i) = pure $ TInteger i
+genValueVariant (VFloat16 i) = pure . THalf $ i
+genValueVariant (VFloat32 i) = pure . TFloat $ i
+genValueVariant (VFloat64 i) = pure . TDouble $ i
+genValueVariant (VText t) = pure $ TString t
+genValueVariant (VBytes b) = case Base16.decode b of
   Right bHex -> pure $ TBytes bHex
   Left err -> error $ "Unable to parse hex encoded bytestring: " <> err
-genValue (VBool b) = pure $ TBool b
+genValueVariant (VBool b) = pure $ TBool b
 
 --------------------------------------------------------------------------------
 -- Generator functions
