@@ -4,10 +4,14 @@
 -- | This module defined the data structure of CDDL as specified in
 --   https://datatracker.ietf.org/doc/rfc8610/
 module Codec.CBOR.Cuddle.CDDL (
+  HasComment (..),
+  hasComment,
+  (//-),
   CDDL (..),
+  cddlTopLevel,
+  cddlRules,
   TopLevel (..),
   Name (..),
-  WithComments (..),
   Comment (..),
   Rule (..),
   TypeOrGroup (..),
@@ -22,51 +26,60 @@ module Codec.CBOR.Cuddle.CDDL (
   OccurrenceIndicator (..),
   Group (..),
   GroupEntry (..),
+  GroupEntryVariant (..),
   MemberKey (..),
   Value (..),
   GrpChoice,
-  sortCDDL,
   comment,
-  stripComment,
-  noComment,
   unwrap,
-  groupEntryOccurrenceIndicator,
+  compareRuleName,
 ) where
 
 import Codec.CBOR.Cuddle.CDDL.CtlOp (CtlOp)
 import Data.ByteString qualified as B
+import Data.Function (on, (&))
 import Data.Hashable (Hashable)
-import Data.List.NonEmpty (NonEmpty)
+import Data.List.NonEmpty (NonEmpty (..), prependList)
 import Data.List.NonEmpty qualified as NE
 import Data.Text qualified as T
 import Data.TreeDiff (ToExpr)
 import Data.Word (Word64, Word8)
 import GHC.Generics (Generic)
+import Optics.Getter (view)
+import Optics.Lens (Lens', lens)
+import Optics.Core ((%~))
 
-newtype CDDL = CDDL (NE.NonEmpty TopLevel)
+class HasComment a where
+  commentL :: Lens' a Comment
+
+hasComment :: HasComment a => a -> Bool
+hasComment = (/= mempty) . view commentL
+
+(//-) :: HasComment a => a -> Comment -> a
+x //- cmt = x & commentL %~ (<> cmt)
+
+data CDDL = CDDL [Comment] Rule [TopLevel]
   deriving (Eq, Generic, Show)
 
+cddlTopLevel :: CDDL -> NonEmpty TopLevel
+cddlTopLevel (CDDL cmts cHead cTail) =
+  prependList (TopLevelComment <$> cmts) $ TopLevelRule cHead :| cTail
+
+cddlRules :: CDDL -> NonEmpty Rule
+cddlRules (CDDL _ x tls) = x :| concatMap getRule tls
+  where
+    getRule (TopLevelRule r) = [r]
+    getRule _ = mempty
+
+instance Semigroup CDDL where
+  CDDL aComments aHead aTail <> CDDL bComments bHead bTail =
+    CDDL aComments aHead $
+      aTail <> fmap TopLevelComment bComments <> (TopLevelRule bHead : bTail)
+
 data TopLevel
-  = TopLevelRule (Maybe Comment) Rule (Maybe Comment)
+  = TopLevelRule Rule
   | TopLevelComment Comment
-  deriving (Eq, Ord, Generic, Show)
-
--- | Sort the CDDL Rules on the basis of their names
-sortCDDL :: CDDL -> CDDL
-sortCDDL (CDDL xs) = CDDL $ NE.sort xs
-
-data WithComments a = WithComments a (Maybe Comment)
-  deriving (Eq, Show, Generic)
-  deriving anyclass (ToExpr)
-
-instance Ord a => Ord (WithComments a) where
-  compare (WithComments a1 _) (WithComments a2 _) = compare a1 a2
-
-stripComment :: WithComments a -> a
-stripComment (WithComments a _) = a
-
-noComment :: a -> WithComments a
-noComment a = WithComments a Nothing
+  deriving (Eq, Generic, Show)
 
 -- |
 --  A name can consist of any of the characters from the set {"A" to
@@ -163,12 +176,18 @@ newtype GenericArg = GenericArg (NE.NonEmpty Type1)
 --   clear immediately either whether "b" stands for a group or a type --
 --   this semantic processing may need to span several levels of rule
 --   definitions before a determination can be made.)
-data Rule = Rule Name (Maybe GenericParam) Assign TypeOrGroup
+data Rule = Rule
+  { ruleName :: Name
+  , ruleGenParam :: Maybe GenericParam
+  , ruleAssign :: Assign
+  , ruleTerm :: TypeOrGroup
+  , ruleComment :: Comment
+  }
   deriving (Eq, Generic, Show)
   deriving anyclass (ToExpr)
 
-instance Ord Rule where
-  compare (Rule n1 _ _ _) (Rule n2 _ _ _) = compare n1 n2
+compareRuleName :: Rule -> Rule -> Ordering
+compareRuleName = compare `on` ruleName
 
 -- |
 --   A range operator can be used to join two type expressions that stand
@@ -330,7 +349,7 @@ newtype Group = Group (NE.NonEmpty GrpChoice)
   deriving newtype (Semigroup)
   deriving anyclass (ToExpr)
 
-type GrpChoice = [WithComments GroupEntry]
+type GrpChoice = [GroupEntry]
 
 -- |
 --  A group entry can be given by a value type, which needs to be matched
@@ -339,17 +358,21 @@ type GrpChoice = [WithComments GroupEntry]
 --  the memberkey is given.  If the memberkey is not given, the entry can
 --  only be used for matching arrays, not for maps.  (See below for how
 --  that is modified by the occurrence indicator.)
-data GroupEntry
-  = GEType (Maybe OccurrenceIndicator) (Maybe MemberKey) Type0
-  | GERef (Maybe OccurrenceIndicator) Name (Maybe GenericArg)
-  | GEGroup (Maybe OccurrenceIndicator) Group
-  deriving (Eq, Generic, Show)
-  deriving anyclass (ToExpr)
+data GroupEntry = GroupEntry
+  { geOccurrenceIndicator :: Maybe OccurrenceIndicator
+  , geComment :: Comment
+  , geVariant :: GroupEntryVariant
+  }
+  deriving (Eq, Show, Generic, ToExpr)
 
-groupEntryOccurrenceIndicator :: GroupEntry -> Maybe OccurrenceIndicator
-groupEntryOccurrenceIndicator (GEType oi _ _) = oi
-groupEntryOccurrenceIndicator (GERef oi _ _) = oi
-groupEntryOccurrenceIndicator (GEGroup oi _) = oi
+data GroupEntryVariant
+  = GEType (Maybe MemberKey) Type0
+  | GERef Name (Maybe GenericArg)
+  | GEGroup Group
+  deriving (Eq, Show, Generic, ToExpr)
+
+instance HasComment GroupEntry where
+  commentL = lens geComment (\x y -> x {geComment = y})
 
 -- |
 --  Key types can be given by a type expression, a bareword (which stands
@@ -381,10 +404,10 @@ data Value
 
 instance Hashable Value
 
-newtype Comment = Comment {unComment :: NonEmpty T.Text}
+newtype Comment = Comment {unComment :: [T.Text]}
   deriving (Eq, Ord, Generic, Show)
-  deriving newtype (Semigroup)
+  deriving newtype (Semigroup, Monoid)
   deriving anyclass (ToExpr)
 
 comment :: T.Text -> Comment
-comment t = Comment $ t NE.:| []
+comment t = Comment [t]

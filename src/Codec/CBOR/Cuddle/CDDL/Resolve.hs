@@ -82,13 +82,14 @@ parameters (Unparametrised _) = mempty
 parameters (Parametrised _ ps) = ps
 
 asMap :: CDDL -> CDDLMap
-asMap (CDDL rules) = foldl' go Map.empty rules
+asMap cddl = foldl' go Map.empty rules
   where
+    rules = cddlTopLevel cddl
     go x (TopLevelComment _) = x
-    go x (TopLevelRule _ r _) = assignOrExtend x r
+    go x (TopLevelRule r) = assignOrExtend x r
 
     assignOrExtend :: CDDLMap -> Rule -> CDDLMap
-    assignOrExtend m (Rule n gps assign tog) = case assign of
+    assignOrExtend m (Rule n gps assign tog _) = case assign of
       -- Equals assignment
       AssignEq -> Map.insert n (toParametrised tog gps) m
       AssignExt -> Map.alter (extend tog gps) n m
@@ -213,31 +214,31 @@ buildRefCTree rules = CTreeRoot $ fmap toCTreeRule rules
     toCTreeDataItem _ =
       It $ CTree.Postlude PTAny
 
-    toCTreeGroupEntryNC :: WithComments GroupEntry -> CTree.Node OrRef
-    toCTreeGroupEntryNC = toCTreeGroupEntry . stripComment
+    toCTreeGroupEntryNC :: GroupEntry -> CTree.Node OrRef
+    toCTreeGroupEntryNC = toCTreeGroupEntry
 
     toCTreeGroupEntry :: GroupEntry -> CTree.Node OrRef
-    toCTreeGroupEntry (GEType (Just occi) mmkey t0) =
+    toCTreeGroupEntry (GroupEntry (Just occi) _ (GEType mmkey t0)) =
       It $
         CTree.Occur
           { CTree.item = toKVPair mmkey t0
           , CTree.occurs = occi
           }
-    toCTreeGroupEntry (GEType Nothing mmkey t0) = toKVPair mmkey t0
-    toCTreeGroupEntry (GERef (Just occi) n margs) =
+    toCTreeGroupEntry (GroupEntry Nothing _ (GEType mmkey t0)) = toKVPair mmkey t0
+    toCTreeGroupEntry (GroupEntry (Just occi) _ (GERef n margs)) =
       It $
         CTree.Occur
           { CTree.item = Ref n (fromGenArgs margs)
           , CTree.occurs = occi
           }
-    toCTreeGroupEntry (GERef Nothing n margs) = Ref n (fromGenArgs margs)
-    toCTreeGroupEntry (GEGroup (Just occi) g) =
+    toCTreeGroupEntry (GroupEntry Nothing _ (GERef n margs)) = Ref n (fromGenArgs margs)
+    toCTreeGroupEntry (GroupEntry (Just occi) _ (GEGroup g)) =
       It $
         CTree.Occur
           { CTree.item = groupToGroup g
           , CTree.occurs = occi
           }
-    toCTreeGroupEntry (GEGroup Nothing g) = groupToGroup g
+    toCTreeGroupEntry (GroupEntry Nothing _ (GEGroup g)) = groupToGroup g
 
     fromGenArgs :: Maybe GenericArg -> [CTree.Node OrRef]
     fromGenArgs = maybe [] (\(GenericArg xs) -> NE.toList $ fmap toCTreeT1 xs)

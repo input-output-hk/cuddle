@@ -10,34 +10,23 @@ import Codec.CBOR.Cuddle.CDDL.CtlOp (CtlOp)
 import Data.ByteString.Char8 qualified as BS
 import Data.Foldable (Foldable (..))
 import Data.List.NonEmpty qualified as NE
-import Data.Maybe (isJust)
 import Data.String (fromString)
 import Data.Text qualified as T
 import Prettyprinter
 import Prettyprinter.Render.Text (renderStrict)
 
 instance Pretty CDDL where
-  pretty (CDDL (NE.toList -> xs)) = vsep $ fmap pretty xs
+  pretty = vsep . fmap pretty . NE.toList . cddlTopLevel
 
 instance Pretty TopLevel where
   pretty (TopLevelComment cmt) = pretty cmt
-  pretty (TopLevelRule pre x post) = pretty pre <> pretty x <> post' <> hardline
-    where
-      post' =
-        case post of
-          Nothing -> mempty
-          Just cmt -> hardline <> pretty cmt
+  pretty (TopLevelRule x) = pretty x <> hardline
 
 deriving newtype instance Pretty Name
 
 data CommentRender
   = PreComment
   | PostComment
-
-prettyWithComments :: Pretty a => CommentRender -> WithComments a -> Doc ann
-prettyWithComments _ (WithComments a Nothing) = pretty a
-prettyWithComments PostComment (WithComments a (Just cmt)) = pretty a <> softline <> pretty cmt
-prettyWithComments PreComment (WithComments a (Just cmt)) = align $ pretty cmt <> pretty a
 
 prettyCommentNoBreak :: Comment -> Doc ann
 prettyCommentNoBreak = align . vsep . toList . fmap ((";" <>) . pretty) . unComment
@@ -49,7 +38,7 @@ type0Def :: Type0 -> Doc ann
 type0Def t = nest 2 $ line' <> pretty t
 
 instance Pretty Rule where
-  pretty (Rule n mgen assign tog) =
+  pretty (Rule n mgen assign tog _) =
     group $
       pretty n <> pretty mgen <+> case tog of
         TOGType t -> ppAssignT <+> type0Def t
@@ -141,12 +130,12 @@ columnarGroupChoice [] = mempty
 columnarGroupChoice groupEntries@(x : xs) =
   groupIfNoComments (columnar x : fmap (\a -> "," <+> columnar a) xs)
   where
-    occurrenceIndicatorLength (WithComments ge _) =
-      renderedLen . pretty $ groupEntryOccurrenceIndicator ge
+    occurrenceIndicatorLength ge =
+      renderedLen . pretty $ geOccurrenceIndicator ge
 
     longestOccurrenceIndicator = maximum $ occurrenceIndicatorLength <$> groupEntries
 
-    memberKeyLength (WithComments (GEType _ (Just mk) _) _) = renderedLen $ pretty mk
+    memberKeyLength (GroupEntry _ _ (GEType (Just mk) _)) = renderedLen $ pretty mk
     memberKeyLength _ = 0
 
     longestMemberKey = maximum $ memberKeyLength <$> groupEntries
@@ -157,27 +146,30 @@ columnarGroupChoice groupEntries@(x : xs) =
 
     memberKeyDoc mmk = fillRight longestMemberKey (pretty mmk) <> fillLeft longestKeySep (memberKeySep mmk)
 
-    memberKeySepLen (WithComments (GEType _ mmk _) _) = renderedLen $ maybe mempty memberKeySep mmk
+    memberKeySepLen (GroupEntry _ _ (GEType mmk _)) = renderedLen $ maybe mempty memberKeySep mmk
     memberKeySepLen _ = 0
 
     longestKeySep = maximum $ memberKeySepLen <$> groupEntries
 
     longestLineColumnar =
-      maximum $ renderedLen . columnar' . stripComment <$> groupEntries
+      maximum $ renderedLen . columnar' <$> groupEntries
 
-    columnar (WithComments ge Nothing) = columnar' ge
-    columnar (WithComments ge (Just cmt)) = fillRight longestLineColumnar (columnar' ge) <+> prettyCommentNoBreak cmt
+    columnar gev@(GroupEntry _ cmt _) 
+      | cmt == mempty = columnar' gev
+      | otherwise = fillRight longestLineColumnar (columnar' gev) <+> prettyCommentNoBreak cmt
 
-    columnar' (GEType oi mmk t0) = oiDoc oi <> maybe mempty memberKeyDoc mmk <> pretty t0
-    columnar' (GEGroup oi g) = oiDoc oi <> prettyGroup AsGroup g
-    columnar' (GERef oi n mga) = oiDoc oi <> pretty n <> pretty mga
+    columnar' (GroupEntry oi _ gev) = oiDoc oi <> 
+      case gev of 
+       (GEType mmk t0) -> maybe mempty memberKeyDoc mmk <> pretty t0
+       (GEGroup g) -> prettyGroup AsGroup g
+       (GERef n mga) -> pretty n <> pretty mga
 
     mapInit _ [] = []
     mapInit _ [a] = [a]
     mapInit f (a : as) = f a : mapInit f as
 
     groupIfNoComments
-      | any (\(WithComments _ cmt) -> isJust cmt) groupEntries = mconcat . mapInit (<> hardline)
+      | any hasComment groupEntries = mconcat . mapInit (<> hardline)
       | otherwise = vcat
 
 cEncloseSep :: Doc ann -> Doc ann -> Doc ann -> [Doc ann] -> Doc ann
@@ -202,7 +194,7 @@ prettyGroup gr (Group (toList -> xs)) =
       AsGroup -> ("(", ")")
 
 instance Pretty GroupEntry where
-  pretty ge = columnarGroupChoice [noComment ge]
+  pretty ge = columnarGroupChoice [ge]
 
 instance Pretty MemberKey where
   pretty (MKType t1) = pretty t1

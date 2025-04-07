@@ -4,19 +4,19 @@ module Codec.CBOR.Cuddle.Parser.Lexer (
   Parser,
   charInRange,
   space,
-  space_,
   pComment,
   sameLineComment,
   (|||),
+  (//?),
   (<*!),
   (!*>),
   pCommentBlock,
 ) where
 
-import Codec.CBOR.Cuddle.CDDL (Comment, WithComments (..), comment)
+import Codec.CBOR.Cuddle.CDDL (Comment, comment, HasComment (..), (//-))
 import Control.Applicative.Combinators.NonEmpty qualified as NE
 import Data.Foldable1 (Foldable1 (..))
-import Data.Functor (void, ($>))
+import Data.Functor (($>))
 import Data.Text (Text)
 import Data.Void (Void)
 import Text.Megaparsec (
@@ -45,20 +45,19 @@ pComment =
 pCommentBlock :: Parser Comment
 pCommentBlock = fold1 <$> NE.some (L.hspace *> pComment)
 
-space :: Parser (Maybe Comment)
-space = foldMap Just <$> (L.space *> sepEndBy pComment L.space)
+space :: Parser Comment
+space = mconcat <$> (L.space *> sepEndBy pComment L.space)
 
-space_ :: Parser ()
-space_ = void space
-
-sameLineComment :: Parser (Maybe Comment)
+sameLineComment :: Parser Comment
 sameLineComment =
-  try ((<>) <$> (L.hspace *> fmap Just pComment) <*> space) <|> (L.space $> Nothing)
+  try ((<>) <$> (L.hspace *> pComment) <*> space) <|> (L.space $> mempty)
 
-(<*!) :: Parser a -> Parser (Maybe Comment) -> Parser (WithComments a)
-x <*! c = WithComments <$> x <*> c
+(//?) :: HasComment a => a -> Maybe Comment -> a
+(//?) x Nothing = x
+(//?) x (Just c) = x //- c
 
-(!*>) :: Parser (Maybe Comment) -> Parser a -> Parser (WithComments a)
-c !*> x = do
-  c' <- c
-  (`WithComments` c') <$> x
+(<*!) :: HasComment a => Parser a -> Parser Comment -> Parser a
+(<*!) = liftA2 (//-)
+
+(!*>) :: HasComment a => Parser Comment -> Parser a -> Parser a
+(!*>) = liftA2 $ flip (//-)

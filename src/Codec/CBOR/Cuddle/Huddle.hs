@@ -88,7 +88,7 @@ module Codec.CBOR.Cuddle.Huddle (
 )
 where
 
-import Codec.CBOR.Cuddle.CDDL (CDDL, TopLevel (..), WithComments (..))
+import Codec.CBOR.Cuddle.CDDL (CDDL, TopLevel (..))
 import Codec.CBOR.Cuddle.CDDL qualified as C
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
 import Control.Monad (when)
@@ -1012,7 +1012,7 @@ toCDDLNoRoot = toCDDL' False
 -- | Convert from Huddle to CDDL for the purpose of pretty-printing.
 toCDDL' :: Bool -> Huddle -> CDDL
 toCDDL' mkPseudoRoot hdl =
-  C.CDDL . fmap (\(WithComments x cmt) -> TopLevelRule cmt x Nothing)
+  C.CDDL . fmap (\x -> TopLevelRule (x ^. commentL) x Nothing)
     $ ( if mkPseudoRoot
           then (toTopLevelPseudoRoot (roots hdl) NE.<|)
           else id

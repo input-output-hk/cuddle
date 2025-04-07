@@ -14,8 +14,8 @@ import Codec.CBOR.Cuddle.Parser.Lexer (
   pCommentBlock,
   sameLineComment,
   space,
-  space_,
   (!*>),
+  (//?),
   (<*!),
   (|||),
  )
@@ -38,41 +38,40 @@ import Text.Megaparsec
 import Text.Megaparsec.Char hiding (space)
 import Text.Megaparsec.Char qualified as C
 import Text.Megaparsec.Char.Lexer qualified as L
+import Data.Foldable (Foldable(..))
 
 pCDDL :: Parser CDDL
-pCDDL =
-  CDDL
-    <$> ( C.space
-            *> NE.some
-              ( choice
-                  [ try $
-                      TopLevelRule
-                        <$> optional pCommentBlock
-                        <*> pRule
-                        <*> optional (try $ hspace *> eol *> pCommentBlock)
-                  , TopLevelComment <$> pCommentBlock
-                  ]
-                  <* C.space
-              )
-            <* space_
-            <* eof
-        )
+pCDDL = do
+  initialComments <- many pCommentBlock <* notFollowedBy pRule <* C.space
+  initialRuleComment <- optional pCommentBlock
+  initialRule <- pRule
+  cddlTail <- many $ pTopLevel <* C.space
+  eof $> CDDL initialComments (initialRule //? initialRuleComment) cddlTail
+
+pTopLevel :: Parser TopLevel
+pTopLevel = try tlRule <|> tlComment
+  where
+    tlRule = do
+      mCmt <- optional pCommentBlock
+      rule <- pRule
+      pure . TopLevelRule $ rule //? mCmt
+    tlComment = TopLevelComment <$> pCommentBlock
 
 pRule :: Parser Rule
 pRule = do
   name <- pName
   genericParam <- optcomp pGenericParam
-  space_
+  cmt <- space
   (assign, typeOrGrp) <-
     choice
       [ try $
           (,)
             <$> pAssignT
-            <* space_
-            <*> (TOGType <$> pType0 <* notFollowedBy (space_ >> (":" <|> "=>")))
-      , (,) <$> pAssignG <* space_ <*> (TOGGroup <$> pGrpEntry)
+            <* space
+            <*> (TOGType <$> pType0 <* notFollowedBy (space >> (":" <|> "=>")))
+      , (,) <$> pAssignG <* space <*> (TOGGroup <$> pGrpEntry)
       ]
-  pure $ Rule name genericParam assign typeOrGrp
+  pure $ Rule name genericParam assign typeOrGrp cmt
 
 pName :: Parser Name
 pName = label "name" $ do
@@ -105,32 +104,44 @@ pAssignG =
 pGenericParam :: Parser GenericParam
 pGenericParam =
   GenericParam
-    <$> between "<" ">" (NE.sepBy1 (space_ *> pName <* space_) ",")
+    <$> between "<" ">" (NE.sepBy1 (space !*> pName <*! space) ",")
 
 pGenericArg :: Parser GenericArg
 pGenericArg =
   GenericArg
-    <$> between "<" ">" (NE.sepBy1 (space_ *> pType1 <* space_) ",")
+    <$> between "<" ">" (NE.sepBy1 (space !*> pType1 <*! space) ",")
 
 pType0 :: Parser Type0
-pType0 = Type0 <$> sepBy1' pType1 (try $ space_ >> "/" >> space_)
+pType0 = Type0 <$> sepBy1' (space !*> pType1 <*! space) (try "/")
 
 pType1 :: Parser Type1
-pType1 = Type1 <$> pType2 <*> optcomp (space_ >> (,) <$> pTyOp <*> (space_ *> pType2))
+pType1 = do
+  -- Type1 <$> pType2 <*> optcomp (space !*> ((,) <$> pTyOp <*> (space !*> pType2)))
+  v <- pType2
+  rest <- optcomp $ do
+    cmtFst <- space
+    tyOp <- pTyOp
+    cmtSnd <- space
+    w <- pType2
+    pure (cmtFst, tyOp, cmtSnd, w)
+  case rest of
+    Just (cmtFst, tyOp, cmtSnd, w) ->
+      pure $ Type1 v (Just (tyOp, w //- cmtSnd)) //- cmtFst
+    Nothing -> pure $ Type1 v Nothing
 
 pType2 :: Parser Type2
 pType2 =
   choice
     [ T2Value <$> pValue
     , T2Name <$> pName <*> optional pGenericArg
-    , T2Group <$> ("(" *> space_ *> pType0 <* space_ <* ")")
-    , T2Map <$> ("{" *> space_ *> pGroup <* space_ <* "}")
-    , T2Array <$> ("[" *> space_ *> pGroup <* space_ <* "]")
-    , T2Unwrapped <$> ("~" *> space_ *> pName) <*> optional pGenericArg
+    , T2Group <$> ("(" *> space !*> pType0 <*! space <* ")")
+    , T2Map <$> ("{" *> space !*> pGroup <*! space <* "}")
+    , T2Array <$> ("[" *> space !*> pGroup <*! space <* "]")
+    , T2Unwrapped <$> ("~" *> space !*> pName) <*> optional pGenericArg
     , "&"
-        *> space_
+        <*! space
         *> choice
-          [ T2Enum <$> ("(" *> space_ *> pGroup <* space_ <* ")")
+          [ T2Enum <$> ("(" *> space !*> pGroup <*! space <* ")")
           , T2EnumRef <$> pName <*> optional pGenericArg
           ]
     , "#" *> do
@@ -140,7 +151,7 @@ pType2 =
             mminor <- optional ("." *> L.decimal)
             let
               pTag
-                | major == 6 = T2Tag mminor <$> ("(" *> space_ *> pType0 <* space_ <* ")")
+                | major == 6 = T2Tag mminor <$> ("(" *> space !*> pType0 <*! space <* ")")
                 | otherwise = empty
             pTag <|> pure (T2DataItem major mminor)
           Nothing -> pure T2Any
@@ -176,30 +187,31 @@ pCtlOp =
         )
 
 pGroup :: Parser Group
-pGroup = Group <$> NE.sepBy1 pGrpChoice (space_ >> "//" >> space_)
+pGroup = Group <$> NE.sepBy1 (space !*> pGrpChoice <*! space) "//"
 
 pGrpChoice :: Parser GrpChoice
 pGrpChoice = many (pGrpEntry <*! pOptCom)
 
 pGrpEntry :: Parser GroupEntry
 pGrpEntry = do
-  occur <- optcomp (pOccur <* space_)
-  choice
-    [ try $ GEType occur <$> optcomp (pMemberKey <* space_) <*> pType0
-    , try $ GERef occur <$> pName <*> optional pGenericArg
-    , GEGroup occur <$> ("(" *> space_ *> pGroup <* space_ <* ")")
+  occur <- optcomp pOccur
+  variant <- space !*> choice
+    [ try $ GEType <$> optcomp (pMemberKey <*! space) <*> pType0
+    , try $ GERef <$> pName <*> optional pGenericArg
+    , GEGroup <$> ("(" *> space !*> pGroup <*! space <* ")")
     ]
+  pure $ GroupEntry undefined undefined undefined
 
 pMemberKey :: Parser MemberKey
 pMemberKey =
   choice
-    [ try $ MKType <$> pType1 <* space_ <* optcomp ("^" >> space_) <* "=>"
-    , try $ MKBareword <$> pName <* space_ <* ":"
-    , MKValue <$> pValue <* space_ <* ":"
+    [ try $ MKType <$> pType1 <*! space <*! (fold <$> optcomp ("^" >> space)) <* "=>"
+    , try $ MKBareword <$> pName <*! space <* ":"
+    , MKValue <$> pValue <*! space <* ":"
     ]
 
-pOptCom :: Parser (Maybe Comment)
-pOptCom = sameLineComment <* space_ <* optional ("," >> space_)
+pOptCom :: Parser Comment
+pOptCom = space <*! (fold <$> optional ("," >> space))
 
 pOccur :: Parser OccurrenceIndicator
 pOccur =
