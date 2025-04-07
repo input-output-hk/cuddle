@@ -17,13 +17,14 @@ let shellFor = fun ghcver =>
   } in
 
 {
-  shells = organist.shells.Bash,
+  config = {
+    shells = organist.shells.Bash,
 
-  shells.build = {
-    packages = {},
-  },
+    shells.build = {
+      packages = {},
+    },
 
-  shells.dev = shellFor "ghc964",
-
+    shells.dev = shellFor "ghc964",
+  }
 }
   | organist.OrganistExpression

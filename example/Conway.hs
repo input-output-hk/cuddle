@@ -20,7 +20,7 @@ import GHC.Show (Show (show))
 default (Integer, Double)
 
 conway :: Huddle
-conway = collectFrom [block]
+conway = collectFrom [HIRule block]
 
 block :: Rule
 block =

@@ -167,7 +167,7 @@ run (Opts cmd cddlFile) = do
               Left err -> putStrLnErr (show err) >> exitFailure
               Right mt -> do
                 stdGen <- getStdGen
-                let term = generateCBORTerm mt (Name $ itemName gOpts) stdGen
+                let term = generateCBORTerm mt (Name (itemName gOpts) mempty) stdGen
                  in case outputFormat gOpts of
                       AsTerm -> print term
                       AsFlatTerm -> print $ toFlatTerm (encodeTerm term)
