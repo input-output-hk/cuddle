@@ -61,7 +61,7 @@ main = do
           case buildMonoCTree =<< buildResolvedCTree (buildRefCTree (asMap res)) of
             Left nre -> error $ show nre
             Right mt ->
-              let term = generateCBORTerm mt (Name $ T.pack name) stdGen
+              let term = generateCBORTerm mt (Name (T.pack name) mempty) stdGen
                in print term
     [] -> do
       let cw = toCDDL conway

@@ -50,6 +50,7 @@ library
     Codec.CBOR.Cuddle.CDDL.Postlude
     Codec.CBOR.Cuddle.CDDL.Prelude
     Codec.CBOR.Cuddle.CDDL.Resolve
+    Codec.CBOR.Cuddle.Comments
     Codec.CBOR.Cuddle.Huddle
     Codec.CBOR.Cuddle.Huddle.HuddleM
     Codec.CBOR.Cuddle.Huddle.Optics
@@ -137,6 +138,7 @@ test-suite cuddle-test
   build-depends:
     , base              >=4.14.0.0
     , cuddle
+    , data-default-class
     , hspec
     , hspec-megaparsec
     , megaparsec

@@ -7,13 +7,10 @@ module Codec.CBOR.Cuddle.Parser.Lexer (
   pComment,
   sameLineComment,
   (|||),
-  (//?),
-  (<*!),
-  (!*>),
   pCommentBlock,
 ) where
 
-import Codec.CBOR.Cuddle.CDDL (Comment, comment, HasComment (..), (//-))
+import Codec.CBOR.Cuddle.Comments (Comment, comment)
 import Control.Applicative.Combinators.NonEmpty qualified as NE
 import Data.Foldable1 (Foldable1 (..))
 import Data.Functor (($>))
@@ -51,13 +48,3 @@ space = mconcat <$> (L.space *> sepEndBy pComment L.space)
 sameLineComment :: Parser Comment
 sameLineComment =
   try ((<>) <$> (L.hspace *> pComment) <*> space) <|> (L.space $> mempty)
-
-(//?) :: HasComment a => a -> Maybe Comment -> a
-(//?) x Nothing = x
-(//?) x (Just c) = x //- c
-
-(<*!) :: HasComment a => Parser a -> Parser Comment -> Parser a
-(<*!) = liftA2 (//-)
-
-(!*>) :: HasComment a => Parser Comment -> Parser a -> Parser a
-(!*>) = liftA2 $ flip (//-)

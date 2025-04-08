@@ -15,6 +15,7 @@ where
 
 import Codec.CBOR.Cuddle.CDDL
 import Codec.CBOR.Cuddle.CDDL.CtlOp
+import Codec.CBOR.Cuddle.Comments (Comment (..))
 import Data.List.NonEmpty qualified as NE
 import Data.Maybe (mapMaybe)
 import Data.Text qualified as T
@@ -23,7 +24,17 @@ import Test.QuickCheck qualified as Gen
 import Prelude hiding (maybe)
 
 genCDDL :: Gen CDDL
-genCDDL = CDDL . fmap (\x -> TopLevelRule Nothing x Nothing) <$> nonEmpty genRule
+genCDDL = CDDL <$> arbitrary <*> arbitrary <*> arbitrary
+
+instance Arbitrary TopLevel where
+  arbitrary =
+    Gen.oneof
+      [ TopLevelComment <$> arbitrary
+      , TopLevelRule <$> arbitrary
+      ]
+
+instance Arbitrary Comment where
+  arbitrary = Comment . fmap T.pack <$> arbitrary
 
 nameFstChars :: [Char]
 nameFstChars = ['a' .. 'z'] <> ['A' .. 'Z'] <> ['@', '_', '$']
@@ -41,12 +52,15 @@ genName =
         fstChar <- elements nameFstChars
         midChar <- veryShortListOf . elements $ nameMidChars
         lastChar <- elements nameEndChars
-        pure $ Name . T.pack $ fstChar : midChar <> [lastChar]
+        pure $ Name (T.pack $ fstChar : midChar <> [lastChar]) mempty
 
 instance Arbitrary Name where
   arbitrary = genName
 
-  shrink (Name (T.unpack -> xs)) = Name . T.pack <$> filter isValidName (shrink xs)
+  shrink (Name xs cmt) =
+    Name
+      <$> fmap T.pack (filter isValidName (shrink $ T.unpack xs))
+      <*> shrink cmt
     where
       isValidName [] = False
       isValidName (h : tl) = h `elem` nameFstChars && isValidNameTail tl
@@ -83,6 +97,7 @@ genRule =
     <*> maybe genGenericParams
     <*> genAssign
     <*> genTypeOrGroup
+    <*> pure mempty
 
 instance Arbitrary Rule where
   arbitrary = genRule
@@ -125,7 +140,7 @@ instance Arbitrary Type0 where
   shrink (Type0 neType1) = Type0 <$> shrinkNE neType1
 
 genType1 :: Gen Type1
-genType1 = Type1 <$> genType2 <*> maybe ((,) <$> genTyOp <*> genType2)
+genType1 = Type1 <$> genType2 <*> maybe ((,) <$> genTyOp <*> genType2) <*> pure mempty
 
 instance Arbitrary Type1 where
   arbitrary = genType1
@@ -178,23 +193,32 @@ instance Arbitrary Group where
   shrink (Group gr) = Group <$> shrinkNE gr
 
 genGrpChoice :: Gen GrpChoice
-genGrpChoice = listOf' (noComment <$> genGroupEntry)
+genGrpChoice = GrpChoice <$> listOf' genGroupEntry <*> pure mempty
+
+instance Arbitrary GrpChoice where
+  arbitrary = genGrpChoice
+  shrink = genericShrink
 
 genGroupEntry :: Gen GroupEntry
 genGroupEntry =
-  recursive
-    Gen.oneof
-    [ GERef
-        <$> maybe genOccurrenceIndicator
-        <*> genName
-        <*> maybeRec genGenericArg
-    ]
-    [ GEType
-        <$> maybe genOccurrenceIndicator
-        <*> maybe genMemberKey
-        <*> genType0
-    , GEGroup <$> maybe genOccurrenceIndicator <*> genGroup
-    ]
+  GroupEntry
+    <$> arbitrary
+    <*> pure mempty
+    <*> arbitrary
+
+instance Arbitrary GroupEntryVariant where
+  arbitrary =
+    recursive
+      Gen.oneof
+      [ GERef
+          <$> genName
+          <*> maybeRec genGenericArg
+      ]
+      [ GEType
+          <$> maybe genMemberKey
+          <*> genType0
+      , GEGroup <$> genGroup
+      ]
 
 instance Arbitrary GroupEntry where
   arbitrary = genGroupEntry
@@ -251,11 +275,6 @@ genCtlOp =
 instance Arbitrary CtlOp where
   arbitrary = genCtlOp
   shrink = genericShrink
-
-instance Arbitrary a => Arbitrary (WithComments a) where
-  arbitrary = noComment <$> arbitrary
-  shrink (WithComments _ Nothing) = []
-  shrink (WithComments x (Just _)) = noComment <$> shrink x
 
 --------------------------------------------------------------------------------
 -- Utility

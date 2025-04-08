@@ -88,9 +88,10 @@ module Codec.CBOR.Cuddle.Huddle (
 )
 where
 
-import Codec.CBOR.Cuddle.CDDL (CDDL, TopLevel (..))
+import Codec.CBOR.Cuddle.CDDL (CDDL)
 import Codec.CBOR.Cuddle.CDDL qualified as C
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
+import Codec.CBOR.Cuddle.Comments qualified as C
 import Control.Monad (when)
 import Control.Monad.State (MonadState (get), execState, modify)
 import Data.ByteString (ByteString)
@@ -408,7 +409,7 @@ instance Show (ValueConstraint a) where
 instance Default (ValueConstraint a) where
   def =
     ValueConstraint
-      { applyConstraint = (`C.Type1` Nothing)
+      { applyConstraint = \x -> C.Type1 x Nothing mempty
       , showConstraint = ""
       }
 
@@ -446,6 +447,7 @@ instance IsSize (Word64, Word64) where
           ( C.Type1
               (C.T2Value (C.VUInt x))
               (Just (C.RangeOp C.Closed, C.T2Value (C.VUInt y)))
+              mempty
               NE.:| []
           )
       )
@@ -470,6 +472,7 @@ sized v sz =
           C.Type1
             t2
             (Just (C.CtrlOp CtlOp.Size, sizeAsCDDL sz))
+            mempty
       , showConstraint = ".size " <> sizeAsString sz
       }
     []
@@ -487,7 +490,8 @@ cbor v r@(Named n _ _) =
       { applyConstraint = \t2 ->
           C.Type1
             t2
-            (Just (C.CtrlOp CtlOp.Cbor, C.T2Name (C.Name n) Nothing))
+            (Just (C.CtrlOp CtlOp.Cbor, C.T2Name (C.Name n mempty) Nothing))
+            mempty
       , showConstraint = ".cbor " <> T.unpack n
       }
     [r]
@@ -506,6 +510,7 @@ le v bound =
           C.Type1
             t2
             (Just (C.CtrlOp CtlOp.Le, C.T2Value (C.VUInt $ fromIntegral bound)))
+            mempty
       , showConstraint = ".le " <> show bound
       }
     []
@@ -1012,7 +1017,7 @@ toCDDLNoRoot = toCDDL' False
 -- | Convert from Huddle to CDDL for the purpose of pretty-printing.
 toCDDL' :: Bool -> Huddle -> CDDL
 toCDDL' mkPseudoRoot hdl =
-  C.CDDL . fmap (\x -> TopLevelRule (x ^. commentL) x Nothing)
+  C.fromRules
     $ ( if mkPseudoRoot
           then (toTopLevelPseudoRoot (roots hdl) NE.<|)
           else id
@@ -1022,20 +1027,17 @@ toCDDL' mkPseudoRoot hdl =
     toCDDLItem (HIRule r) = toCDDLRule r
     toCDDLItem (HIGroup g) = toCDDLGroup g
     toCDDLItem (HIGRule g) = toGenRuleDef g
-    toTopLevelPseudoRoot :: [Rule] -> C.WithComments C.Rule
+    toTopLevelPseudoRoot :: [Rule] -> C.Rule
     toTopLevelPseudoRoot topRs =
       toCDDLRule $
         comment "Pseudo-rule introduced by Cuddle to collect root elements" $
           "huddle_root_defs" =:= arr (fromList (fmap a topRs))
-    toCDDLRule :: Rule -> C.WithComments C.Rule
+    toCDDLRule :: Rule -> C.Rule
     toCDDLRule (Named n t0 c) =
-      C.WithComments
-        ( C.Rule (C.Name n) Nothing C.AssignEq
-            . C.TOGType
-            . C.Type0
-            $ toCDDLType1 <$> choiceToNE t0
-        )
-        (fmap C.comment c)
+      (\x -> C.Rule (C.Name n mempty) Nothing C.AssignEq x (foldMap C.comment c))
+        . C.TOGType
+        . C.Type0
+        $ toCDDLType1 <$> choiceToNE t0
     toCDDLValue :: Literal -> C.Value
     toCDDLValue (LInt i) = C.VUInt i
     toCDDLValue (LNInt i) = C.VNInt i
@@ -1049,17 +1051,14 @@ toCDDL' mkPseudoRoot hdl =
     mapToCDDLGroup xs = C.Group $ mapChoiceToCDDL <$> choiceToNE xs
 
     mapChoiceToCDDL :: MapChoice -> C.GrpChoice
-    mapChoiceToCDDL (MapChoice entries) = fmap mapEntryToCDDL entries
+    mapChoiceToCDDL (MapChoice entries) = C.GrpChoice (fmap mapEntryToCDDL entries) mempty
 
-    mapEntryToCDDL :: MapEntry -> C.WithComments C.GroupEntry
+    mapEntryToCDDL :: MapEntry -> C.GroupEntry
     mapEntryToCDDL (MapEntry k v occ cmnt) =
-      C.WithComments
-        ( C.GEType
-            (toOccurrenceIndicator occ)
-            (Just $ toMemberKey k)
-            (toCDDLType0 v)
-        )
-        (fmap C.comment cmnt)
+      C.GroupEntry
+        (toOccurrenceIndicator occ)
+        (foldMap C.comment cmnt)
+        (C.GEType (Just $ toMemberKey k) (toCDDLType0 v))
 
     toOccurrenceIndicator :: Occurs -> Maybe C.OccurrenceIndicator
     toOccurrenceIndicator (Occurs Nothing Nothing) = Nothing
@@ -1078,16 +1077,17 @@ toCDDL' mkPseudoRoot hdl =
         C.Type1
           (C.T2Map $ mapToCDDLGroup m)
           Nothing
-      T2Array x -> C.Type1 (C.T2Array $ arrayToCDDLGroup x) Nothing
+          mempty
+      T2Array x -> C.Type1 (C.T2Array $ arrayToCDDLGroup x) Nothing mempty
       T2Tagged (Tagged mmin x) ->
-        C.Type1 (C.T2Tag mmin $ toCDDLType0 x) Nothing
-      T2Ref (Named n _ _) -> C.Type1 (C.T2Name (C.Name n) Nothing) Nothing
-      T2Group (Named n _ _) -> C.Type1 (C.T2Name (C.Name n) Nothing) Nothing
-      T2Generic g -> C.Type1 (toGenericCall g) Nothing
-      T2GenericRef (GRef n) -> C.Type1 (C.T2Name (C.Name n) Nothing) Nothing
+        C.Type1 (C.T2Tag mmin $ toCDDLType0 x) Nothing mempty
+      T2Ref (Named n _ _) -> C.Type1 (C.T2Name (C.Name n mempty) Nothing) Nothing mempty
+      T2Group (Named n _ _) -> C.Type1 (C.T2Name (C.Name n mempty) Nothing) Nothing mempty
+      T2Generic g -> C.Type1 (toGenericCall g) Nothing mempty
+      T2GenericRef (GRef n) -> C.Type1 (C.T2Name (C.Name n mempty) Nothing) Nothing mempty
 
     toMemberKey :: Key -> C.MemberKey
-    toMemberKey (LiteralKey (LText t)) = C.MKBareword (C.Name t)
+    toMemberKey (LiteralKey (LText t)) = C.MKBareword (C.Name t mempty)
     toMemberKey (LiteralKey v) = C.MKValue $ toCDDLValue v
     toMemberKey (TypeKey t) = C.MKType (toCDDLType1 t)
 
@@ -1098,75 +1098,81 @@ toCDDL' mkPseudoRoot hdl =
     arrayToCDDLGroup xs = C.Group $ arrayChoiceToCDDL <$> choiceToNE xs
 
     arrayChoiceToCDDL :: ArrayChoice -> C.GrpChoice
-    arrayChoiceToCDDL (ArrayChoice entries) = fmap arrayEntryToCDDL entries
+    arrayChoiceToCDDL (ArrayChoice entries) = C.GrpChoice (fmap arrayEntryToCDDL entries) mempty
 
-    arrayEntryToCDDL :: ArrayEntry -> C.WithComments C.GroupEntry
+    arrayEntryToCDDL :: ArrayEntry -> C.GroupEntry
     arrayEntryToCDDL (ArrayEntry k v occ cmnt) =
-      C.WithComments
-        ( C.GEType
-            (toOccurrenceIndicator occ)
-            (fmap toMemberKey k)
-            (toCDDLType0 v)
-        )
-        (fmap C.comment cmnt)
+      C.GroupEntry
+        (toOccurrenceIndicator occ)
+        (foldMap C.comment cmnt)
+        (C.GEType (fmap toMemberKey k) (toCDDLType0 v))
 
     toCDDLPostlude :: Value a -> C.Name
-    toCDDLPostlude VBool = C.Name "bool"
-    toCDDLPostlude VUInt = C.Name "uint"
-    toCDDLPostlude VNInt = C.Name "nint"
-    toCDDLPostlude VInt = C.Name "int"
-    toCDDLPostlude VHalf = C.Name "half"
-    toCDDLPostlude VFloat = C.Name "float"
-    toCDDLPostlude VDouble = C.Name "double"
-    toCDDLPostlude VBytes = C.Name "bytes"
-    toCDDLPostlude VText = C.Name "text"
-    toCDDLPostlude VAny = C.Name "any"
-    toCDDLPostlude VNil = C.Name "nil"
+    toCDDLPostlude VBool = C.Name "bool" mempty
+    toCDDLPostlude VUInt = C.Name "uint" mempty
+    toCDDLPostlude VNInt = C.Name "nint" mempty
+    toCDDLPostlude VInt = C.Name "int" mempty
+    toCDDLPostlude VHalf = C.Name "half" mempty
+    toCDDLPostlude VFloat = C.Name "float" mempty
+    toCDDLPostlude VDouble = C.Name "double" mempty
+    toCDDLPostlude VBytes = C.Name "bytes" mempty
+    toCDDLPostlude VText = C.Name "text" mempty
+    toCDDLPostlude VAny = C.Name "any" mempty
+    toCDDLPostlude VNil = C.Name "nil" mempty
 
     toCDDLConstrainable c = case c of
       CValue v -> toCDDLPostlude v
-      CRef r -> C.Name $ name r
-      CGRef (GRef n) -> C.Name n
+      CRef r -> C.Name (name r) mempty
+      CGRef (GRef n) -> C.Name n mempty
 
     toCDDLRanged :: Ranged -> C.Type1
     toCDDLRanged (Unranged x) =
-      C.Type1 (C.T2Value $ toCDDLValue x) Nothing
+      C.Type1 (C.T2Value $ toCDDLValue x) Nothing mempty
     toCDDLRanged (Ranged lb ub rop) =
       C.Type1
         (toCDDLRangeBound lb)
         (Just (C.RangeOp rop, toCDDLRangeBound ub))
+        mempty
 
     toCDDLRangeBound :: RangeBound -> C.Type2
     toCDDLRangeBound (RangeBoundLiteral l) = C.T2Value $ toCDDLValue l
-    toCDDLRangeBound (RangeBoundRef (Named n _ _)) = C.T2Name (C.Name n) Nothing
+    toCDDLRangeBound (RangeBoundRef (Named n _ _)) = C.T2Name (C.Name n mempty) Nothing
 
-    toCDDLGroup :: Named Group -> C.WithComments C.Rule
+    toCDDLGroup :: Named Group -> C.Rule
     toCDDLGroup (Named n (Group t0s) c) =
-      C.WithComments
-        ( C.Rule (C.Name n) Nothing C.AssignEq
-            . C.TOGGroup
-            . C.GEGroup Nothing
+      C.Rule
+        (C.Name n mempty)
+        Nothing
+        C.AssignEq
+        ( C.TOGGroup
+            . C.GroupEntry Nothing mempty
+            . C.GEGroup
             . C.Group
             . (NE.:| [])
-            $ fmap arrayEntryToCDDL t0s
+            . (`C.GrpChoice` mempty)
+            $ fmap
+              arrayEntryToCDDL
+              t0s
         )
-        (fmap C.comment c)
+        (foldMap C.comment c)
 
     toGenericCall :: GRuleCall -> C.Type2
     toGenericCall (Named n gr _) =
       C.T2Name
-        (C.Name n)
+        (C.Name n mempty)
         (Just . C.GenericArg $ fmap toCDDLType1 (args gr))
 
-    toGenRuleDef :: GRuleDef -> C.WithComments C.Rule
+    toGenRuleDef :: GRuleDef -> C.Rule
     toGenRuleDef (Named n gr c) =
-      C.WithComments
-        ( C.Rule (C.Name n) (Just gps) C.AssignEq
-            . C.TOGType
+      C.Rule
+        (C.Name n mempty)
+        (Just gps)
+        C.AssignEq
+        ( C.TOGType
             . C.Type0
             $ toCDDLType1 <$> choiceToNE (body gr)
         )
-        (fmap C.comment c)
+        (foldMap C.comment c)
       where
         gps =
-          C.GenericParam $ fmap (\(GRef t) -> C.Name t) (args gr)
+          C.GenericParam $ fmap (\(GRef t) -> C.Name t mempty) (args gr)

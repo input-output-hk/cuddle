@@ -58,6 +58,4 @@ cddlPrelude =
       \ undefined = #7.23"
 
 prependPrelude :: CDDL -> CDDL
-prependPrelude (CDDL rules) =
-  let CDDL preludeRules = cddlPrelude
-   in CDDL $ preludeRules <> rules
+prependPrelude = (cddlPrelude <>)

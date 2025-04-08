@@ -14,6 +14,7 @@ import Data.String (fromString)
 import Data.Text qualified as T
 import Prettyprinter
 import Prettyprinter.Render.Text (renderStrict)
+import Codec.CBOR.Cuddle.Comments (Comment (..), hasComment)
 
 instance Pretty CDDL where
   pretty = vsep . fmap pretty . NE.toList . cddlTopLevel
@@ -22,7 +23,8 @@ instance Pretty TopLevel where
   pretty (TopLevelComment cmt) = pretty cmt
   pretty (TopLevelRule x) = pretty x <> hardline
 
-deriving newtype instance Pretty Name
+instance Pretty Name where
+  pretty (Name name _) = pretty name
 
 data CommentRender
   = PreComment
@@ -64,8 +66,8 @@ instance Pretty CtlOp where
   pretty = pretty . T.toLower . T.pack . show
 
 instance Pretty Type1 where
-  pretty (Type1 t2 Nothing) = pretty t2
-  pretty (Type1 t2 (Just (tyop, t2'))) =
+  pretty (Type1 t2 Nothing _) = pretty t2
+  pretty (Type1 t2 (Just (tyop, t2')) _) =
     pretty t2
       <+> ( case tyop of
               RangeOp ClOpen -> "..."
@@ -126,8 +128,8 @@ memberKeySep MKType {} = " => "
 memberKeySep _ = " : "
 
 columnarGroupChoice :: GrpChoice -> Doc ann
-columnarGroupChoice [] = mempty
-columnarGroupChoice groupEntries@(x : xs) =
+columnarGroupChoice (GrpChoice [] _) = mempty
+columnarGroupChoice (GrpChoice groupEntries@(x : xs) _) =
   groupIfNoComments (columnar x : fmap (\a -> "," <+> columnar a) xs)
   where
     occurrenceIndicatorLength ge =
@@ -154,15 +156,16 @@ columnarGroupChoice groupEntries@(x : xs) =
     longestLineColumnar =
       maximum $ renderedLen . columnar' <$> groupEntries
 
-    columnar gev@(GroupEntry _ cmt _) 
+    columnar gev@(GroupEntry _ cmt _)
       | cmt == mempty = columnar' gev
       | otherwise = fillRight longestLineColumnar (columnar' gev) <+> prettyCommentNoBreak cmt
 
-    columnar' (GroupEntry oi _ gev) = oiDoc oi <> 
-      case gev of 
-       (GEType mmk t0) -> maybe mempty memberKeyDoc mmk <> pretty t0
-       (GEGroup g) -> prettyGroup AsGroup g
-       (GERef n mga) -> pretty n <> pretty mga
+    columnar' (GroupEntry oi _ gev) =
+      oiDoc oi
+        <> case gev of
+          (GEType mmk t0) -> maybe mempty memberKeyDoc mmk <> pretty t0
+          (GEGroup g) -> prettyGroup AsGroup g
+          (GERef n mga) -> pretty n <> pretty mga
 
     mapInit _ [] = []
     mapInit _ [a] = [a]
@@ -194,7 +197,7 @@ prettyGroup gr (Group (toList -> xs)) =
       AsGroup -> ("(", ")")
 
 instance Pretty GroupEntry where
-  pretty ge = columnarGroupChoice [ge]
+  pretty ge = columnarGroupChoice $ GrpChoice [ge] mempty
 
 instance Pretty MemberKey where
   pretty (MKType t1) = pretty t1

@@ -14,9 +14,6 @@ import Codec.CBOR.Cuddle.Parser.Lexer (
   pCommentBlock,
   sameLineComment,
   space,
-  (!*>),
-  (//?),
-  (<*!),
   (|||),
  )
 import Control.Applicative (liftA2)
@@ -39,14 +36,15 @@ import Text.Megaparsec.Char hiding (space)
 import Text.Megaparsec.Char qualified as C
 import Text.Megaparsec.Char.Lexer qualified as L
 import Data.Foldable (Foldable(..))
+import Codec.CBOR.Cuddle.Comments (WithComment(..), Comment, (<*!), (//-), (!*>), withComment)
 
 pCDDL :: Parser CDDL
 pCDDL = do
-  initialComments <- many pCommentBlock <* notFollowedBy pRule <* C.space
-  initialRuleComment <- optional pCommentBlock
+  initialComments <- many (try $ C.space *> pCommentBlock <* notFollowedBy pRule)
+  initialRuleComment <- C.space *> optional pCommentBlock
   initialRule <- pRule
   cddlTail <- many $ pTopLevel <* C.space
-  eof $> CDDL initialComments (initialRule //? initialRuleComment) cddlTail
+  eof $> CDDL initialComments (initialRule //- fold initialRuleComment) cddlTail
 
 pTopLevel :: Parser TopLevel
 pTopLevel = try tlRule <|> tlComment
@@ -54,7 +52,7 @@ pTopLevel = try tlRule <|> tlComment
     tlRule = do
       mCmt <- optional pCommentBlock
       rule <- pRule
-      pure . TopLevelRule $ rule //? mCmt
+      pure . TopLevelRule $ rule //- fold mCmt
     tlComment = TopLevelComment <$> pCommentBlock
 
 pRule :: Parser Rule
@@ -77,7 +75,7 @@ pName :: Parser Name
 pName = label "name" $ do
   fc <- firstChar
   rest <- many midChar
-  pure $ Name . T.pack $ (fc : rest)
+  pure $ (`Name` mempty) . T.pack $ (fc : rest)
   where
     firstChar = letterChar <|> char '@' <|> char '_' <|> char '$'
     midChar =
@@ -116,32 +114,34 @@ pType0 = Type0 <$> sepBy1' (space !*> pType1 <*! space) (try "/")
 
 pType1 :: Parser Type1
 pType1 = do
-  -- Type1 <$> pType2 <*> optcomp (space !*> ((,) <$> pTyOp <*> (space !*> pType2)))
   v <- pType2
-  rest <- optcomp $ do
-    cmtFst <- space
-    tyOp <- pTyOp
+  rest <- optional $ do
+    (cmtFst, tyOp) <- try $ do
+      cmt <- space
+      tyOp <- pTyOp
+      pure (cmt, tyOp)
     cmtSnd <- space
     w <- pType2
     pure (cmtFst, tyOp, cmtSnd, w)
   case rest of
     Just (cmtFst, tyOp, cmtSnd, w) ->
-      pure $ Type1 v (Just (tyOp, w //- cmtSnd)) //- cmtFst
-    Nothing -> pure $ Type1 v Nothing
+      pure $ Type1 v (Just (tyOp, w)) $ cmtFst <> cmtSnd
+    Nothing -> pure $ Type1 v Nothing mempty
 
 pType2 :: Parser Type2
 pType2 =
   choice
     [ T2Value <$> pValue
     , T2Name <$> pName <*> optional pGenericArg
-    , T2Group <$> ("(" *> space !*> pType0 <*! space <* ")")
-    , T2Map <$> ("{" *> space !*> pGroup <*! space <* "}")
-    , T2Array <$> ("[" *> space !*> pGroup <*! space <* "]")
+    , T2Group <$> label "group" ("(" *> space !*> pType0 <*! space <* ")")
+    , T2Map <$> label "map" ("{" *> pGroup <* "}")
+    , T2Array <$> label "array" ("[" *> space !*> pGroup <*! space <* "]")
     , T2Unwrapped <$> ("~" *> space !*> pName) <*> optional pGenericArg
-    , "&"
-        <*! space
-        *> choice
-          [ T2Enum <$> ("(" *> space !*> pGroup <*! space <* ")")
+    , do
+        _ <- "&"
+        cmt <- space
+        choice
+          [ T2Enum <$> ("(" *> space !*> pGroup <*! pure cmt <*! space <* ")")
           , T2EnumRef <$> pName <*> optional pGenericArg
           ]
     , "#" *> do
@@ -161,11 +161,11 @@ pHeadNumber :: Parser Word64
 pHeadNumber = L.decimal
 
 pRangeOp :: Parser RangeBound
-pRangeOp = try ("..." $> ClOpen) <|> (".." $> Closed)
+pRangeOp = label "range operator" $ try ("..." $> ClOpen) <|> (".." $> Closed)
 
 pCtlOp :: Parser CtlOp
 pCtlOp =
-  label "Control operator" $
+  label "control operator" $
     "."
       *> choice
         ( try
@@ -187,27 +187,43 @@ pCtlOp =
         )
 
 pGroup :: Parser Group
-pGroup = Group <$> NE.sepBy1 (space !*> pGrpChoice <*! space) "//"
+pGroup = Group <$> NE.sepBy1 (space !*> pGrpChoice) "//"
 
 pGrpChoice :: Parser GrpChoice
-pGrpChoice = many (pGrpEntry <*! pOptCom)
+pGrpChoice = GrpChoice <$> many (space !*> pGrpEntry <*! pOptCom) <*> mempty
 
 pGrpEntry :: Parser GroupEntry
 pGrpEntry = do
   occur <- optcomp pOccur
-  variant <- space !*> choice
-    [ try $ GEType <$> optcomp (pMemberKey <*! space) <*> pType0
-    , try $ GERef <$> pName <*> optional pGenericArg
-    , GEGroup <$> ("(" *> space !*> pGroup <*! space <* ")")
+  cmt <- space
+  WithComment cmt' variant <- choice
+    [ try $ do
+        mKey <- optcomp $ pMemberKey <*! space
+        t0 <- pType0
+        pure $ GEType <$> sequence mKey <*> pure t0
+    , try $ withComment <$> (GERef <$> pName <*> optional pGenericArg)
+    , withComment <$> (GEGroup <$> ("(" *> space !*> pGroup <*! space <* ")"))
     ]
-  pure $ GroupEntry undefined undefined undefined
+  pure $ GroupEntry occur (cmt <> cmt') variant
 
-pMemberKey :: Parser MemberKey
+pMemberKey :: Parser (WithComment MemberKey)
 pMemberKey =
   choice
-    [ try $ MKType <$> pType1 <*! space <*! (fold <$> optcomp ("^" >> space)) <* "=>"
-    , try $ MKBareword <$> pName <*! space <* ":"
-    , MKValue <$> pValue <*! space <* ":"
+    [ try $ do
+        t1 <- pType1
+        cmt0 <- space
+        cmt1 <- fold <$> optcomp ("^" *> space) <* "=>"
+        pure $ WithComment (cmt0 <> cmt1) (MKType t1)
+    , try $ do
+        name <- pName
+        cmt <- space
+        _ <- ":"
+        pure . WithComment cmt $ MKBareword name
+    , do
+        val <- pValue
+        cmt <- space
+        _ <- ":"
+        pure . WithComment cmt $ MKValue val
     ]
 
 pOptCom :: Parser Comment
