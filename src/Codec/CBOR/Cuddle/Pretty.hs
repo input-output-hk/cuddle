@@ -7,6 +7,7 @@ module Codec.CBOR.Cuddle.Pretty where
 
 import Codec.CBOR.Cuddle.CDDL
 import Codec.CBOR.Cuddle.CDDL.CtlOp (CtlOp)
+import Codec.CBOR.Cuddle.Comments (Comment (..), hasComment, (//-))
 import Data.ByteString.Char8 qualified as BS
 import Data.Foldable (Foldable (..))
 import Data.List.NonEmpty qualified as NE
@@ -14,7 +15,6 @@ import Data.String (fromString)
 import Data.Text qualified as T
 import Prettyprinter
 import Prettyprinter.Render.Text (renderStrict)
-import Codec.CBOR.Cuddle.Comments (Comment (..), hasComment)
 
 instance Pretty CDDL where
   pretty = vsep . fmap pretty . NE.toList . cddlTopLevel
@@ -24,7 +24,7 @@ instance Pretty TopLevel where
   pretty (TopLevelRule x) = pretty x <> hardline
 
 instance Pretty Name where
-  pretty (Name name _) = pretty name
+  pretty (Name name cmt) = pretty name <> pretty cmt
 
 data CommentRender
   = PreComment
@@ -33,18 +33,26 @@ data CommentRender
 prettyCommentNoBreak :: Comment -> Doc ann
 prettyCommentNoBreak = align . vsep . toList . fmap ((";" <>) . pretty) . unComment
 
+prettyCommentNoBreakWS :: Comment -> Doc ann
+prettyCommentNoBreakWS cmt
+  | cmt == mempty = mempty
+  | otherwise = space <> prettyCommentNoBreak cmt
+
 instance Pretty Comment where
-  pretty = (<> hardline) . prettyCommentNoBreak
+  pretty (Comment []) = mempty
+  pretty c@(Comment _) = (<> hardline) $ prettyCommentNoBreak c
 
 type0Def :: Type0 -> Doc ann
 type0Def t = nest 2 $ line' <> pretty t
 
 instance Pretty Rule where
-  pretty (Rule n mgen assign tog _) =
-    group $
-      pretty n <> pretty mgen <+> case tog of
-        TOGType t -> ppAssignT <+> type0Def t
-        TOGGroup g -> ppAssignG <+> nest 2 (line' <> pretty g)
+  pretty (Rule n mgen assign tog cmt) =
+    pretty cmt
+      <> group
+        ( pretty n <> pretty mgen <+> case tog of
+            TOGType t -> ppAssignT <+> type0Def t
+            TOGGroup g -> ppAssignG <+> nest 2 (line' <> pretty g)
+        )
     where
       ppAssignT = case assign of
         AssignEq -> "="
@@ -66,8 +74,8 @@ instance Pretty CtlOp where
   pretty = pretty . T.toLower . T.pack . show
 
 instance Pretty Type1 where
-  pretty (Type1 t2 Nothing _) = pretty t2
-  pretty (Type1 t2 (Just (tyop, t2')) _) =
+  pretty (Type1 t2 Nothing cmt) = pretty t2 <> prettyCommentNoBreakWS cmt
+  pretty (Type1 t2 (Just (tyop, t2')) cmt) =
     pretty t2
       <+> ( case tyop of
               RangeOp ClOpen -> "..."
@@ -75,6 +83,7 @@ instance Pretty Type1 where
               CtrlOp n -> "." <> pretty n
           )
       <+> pretty t2'
+      <> prettyCommentNoBreakWS cmt
 
 instance Pretty Type2 where
   pretty (T2Value v) = pretty v
@@ -128,9 +137,9 @@ memberKeySep MKType {} = " => "
 memberKeySep _ = " : "
 
 columnarGroupChoice :: GrpChoice -> Doc ann
-columnarGroupChoice (GrpChoice [] _) = mempty
-columnarGroupChoice (GrpChoice groupEntries@(x : xs) _) =
-  groupIfNoComments (columnar x : fmap (\a -> "," <+> columnar a) xs)
+columnarGroupChoice (GrpChoice [] cmt) = pretty cmt
+columnarGroupChoice (GrpChoice groupEntries@(x : xs) cmt) =
+  groupIfNoComments (columnar (x //- cmt) : fmap (\a -> "," <+> columnar a) xs)
   where
     occurrenceIndicatorLength ge =
       renderedLen . pretty $ geOccurrenceIndicator ge
@@ -156,16 +165,16 @@ columnarGroupChoice (GrpChoice groupEntries@(x : xs) _) =
     longestLineColumnar =
       maximum $ renderedLen . columnar' <$> groupEntries
 
-    columnar gev@(GroupEntry _ cmt _)
-      | cmt == mempty = columnar' gev
-      | otherwise = fillRight longestLineColumnar (columnar' gev) <+> prettyCommentNoBreak cmt
+    columnar gev@(GroupEntry _ cmt' _)
+      | cmt' == mempty = columnar' gev
+      | otherwise = fillRight longestLineColumnar (columnar' gev) <+> prettyCommentNoBreak cmt'
 
-    columnar' (GroupEntry oi _ gev) =
+    columnar' (GroupEntry oi cmt' gev) =
       oiDoc oi
         <> case gev of
-          (GEType mmk t0) -> maybe mempty memberKeyDoc mmk <> pretty t0
-          (GEGroup g) -> prettyGroup AsGroup g
-          (GERef n mga) -> pretty n <> pretty mga
+          (GEType mmk t0) -> maybe mempty memberKeyDoc mmk <> pretty t0 <> pretty cmt'
+          (GEGroup g) -> prettyGroup AsGroup g <> pretty cmt'
+          (GERef n mga) -> pretty n <> pretty mga <> pretty cmt'
 
     mapInit _ [] = []
     mapInit _ [a] = [a]
