@@ -57,6 +57,8 @@ library
     Codec.CBOR.Cuddle.Parser
     Codec.CBOR.Cuddle.Parser.Lexer
     Codec.CBOR.Cuddle.Pretty
+    Codec.CBOR.Cuddle.Pretty.Columnar
+    Codec.CBOR.Cuddle.Pretty.Utils
 
   other-modules:
 

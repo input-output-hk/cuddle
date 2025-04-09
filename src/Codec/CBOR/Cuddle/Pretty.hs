@@ -7,14 +7,15 @@ module Codec.CBOR.Cuddle.Pretty where
 
 import Codec.CBOR.Cuddle.CDDL
 import Codec.CBOR.Cuddle.CDDL.CtlOp (CtlOp)
-import Codec.CBOR.Cuddle.Comments (Comment (..), hasComment, (//-))
+import Codec.CBOR.Cuddle.Comments (Comment (..))
+import Codec.CBOR.Cuddle.Pretty.Columnar (Columnar (..), prettyColumnar, Row (..), cellR, cellL, Cell (..), CellAlign (..), emptyCell)
+import Codec.CBOR.Cuddle.Pretty.Utils (renderedLen, softspace)
 import Data.ByteString.Char8 qualified as BS
 import Data.Foldable (Foldable (..))
 import Data.List.NonEmpty qualified as NE
 import Data.String (fromString)
 import Data.Text qualified as T
 import Prettyprinter
-import Prettyprinter.Render.Text (renderStrict)
 
 instance Pretty CDDL where
   pretty = vsep . fmap pretty . NE.toList . cddlTopLevel
@@ -117,72 +118,9 @@ data GroupRender
   | AsArray
   | AsGroup
 
-renderedLen :: Doc ann -> Int
-renderedLen = T.length . renderStrict . layoutCompact
-
-softspace :: Doc ann
-softspace = flatAlt space mempty
-
-spaces :: Int -> Doc ann
-spaces i = mconcat $ replicate i softspace
-
-fillLeft :: Int -> Doc ann -> Doc ann
-fillLeft len doc = spaces (len - renderedLen doc) <> doc
-
-fillRight :: Int -> Doc ann -> Doc ann
-fillRight len doc = doc <> spaces (len - renderedLen doc)
-
 memberKeySep :: MemberKey -> Doc ann
 memberKeySep MKType {} = " => "
 memberKeySep _ = " : "
-
-columnarGroupChoice :: GrpChoice -> Doc ann
-columnarGroupChoice (GrpChoice [] cmt) = pretty cmt
-columnarGroupChoice (GrpChoice groupEntries@(x : xs) cmt) =
-  groupIfNoComments (columnar (x //- cmt) : fmap (\a -> "," <+> columnar a) xs)
-  where
-    occurrenceIndicatorLength ge =
-      renderedLen . pretty $ geOccurrenceIndicator ge
-
-    longestOccurrenceIndicator = maximum $ occurrenceIndicatorLength <$> groupEntries
-
-    memberKeyLength (GroupEntry _ _ (GEType (Just mk) _)) = renderedLen $ pretty mk
-    memberKeyLength _ = 0
-
-    longestMemberKey = maximum $ memberKeyLength <$> groupEntries
-
-    oiDoc oi =
-      fillLeft longestOccurrenceIndicator (pretty oi)
-        <> if longestOccurrenceIndicator > 0 then space else mempty
-
-    memberKeyDoc mmk = fillRight longestMemberKey (pretty mmk) <> fillLeft longestKeySep (memberKeySep mmk)
-
-    memberKeySepLen (GroupEntry _ _ (GEType mmk _)) = renderedLen $ maybe mempty memberKeySep mmk
-    memberKeySepLen _ = 0
-
-    longestKeySep = maximum $ memberKeySepLen <$> groupEntries
-
-    longestLineColumnar =
-      maximum $ renderedLen . columnar' <$> groupEntries
-
-    columnar gev@(GroupEntry _ cmt' _)
-      | cmt' == mempty = columnar' gev
-      | otherwise = fillRight longestLineColumnar (columnar' gev) <+> prettyCommentNoBreak cmt'
-
-    columnar' (GroupEntry oi cmt' gev) =
-      oiDoc oi
-        <> case gev of
-          (GEType mmk t0) -> maybe mempty memberKeyDoc mmk <> pretty t0 <> pretty cmt'
-          (GEGroup g) -> prettyGroup AsGroup g <> pretty cmt'
-          (GERef n mga) -> pretty n <> pretty mga <> pretty cmt'
-
-    mapInit _ [] = []
-    mapInit _ [a] = [a]
-    mapInit f (a : as) = f a : mapInit f as
-
-    groupIfNoComments
-      | any hasComment groupEntries = mconcat . mapInit (<> hardline)
-      | otherwise = vcat
 
 cEncloseSep :: Doc ann -> Doc ann -> Doc ann -> [Doc ann] -> Doc ann
 cEncloseSep lEnc rEnc _ [] = lEnc <> rEnc
@@ -196,9 +134,20 @@ cEncloseSep lEnc rEnc s (h : tl) =
   where
     lSpaces = mconcat $ replicate (renderedLen s) softspace
 
+columnarGroupChoice :: GrpChoice -> Columnar ann
+columnarGroupChoice (GrpChoice ges _cmt) = Columnar grpEntryRows
+  where
+    groupEntryRow (GroupEntry oi _ gev) = Row $ [cellR oi] <> groupEntryVariantCells gev
+    groupEntryVariantCells (GERef n ga) = [Cell (pretty n <> pretty ga) LeftAlign]
+    groupEntryVariantCells (GEType (Just mk) t0) = [Cell (pretty mk <+> ":") LeftAlign, cellL t0]
+    groupEntryVariantCells (GEType Nothing t0) = [emptyCell, cellL t0]
+    groupEntryVariantCells (GEGroup g) = [Cell (prettyGroup AsGroup g) LeftAlign, emptyCell]
+    grpEntryRows = groupEntryRow <$> ges
+
 prettyGroup :: GroupRender -> Group -> Doc ann
 prettyGroup gr (Group (toList -> xs)) =
-  cEncloseSep lEnc rEnc "//" $ fmap (group . columnarGroupChoice) xs
+  cEncloseSep lEnc rEnc "//" $ 
+    group . prettyColumnar . columnarGroupChoice <$> xs
   where
     (lEnc, rEnc) = case gr of
       AsMap -> ("{", "}")
@@ -206,7 +155,7 @@ prettyGroup gr (Group (toList -> xs)) =
       AsGroup -> ("(", ")")
 
 instance Pretty GroupEntry where
-  pretty ge = columnarGroupChoice $ GrpChoice [ge] mempty
+  pretty ge = prettyColumnar . columnarGroupChoice $ GrpChoice [ge] mempty
 
 instance Pretty MemberKey where
   pretty (MKType t1) = pretty t1
