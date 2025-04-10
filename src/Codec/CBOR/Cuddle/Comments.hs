@@ -4,6 +4,7 @@
 module Codec.CBOR.Cuddle.Comments (
   comment,
   HasComment (..),
+  CollectComments (..),
   hasComment,
   (//-),
   (<*!),
@@ -33,6 +34,13 @@ comment t = Comment [t]
 class HasComment a where
   commentL :: Lens' a Comment
 
+class CollectComments a where
+  collectComments :: a -> [Comment]
+
+instance CollectComments a => CollectComments (Maybe a) where
+  collectComments Nothing = []
+  collectComments (Just x) = collectComments x
+
 hasComment :: HasComment a => a -> Bool
 hasComment = (/= mempty) . view commentL
 
@@ -60,6 +68,9 @@ instance Monad WithComment where
 
 instance HasComment (WithComment a) where
   commentL = lens (\(WithComment x _) -> x) (\(WithComment _ b) x -> WithComment x b)
+
+instance CollectComments a => CollectComments (WithComment a) where
+  collectComments (WithComment c x) = c : collectComments x
 
 withComment :: a -> WithComment a
 withComment = WithComment mempty

@@ -7,8 +7,20 @@ module Codec.CBOR.Cuddle.Pretty where
 
 import Codec.CBOR.Cuddle.CDDL
 import Codec.CBOR.Cuddle.CDDL.CtlOp (CtlOp)
-import Codec.CBOR.Cuddle.Comments (Comment (..))
-import Codec.CBOR.Cuddle.Pretty.Columnar (Columnar (..), prettyColumnar, Row (..), cellR, cellL, Cell (..), CellAlign (..), emptyCell)
+import Codec.CBOR.Cuddle.Comments (CollectComments (..), Comment (..))
+import Codec.CBOR.Cuddle.Pretty.Columnar (
+  Cell (..),
+  CellAlign (..),
+  Columnar (..),
+  Row (..),
+  cellL,
+  cellR,
+  columnarListing,
+  columnarSepBy,
+  emptyCell,
+  prettyColumnar,
+  singletonRow,
+ )
 import Codec.CBOR.Cuddle.Pretty.Utils (renderedLen, softspace)
 import Data.ByteString.Char8 qualified as BS
 import Data.Foldable (Foldable (..))
@@ -25,7 +37,7 @@ instance Pretty TopLevel where
   pretty (TopLevelRule x) = pretty x <> hardline
 
 instance Pretty Name where
-  pretty (Name name cmt) = pretty name <> pretty cmt
+  pretty (Name name cmt) = pretty name <> prettyCommentNoBreakWS cmt
 
 data CommentRender
   = PreComment
@@ -69,21 +81,31 @@ instance Pretty GenericParam where
   pretty (GenericParam (NE.toList -> l)) = cEncloseSep "<" ">" "," $ fmap pretty l
 
 instance Pretty Type0 where
-  pretty (Type0 (NE.toList -> l)) = align . sep . punctuate (space <> "/") $ fmap pretty l
+  pretty t0@(Type0 (NE.toList -> l)) =
+    groupIfNoComments t0 $ columnarSepBy "/" . Columnar $ type1ToRow <$> l
+    where
+      type1ToRow (Type1 t2 tyOp cmt) =
+        let
+          valCell = case tyOp of
+            Nothing -> cellL t2
+            Just (to, t2') -> Cell (pretty t2 <+> pretty to <+> pretty t2') LeftAlign
+         in
+          Row [valCell, Cell (prettyCommentNoBreakWS cmt) LeftAlign]
 
 instance Pretty CtlOp where
   pretty = pretty . T.toLower . T.pack . show
 
+instance Pretty TyOp where
+  pretty (RangeOp ClOpen) = "..."
+  pretty (RangeOp Closed) = ".."
+  pretty (CtrlOp n) = "." <> pretty n
+
 instance Pretty Type1 where
-  pretty (Type1 t2 Nothing cmt) = pretty t2 <> prettyCommentNoBreakWS cmt
+  pretty (Type1 t2 Nothing cmt) = groupIfNoComments t2 (pretty t2) <> prettyCommentNoBreakWS cmt
   pretty (Type1 t2 (Just (tyop, t2')) cmt) =
-    pretty t2
-      <+> ( case tyop of
-              RangeOp ClOpen -> "..."
-              RangeOp Closed -> ".."
-              CtrlOp n -> "." <> pretty n
-          )
-      <+> pretty t2'
+    groupIfNoComments t2 (pretty t2)
+      <+> pretty tyop
+      <+> groupIfNoComments t2' (pretty t2')
       <> prettyCommentNoBreakWS cmt
 
 instance Pretty Type2 where
@@ -134,20 +156,25 @@ cEncloseSep lEnc rEnc s (h : tl) =
   where
     lSpaces = mconcat $ replicate (renderedLen s) softspace
 
+groupIfNoComments :: CollectComments a => a -> Doc ann -> Doc ann
+groupIfNoComments x
+  | not (any (mempty /=) $ collectComments x) = group
+  | otherwise = id
+
 columnarGroupChoice :: GrpChoice -> Columnar ann
 columnarGroupChoice (GrpChoice ges _cmt) = Columnar grpEntryRows
   where
-    groupEntryRow (GroupEntry oi _ gev) = Row $ [cellR oi] <> groupEntryVariantCells gev
+    groupEntryRow (GroupEntry oi cmt gev) = Row $ [cellR oi] <> groupEntryVariantCells gev <> [Cell (prettyCommentNoBreakWS cmt) LeftAlign]
     groupEntryVariantCells (GERef n ga) = [Cell (pretty n <> pretty ga) LeftAlign]
-    groupEntryVariantCells (GEType (Just mk) t0) = [Cell (pretty mk <+> ":") LeftAlign, cellL t0]
+    groupEntryVariantCells (GEType (Just mk) t0) = [cellL mk, Cell (":" <+> groupIfNoComments t0 (align $ pretty t0)) LeftAlign]
     groupEntryVariantCells (GEType Nothing t0) = [emptyCell, cellL t0]
     groupEntryVariantCells (GEGroup g) = [Cell (prettyGroup AsGroup g) LeftAlign, emptyCell]
     grpEntryRows = groupEntryRow <$> ges
 
 prettyGroup :: GroupRender -> Group -> Doc ann
-prettyGroup gr (Group (toList -> xs)) =
-  cEncloseSep lEnc rEnc "//" $ 
-    group . prettyColumnar . columnarGroupChoice <$> xs
+prettyGroup gr g@(Group (toList -> xs)) =
+  groupIfNoComments g . columnarListing lEnc rEnc "//" . Columnar $
+    (\x -> singletonRow . groupIfNoComments x . columnarSepBy "," $ columnarGroupChoice x) <$> xs
   where
     (lEnc, rEnc) = case gr of
       AsMap -> ("{", "}")

@@ -35,7 +35,7 @@ module Codec.CBOR.Cuddle.CDDL (
 ) where
 
 import Codec.CBOR.Cuddle.CDDL.CtlOp (CtlOp)
-import Codec.CBOR.Cuddle.Comments (Comment, HasComment (..))
+import Codec.CBOR.Cuddle.Comments (Comment, HasComment (..), CollectComments (..))
 import Data.ByteString qualified as B
 import Data.Default.Class (Default (..))
 import Data.Function (on, (&))
@@ -117,6 +117,9 @@ data Name = Name
 instance HasComment Name where
   commentL = lens nameComment (\x y -> x {nameComment = y})
 
+instance CollectComments Name where
+  collectComments (Name _ c) = [c]
+
 instance Hashable Name
 
 -- |
@@ -161,6 +164,9 @@ newtype GenericArg = GenericArg (NE.NonEmpty Type1)
   deriving (Eq, Generic, Show)
   deriving newtype (Semigroup)
   deriving anyclass (ToExpr)
+
+instance CollectComments GenericArg where
+  collectComments (GenericArg x) = concatMap collectComments x
 
 -- |
 --  rule = typename [genericparm] S assignt S type
@@ -292,6 +298,9 @@ newtype Type0 = Type0 {t0Type1 :: NE.NonEmpty Type1}
 instance HasComment Type0 where
   commentL = lens (view commentL . t0Type1) (\(Type0 x) y -> Type0 $ x & commentL .~ y)
 
+instance CollectComments Type0 where
+  collectComments (Type0 x) = concatMap collectComments x
+
 -- |
 -- Two types can be combined with a range operator (see below)
 data Type1 = Type1
@@ -304,6 +313,9 @@ data Type1 = Type1
 
 instance HasComment Type1 where
   commentL = lens t1Comment (\x y -> x {t1Comment = y})
+
+instance CollectComments Type1 where
+  collectComments (Type1 m tyOp c) = c : collectComments m <> collectComments (fmap snd tyOp)
 
 data Type2
   = -- | A type can be just a single value (such as 1 or "icecream" or
@@ -342,6 +354,17 @@ data Type2
   deriving (Eq, Generic, Show, Default)
   deriving anyclass (ToExpr)
 
+instance CollectComments Type2 where
+  collectComments (T2Name n ga) = collectComments n <> collectComments ga
+  collectComments (T2Group t0) = collectComments t0
+  collectComments (T2Map g) = collectComments g
+  collectComments (T2Array g) = collectComments g
+  collectComments (T2Unwrapped n ga) = collectComments n <> collectComments ga
+  collectComments (T2Enum g) = collectComments g
+  collectComments (T2EnumRef n ga) = collectComments n <> collectComments ga
+  collectComments (T2Tag _ t0) = collectComments t0
+  collectComments _ = []
+
 -- |
 --  An optional _occurrence_ indicator can be given in front of a group
 --  entry.  It is either (1) one of the characters "?" (optional), "*"
@@ -377,6 +400,9 @@ newtype Group = Group {unGroup :: NE.NonEmpty GrpChoice}
 instance HasComment Group where
   commentL = lens unGroup (\x y -> x {unGroup = y}) % commentL
 
+instance CollectComments Group where
+  collectComments (Group xs) = concatMap collectComments xs
+
 data GrpChoice = GrpChoice
   { gcGroupEntries :: [GroupEntry]
   , gcComment :: Comment
@@ -386,6 +412,9 @@ data GrpChoice = GrpChoice
 
 instance HasComment GrpChoice where
   commentL = lens gcComment (\x y -> x {gcComment = y})
+
+instance CollectComments GrpChoice where
+  collectComments (GrpChoice ges c) = c : concatMap collectComments ges
 
 -- |
 --  A group entry can be given by a value type, which needs to be matched
@@ -401,6 +430,9 @@ data GroupEntry = GroupEntry
   }
   deriving (Eq, Show, Generic, ToExpr, Default)
 
+instance CollectComments GroupEntry where
+  collectComments (GroupEntry _ c x) = c : collectComments x
+
 data GroupEntryVariant
   = GEType (Maybe MemberKey) Type0
   | GERef Name (Maybe GenericArg)
@@ -409,6 +441,11 @@ data GroupEntryVariant
 
 instance HasComment GroupEntry where
   commentL = lens geComment (\x y -> x {geComment = y})
+
+instance CollectComments GroupEntryVariant where
+  collectComments (GEType _ t0) = collectComments t0
+  collectComments (GERef n mga) = collectComments n <> collectComments mga
+  collectComments (GEGroup g) = collectComments g
 
 -- |
 --  Key types can be given by a type expression, a bareword (which stands
