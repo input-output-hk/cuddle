@@ -199,7 +199,7 @@ genPostlude pt = case pt of
     genRandomM
       <&> TDouble
   PTBytes -> TBytes <$> genBytes 30
-  PTText -> TBytes <$> genBytes 30
+  PTText -> TString <$> genText 30
   PTAny -> pure $ TString "Any"
   PTNil -> pure TNull
 
