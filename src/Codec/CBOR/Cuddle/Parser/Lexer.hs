@@ -10,7 +10,7 @@ module Codec.CBOR.Cuddle.Parser.Lexer (
   pCommentBlock,
 ) where
 
-import Codec.CBOR.Cuddle.Comments (Comment, comment)
+import Codec.CBOR.Cuddle.Comments (Comment (..))
 import Control.Applicative.Combinators.NonEmpty qualified as NE
 import Data.Foldable1 (Foldable1 (..))
 import Data.Functor (($>))
@@ -35,7 +35,7 @@ charInRange lb ub x = lb <= x && x <= ub
 
 pComment :: Parser Comment
 pComment =
-  comment <$> label "comment" (char ';' *> takeWhileP Nothing validChar <* eol)
+  Comment <$> label "comment" (char ';' *> takeWhileP Nothing validChar <* eol)
   where
     validChar = charInRange '\x20' '\x7e' ||| charInRange '\x80' '\x10fffd'
 

@@ -35,7 +35,7 @@ module Codec.CBOR.Cuddle.CDDL (
 ) where
 
 import Codec.CBOR.Cuddle.CDDL.CtlOp (CtlOp)
-import Codec.CBOR.Cuddle.Comments (Comment, HasComment (..), CollectComments (..))
+import Codec.CBOR.Cuddle.Comments (CollectComments (..), Comment, HasComment (..))
 import Data.ByteString qualified as B
 import Data.Default.Class (Default (..))
 import Data.Function (on, (&))
@@ -51,7 +51,7 @@ import Optics.Getter (view)
 import Optics.Lens (lens)
 
 data CDDL = CDDL [Comment] Rule [TopLevel]
-  deriving (Eq, Generic, Show)
+  deriving (Eq, Generic, Show, ToExpr)
 
 -- | Sort the CDDL Rules on the basis of their names
 -- Top level comments will be removed!
@@ -82,7 +82,7 @@ instance Semigroup CDDL where
 data TopLevel
   = TopLevelRule Rule
   | TopLevelComment Comment
-  deriving (Eq, Generic, Show)
+  deriving (Eq, Generic, Show, ToExpr)
 
 -- |
 --  A name can consist of any of the characters from the set {"A" to

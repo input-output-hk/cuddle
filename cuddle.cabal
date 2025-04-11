@@ -132,6 +132,7 @@ test-suite cuddle-test
     Test.Codec.CBOR.Cuddle.CDDL.Examples
     Test.Codec.CBOR.Cuddle.CDDL.Gen
     Test.Codec.CBOR.Cuddle.CDDL.Parser
+    Test.Codec.CBOR.Cuddle.CDDL.Pretty
     Test.Codec.CBOR.Cuddle.Huddle
 
   -- other-extensions:
@@ -140,12 +141,15 @@ test-suite cuddle-test
   main-is:          Main.hs
   build-depends:
     , base              >=4.14.0.0
+    , bytestring
     , cuddle
     , data-default-class
     , hspec
     , hspec-megaparsec
+    , HUnit
     , megaparsec
     , prettyprinter
+    , string-qq
     , QuickCheck
     , text
     , tree-diff

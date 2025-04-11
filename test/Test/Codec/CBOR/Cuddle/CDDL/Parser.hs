@@ -179,15 +179,15 @@ type2Spec = describe "type2" $ do
                     { gcGroupEntries =
                         [ GroupEntry
                             { geOccurrenceIndicator = Nothing
-                            , geComment = Comment {unComment = []}
+                            , geComment = Comment mempty
                             , geVariant =
                                 GEType
                                   ( Just
                                       ( MKType
                                           ( Type1
-                                              { t1Main = T2Name (Name {name = "int", nameComment = Comment {unComment = []}}) Nothing
+                                              { t1Main = T2Name (Name {name = "int", nameComment = Comment mempty}) Nothing
                                               , t1TyOp = Nothing
-                                              , t1Comment = Comment {unComment = []}
+                                              , t1Comment = Comment mempty
                                               }
                                           )
                                       )
@@ -195,16 +195,16 @@ type2Spec = describe "type2" $ do
                                   ( Type0
                                       { t0Type1 =
                                           Type1
-                                            { t1Main = T2Name (Name {name = "string", nameComment = Comment {unComment = []}}) Nothing
+                                            { t1Main = T2Name (Name {name = "string", nameComment = Comment mempty}) Nothing
                                             , t1TyOp = Nothing
-                                            , t1Comment = Comment {unComment = []}
+                                            , t1Comment = Comment mempty
                                             }
                                             :| []
                                       }
                                   )
                             }
                         ]
-                    , gcComment = Comment {unComment = []}
+                    , gcComment = Comment mempty
                     }
                     :| []
               }
@@ -218,15 +218,15 @@ type2Spec = describe "type2" $ do
                     { gcGroupEntries =
                         [ GroupEntry
                             { geOccurrenceIndicator = Just OIZeroOrMore
-                            , geComment = Comment {unComment = []}
+                            , geComment = Comment mempty
                             , geVariant =
                                 GEType
                                   ( Just
                                       ( MKType
                                           ( Type1
-                                              { t1Main = T2Name (Name {name = "int", nameComment = Comment {unComment = []}}) Nothing
+                                              { t1Main = T2Name (Name {name = "int", nameComment = Comment mempty}) Nothing
                                               , t1TyOp = Nothing
-                                              , t1Comment = Comment {unComment = []}
+                                              , t1Comment = Comment mempty
                                               }
                                           )
                                       )
@@ -234,16 +234,16 @@ type2Spec = describe "type2" $ do
                                   ( Type0
                                       { t0Type1 =
                                           Type1
-                                            { t1Main = T2Name (Name {name = "string", nameComment = Comment {unComment = []}}) Nothing
+                                            { t1Main = T2Name (Name {name = "string", nameComment = Comment mempty}) Nothing
                                             , t1TyOp = Nothing
-                                            , t1Comment = Comment {unComment = []}
+                                            , t1Comment = Comment mempty
                                             }
                                             :| []
                                       }
                                   )
                             }
                         ]
-                    , gcComment = Comment {unComment = []}
+                    , gcComment = Comment mempty
                     }
                     :| []
               }
@@ -257,19 +257,19 @@ type2Spec = describe "type2" $ do
                     { gcGroupEntries =
                         [ GroupEntry
                             { geOccurrenceIndicator = Nothing
-                            , geComment = Comment {unComment = []}
+                            , geComment = Comment mempty
                             , geVariant =
                                 GEType
                                   ( Just
-                                      ( MKType (Type1 {t1Main = T2Value (VUInt 1), t1TyOp = Nothing, t1Comment = Comment {unComment = []}})
+                                      ( MKType (Type1 {t1Main = T2Value (VUInt 1), t1TyOp = Nothing, t1Comment = Comment mempty})
                                       )
                                   )
                                   ( Type0
                                       { t0Type1 =
                                           Type1
-                                            { t1Main = T2Name (Name {name = "string", nameComment = Comment {unComment = []}}) Nothing
+                                            { t1Main = T2Name (Name {name = "string", nameComment = Comment mempty}) Nothing
                                             , t1TyOp = Nothing
-                                            , t1Comment = Comment {unComment = []}
+                                            , t1Comment = Comment mempty
                                             }
                                             :| []
                                       }
@@ -277,19 +277,19 @@ type2Spec = describe "type2" $ do
                             }
                         , GroupEntry
                             { geOccurrenceIndicator = Nothing
-                            , geComment = Comment {unComment = []}
+                            , geComment = Comment mempty
                             , geVariant =
                                 GEType
                                   ( Just
-                                      ( MKType (Type1 {t1Main = T2Value (VUInt 2), t1TyOp = Nothing, t1Comment = Comment {unComment = []}})
+                                      ( MKType (Type1 {t1Main = T2Value (VUInt 2), t1TyOp = Nothing, t1Comment = Comment mempty})
                                       )
                                   )
                                   ( Type0
                                       { t0Type1 =
                                           Type1
-                                            { t1Main = T2Name (Name {name = "int", nameComment = Comment {unComment = []}}) Nothing
+                                            { t1Main = T2Name (Name {name = "int", nameComment = Comment mempty}) Nothing
                                             , t1TyOp = Nothing
-                                            , t1Comment = Comment {unComment = []}
+                                            , t1Comment = Comment mempty
                                             }
                                             :| []
                                       }
@@ -297,26 +297,26 @@ type2Spec = describe "type2" $ do
                             }
                         , GroupEntry
                             { geOccurrenceIndicator = Nothing
-                            , geComment = Comment {unComment = []}
+                            , geComment = Comment mempty
                             , geVariant =
                                 GEType
                                   ( Just
-                                      ( MKType (Type1 {t1Main = T2Value (VUInt 3), t1TyOp = Nothing, t1Comment = Comment {unComment = []}})
+                                      ( MKType (Type1 {t1Main = T2Value (VUInt 3), t1TyOp = Nothing, t1Comment = Comment mempty})
                                       )
                                   )
                                   ( Type0
                                       { t0Type1 =
                                           Type1
-                                            { t1Main = T2Name (Name {name = "bytes", nameComment = Comment {unComment = []}}) Nothing
+                                            { t1Main = T2Name (Name {name = "bytes", nameComment = Comment mempty}) Nothing
                                             , t1TyOp = Nothing
-                                            , t1Comment = Comment {unComment = []}
+                                            , t1Comment = Comment mempty
                                             }
                                             :| []
                                       }
                                   )
                             }
                         ]
-                    , gcComment = Comment {unComment = []}
+                    , gcComment = Comment mempty
                     }
                     :| []
               }
@@ -331,45 +331,45 @@ type2Spec = describe "type2" $ do
                     { gcGroupEntries =
                         [ GroupEntry
                             { geOccurrenceIndicator = Nothing
-                            , geComment = Comment {unComment = []}
+                            , geComment = Comment mempty
                             , geVariant =
                                 GEType
                                   Nothing
                                   ( Type0
                                       { t0Type1 =
                                           Type1
-                                            { t1Main = T2Name (Name {name = "int", nameComment = Comment {unComment = []}}) Nothing
+                                            { t1Main = T2Name (Name {name = "int", nameComment = Comment mempty}) Nothing
                                             , t1TyOp = Nothing
-                                            , t1Comment = Comment {unComment = []}
+                                            , t1Comment = Comment mempty
                                             }
                                             :| []
                                       }
                                   )
                             }
                         ]
-                    , gcComment = Comment {unComment = []}
+                    , gcComment = Comment mempty
                     }
                     :| [ GrpChoice
                           { gcGroupEntries =
                               [ GroupEntry
                                   { geOccurrenceIndicator = Nothing
-                                  , geComment = Comment {unComment = []}
+                                  , geComment = Comment mempty
                                   , geVariant =
                                       GEType
                                         Nothing
                                         ( Type0
                                             { t0Type1 =
                                                 Type1
-                                                  { t1Main = T2Name (Name {name = "string", nameComment = Comment {unComment = []}}) Nothing
+                                                  { t1Main = T2Name (Name {name = "string", nameComment = Comment mempty}) Nothing
                                                   , t1TyOp = Nothing
-                                                  , t1Comment = Comment {unComment = []}
+                                                  , t1Comment = Comment mempty
                                                   }
                                                   :| []
                                             }
                                         )
                                   }
                               ]
-                          , gcComment = Comment {unComment = []}
+                          , gcComment = Comment mempty
                           }
                        ]
               }
@@ -384,35 +384,35 @@ type2Spec = describe "type2" $ do
                     { gcGroupEntries =
                         [ GroupEntry
                             { geOccurrenceIndicator = Nothing
-                            , geComment = Comment {unComment = []}
+                            , geComment = Comment mempty
                             , geVariant =
                                 GEType
                                   Nothing
                                   ( Type0
                                       { t0Type1 =
-                                          Type1 {t1Main = T2Value (VUInt 0), t1TyOp = Nothing, t1Comment = Comment {unComment = []}} :| []
+                                          Type1 {t1Main = T2Value (VUInt 0), t1TyOp = Nothing, t1Comment = Comment mempty} :| []
                                       }
                                   )
                             }
                         ]
-                    , gcComment = Comment {unComment = []}
+                    , gcComment = Comment mempty
                     }
                     :| [ GrpChoice
                           { gcGroupEntries =
                               [ GroupEntry
                                   { geOccurrenceIndicator = Nothing
-                                  , geComment = Comment {unComment = []}
+                                  , geComment = Comment mempty
                                   , geVariant =
                                       GEType
                                         Nothing
                                         ( Type0
                                             { t0Type1 =
-                                                Type1 {t1Main = T2Value (VUInt 1), t1TyOp = Nothing, t1Comment = Comment {unComment = []}} :| []
+                                                Type1 {t1Main = T2Value (VUInt 1), t1TyOp = Nothing, t1Comment = Comment mempty} :| []
                                             }
                                         )
                                   }
                               ]
-                          , gcComment = Comment {unComment = []}
+                          , gcComment = Comment mempty
                           }
                        ]
               }
@@ -426,18 +426,18 @@ type2Spec = describe "type2" $ do
                     { gcGroupEntries =
                         [ GroupEntry
                             { geOccurrenceIndicator = Nothing
-                            , geComment = Comment {unComment = []}
+                            , geComment = Comment mempty
                             , geVariant =
                                 GEType
                                   Nothing
                                   ( Type0
                                       { t0Type1 =
-                                          Type1 {t1Main = T2Value (VUInt 1), t1TyOp = Nothing, t1Comment = Comment {unComment = []}} :| []
+                                          Type1 {t1Main = T2Value (VUInt 1), t1TyOp = Nothing, t1Comment = Comment mempty} :| []
                                       }
                                   )
                             }
                         ]
-                    , gcComment = Comment {unComment = []}
+                    , gcComment = Comment mempty
                     }
                     :| []
               }
@@ -451,35 +451,35 @@ type2Spec = describe "type2" $ do
                     { gcGroupEntries =
                         [ GroupEntry
                             { geOccurrenceIndicator = Nothing
-                            , geComment = Comment {unComment = []}
+                            , geComment = Comment mempty
                             , geVariant =
                                 GEType
                                   Nothing
                                   ( Type0
                                       { t0Type1 =
-                                          Type1 {t1Main = T2Value (VUInt 2), t1TyOp = Nothing, t1Comment = Comment {unComment = []}} :| []
+                                          Type1 {t1Main = T2Value (VUInt 2), t1TyOp = Nothing, t1Comment = Comment mempty} :| []
                                       }
                                   )
                             }
                         , GroupEntry
                             { geOccurrenceIndicator = Nothing
-                            , geComment = Comment {unComment = []}
+                            , geComment = Comment mempty
                             , geVariant =
                                 GEType
                                   Nothing
                                   ( Type0
                                       { t0Type1 =
                                           Type1
-                                            { t1Main = T2Name (Name {name = "soon", nameComment = Comment {unComment = []}}) Nothing
+                                            { t1Main = T2Name (Name {name = "soon", nameComment = Comment mempty}) Nothing
                                             , t1TyOp = Nothing
-                                            , t1Comment = Comment {unComment = []}
+                                            , t1Comment = Comment mempty
                                             }
                                             :| []
                                       }
                                   )
                             }
                         ]
-                    , gcComment = Comment {unComment = []}
+                    , gcComment = Comment mempty
                     }
                     :| []
               }
@@ -491,16 +491,16 @@ grpEntrySpec = describe "GroupEntry" $ do
     parse pGrpEntry "" "int"
       `shouldParse` GroupEntry
         { geOccurrenceIndicator = Nothing
-        , geComment = Comment {unComment = []}
+        , geComment = Comment mempty
         , geVariant =
             GEType
               Nothing
               ( Type0
                   { t0Type1 =
                       Type1
-                        { t1Main = T2Name (Name {name = "int", nameComment = Comment {unComment = []}}) Nothing
+                        { t1Main = T2Name (Name {name = "int", nameComment = Comment mempty}) Nothing
                         , t1TyOp = Nothing
-                        , t1Comment = Comment {unComment = []}
+                        , t1Comment = Comment mempty
                         }
                         :| []
                   }
@@ -510,16 +510,16 @@ grpEntrySpec = describe "GroupEntry" $ do
     parse pGrpEntry "" "int // notConsideredHere"
       `shouldParse` GroupEntry
         { geOccurrenceIndicator = Nothing
-        , geComment = Comment {unComment = []}
+        , geComment = Comment mempty
         , geVariant =
             GEType
               Nothing
               ( Type0
                   { t0Type1 =
                       Type1
-                        { t1Main = T2Name (Name {name = "int", nameComment = Comment {unComment = []}}) Nothing
+                        { t1Main = T2Name (Name {name = "int", nameComment = Comment mempty}) Nothing
                         , t1TyOp = Nothing
-                        , t1Comment = Comment {unComment = []}
+                        , t1Comment = Comment mempty
                         }
                         :| []
                   }
@@ -529,7 +529,7 @@ grpEntrySpec = describe "GroupEntry" $ do
     parse pGrpEntry "" "a<0 ... #6(0)>"
       `shouldParse` GroupEntry
         { geOccurrenceIndicator = Nothing
-        , geComment = Comment {unComment = []}
+        , geComment = Comment mempty
         , geVariant =
             GEType
               Nothing
@@ -538,7 +538,7 @@ grpEntrySpec = describe "GroupEntry" $ do
                       Type1
                         { t1Main =
                             T2Name
-                              (Name {name = "a", nameComment = Comment {unComment = []}})
+                              (Name {name = "a", nameComment = Comment mempty})
                               ( Just
                                   ( GenericArg
                                       ( Type1
@@ -550,18 +550,18 @@ grpEntrySpec = describe "GroupEntry" $ do
                                                     Nothing
                                                     ( Type0
                                                         { t0Type1 =
-                                                            Type1 {t1Main = T2Value (VUInt 0), t1TyOp = Nothing, t1Comment = Comment {unComment = []}} :| []
+                                                            Type1 {t1Main = T2Value (VUInt 0), t1TyOp = Nothing, t1Comment = Comment mempty} :| []
                                                         }
                                                     )
                                                 )
-                                          , t1Comment = Comment {unComment = []}
+                                          , t1Comment = Comment mempty
                                           }
                                           :| []
                                       )
                                   )
                               )
                         , t1TyOp = Nothing
-                        , t1Comment = Comment {unComment = []}
+                        , t1Comment = Comment mempty
                         }
                         :| []
                   }
@@ -632,27 +632,27 @@ qcFoundSpec =
       Type1
         { t1Main =
             T2Map
-              (Group {unGroup = GrpChoice {gcGroupEntries = [], gcComment = Comment {unComment = []}} :| []})
+              (Group {unGroup = GrpChoice {gcGroupEntries = [], gcComment = Comment mempty} :| []})
         , t1TyOp =
             Just
               ( CtrlOp CtlOp.Ge
               , T2EnumRef
-                  (Name {name = "i", nameComment = Comment {unComment = []}})
+                  (Name {name = "i", nameComment = Comment mempty})
                   ( Just
                       ( GenericArg
                           ( Type1
                               { t1Main =
                                   T2Map
-                                    (Group {unGroup = GrpChoice {gcGroupEntries = [], gcComment = Comment {unComment = []}} :| []})
+                                    (Group {unGroup = GrpChoice {gcGroupEntries = [], gcComment = Comment mempty} :| []})
                               , t1TyOp = Nothing
-                              , t1Comment = Comment {unComment = []}
+                              , t1Comment = Comment mempty
                               }
-                              :| [Type1 {t1Main = T2Value (VUInt 3), t1TyOp = Nothing, t1Comment = Comment {unComment = []}}]
+                              :| [Type1 {t1Main = T2Value (VUInt 3), t1TyOp = Nothing, t1Comment = Comment mempty}]
                           )
                       )
                   )
               )
-        , t1Comment = Comment {unComment = []}
+        , t1Comment = Comment mempty
         }
     parseExample "S = 0* ()" pRule $
       Rule

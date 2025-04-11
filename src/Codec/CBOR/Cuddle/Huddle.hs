@@ -1034,7 +1034,7 @@ toCDDL' mkPseudoRoot hdl =
           "huddle_root_defs" =:= arr (fromList (fmap a topRs))
     toCDDLRule :: Rule -> C.Rule
     toCDDLRule (Named n t0 c) =
-      (\x -> C.Rule (C.Name n mempty) Nothing C.AssignEq x (foldMap C.comment c))
+      (\x -> C.Rule (C.Name n mempty) Nothing C.AssignEq x (foldMap C.Comment c))
         . C.TOGType
         . C.Type0
         $ toCDDLType1 <$> choiceToNE t0
@@ -1057,7 +1057,7 @@ toCDDL' mkPseudoRoot hdl =
     mapEntryToCDDL (MapEntry k v occ cmnt) =
       C.GroupEntry
         (toOccurrenceIndicator occ)
-        (foldMap C.comment cmnt)
+        (foldMap C.Comment cmnt)
         (C.GEType (Just $ toMemberKey k) (toCDDLType0 v))
 
     toOccurrenceIndicator :: Occurs -> Maybe C.OccurrenceIndicator
@@ -1104,7 +1104,7 @@ toCDDL' mkPseudoRoot hdl =
     arrayEntryToCDDL (ArrayEntry k v occ cmnt) =
       C.GroupEntry
         (toOccurrenceIndicator occ)
-        (foldMap C.comment cmnt)
+        (foldMap C.Comment cmnt)
         (C.GEType (fmap toMemberKey k) (toCDDLType0 v))
 
     toCDDLPostlude :: Value a -> C.Name
@@ -1154,7 +1154,7 @@ toCDDL' mkPseudoRoot hdl =
               arrayEntryToCDDL
               t0s
         )
-        (foldMap C.comment c)
+        (foldMap C.Comment c)
 
     toGenericCall :: GRuleCall -> C.Type2
     toGenericCall (Named n gr _) =
@@ -1172,7 +1172,7 @@ toCDDL' mkPseudoRoot hdl =
             . C.Type0
             $ toCDDLType1 <$> choiceToNE (body gr)
         )
-        (foldMap C.comment c)
+        (foldMap C.Comment c)
       where
         gps =
           C.GenericParam $ fmap (\(GRef t) -> C.Name t mempty) (args gr)

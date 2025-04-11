@@ -1,8 +1,8 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Codec.CBOR.Cuddle.Comments (
-  comment,
   HasComment (..),
   CollectComments (..),
   hasComment,
@@ -12,6 +12,7 @@ module Codec.CBOR.Cuddle.Comments (
   WithComment (..),
   (!$>),
   Comment (..),
+  unComment,
   withComment,
 ) where
 
@@ -21,15 +22,23 @@ import Data.TreeDiff (ToExpr)
 import GHC.Generics (Generic)
 import Optics.Core (Lens', lens, view, (%~), (&), (^.), (.~))
 import Data.List.NonEmpty (NonEmpty (..))
-import Data.Default.Class (Default)
+import Data.Default.Class (Default (..))
+import Data.String (IsString (..))
 
-newtype Comment = Comment {unComment :: [T.Text]}
+newtype Comment = Comment T.Text
   deriving (Eq, Ord, Generic, Show)
-  deriving newtype (Semigroup, Monoid, Default)
+  deriving newtype (Monoid)
   deriving anyclass (ToExpr, Hashable)
 
-comment :: T.Text -> Comment
-comment t = Comment [t]
+instance Semigroup Comment where
+  Comment "" <> x = x
+  x <> Comment "" = x
+  Comment x <> Comment y = Comment $ x <> "\n" <> y
+
+unComment :: Comment -> [T.Text]
+unComment (Comment c) = T.lines c
+
+instance Default Comment where def = mempty
 
 class HasComment a where
   commentL :: Lens' a Comment
@@ -83,3 +92,6 @@ instance HasComment a => HasComment (NonEmpty a) where
 
 instance HasComment Comment where
   commentL = lens id const
+
+instance IsString Comment where
+  fromString s = Comment $ T.pack s

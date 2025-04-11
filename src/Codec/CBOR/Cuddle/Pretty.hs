@@ -7,7 +7,7 @@ module Codec.CBOR.Cuddle.Pretty where
 
 import Codec.CBOR.Cuddle.CDDL
 import Codec.CBOR.Cuddle.CDDL.CtlOp (CtlOp)
-import Codec.CBOR.Cuddle.Comments (CollectComments (..), Comment (..))
+import Codec.CBOR.Cuddle.Comments (CollectComments (..), Comment (..), unComment)
 import Codec.CBOR.Cuddle.Pretty.Columnar (
   Cell (..),
   CellAlign (..),
@@ -52,8 +52,8 @@ prettyCommentNoBreakWS cmt
   | otherwise = space <> prettyCommentNoBreak cmt
 
 instance Pretty Comment where
-  pretty (Comment []) = mempty
-  pretty c@(Comment _) = (<> hardline) $ prettyCommentNoBreak c
+  pretty (Comment "") = mempty
+  pretty c = prettyCommentNoBreak c <> hardline
 
 type0Def :: Type0 -> Doc ann
 type0Def t = nest 2 $ line' <> pretty t
@@ -63,8 +63,8 @@ instance Pretty Rule where
     pretty cmt
       <> group
         ( pretty n <> pretty mgen <+> case tog of
-            TOGType t -> ppAssignT <+> type0Def t
-            TOGGroup g -> ppAssignG <+> nest 2 (line' <> pretty g)
+            TOGType t -> ppAssignT <> softline <> type0Def t
+            TOGGroup g -> ppAssignG <> softline <> nest 2 (line' <> pretty g)
         )
     where
       ppAssignT = case assign of
@@ -173,7 +173,7 @@ columnarGroupChoice (GrpChoice ges _cmt) = Columnar grpEntryRows
 
 prettyGroup :: GroupRender -> Group -> Doc ann
 prettyGroup gr g@(Group (toList -> xs)) =
-  groupIfNoComments g . columnarListing lEnc rEnc "//" . Columnar $
+  groupIfNoComments g . columnarListing (lEnc <> softspace) rEnc "// " . Columnar $
     (\x -> singletonRow . groupIfNoComments x . columnarSepBy "," $ columnarGroupChoice x) <$> xs
   where
     (lEnc, rEnc) = case gr of
