@@ -49,6 +49,7 @@ data PTerm
   | PTText
   | PTAny
   | PTNil
+  | PTUndefined
   deriving (Eq, Generic, Ord, Show)
 
 instance Hashable PTerm
