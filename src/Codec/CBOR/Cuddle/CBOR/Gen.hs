@@ -202,6 +202,7 @@ genPostlude pt = case pt of
   PTText -> TString <$> genText 30
   PTAny -> pure $ TString "Any"
   PTNil -> pure TNull
+  PTUndefined -> pure $ TSimple 23
 
 --------------------------------------------------------------------------------
 -- Kinds of terms
@@ -427,6 +428,7 @@ genValue (VText t) = pure $ TString t
 genValue (VBytes b) = case Base16.decode b of
   Right bHex -> pure $ TBytes bHex
   Left err -> error $ "Unable to parse hex encoded bytestring: " <> err
+genValue (VBool b) = pure $ TBool b
 
 --------------------------------------------------------------------------------
 -- Generator functions

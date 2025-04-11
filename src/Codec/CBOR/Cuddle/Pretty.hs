@@ -218,3 +218,5 @@ instance Pretty Value where
   pretty (VFloat64 i) = pretty i
   pretty (VText t) = enclose "\"" "\"" $ pretty t
   pretty (VBytes b) = fromString $ "h" <> "'" <> BS.unpack b <> "'"
+  pretty (VBool True) = "true"
+  pretty (VBool False) = "false"
