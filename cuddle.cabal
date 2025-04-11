@@ -44,6 +44,7 @@ library
   import:           warnings, ghc2021
   exposed-modules:
     Codec.CBOR.Cuddle.CBOR.Gen
+    Codec.CBOR.Cuddle.CBOR.Validate
     Codec.CBOR.Cuddle.CDDL
     Codec.CBOR.Cuddle.CDDL.CtlOp
     Codec.CBOR.Cuddle.CDDL.CTree
@@ -70,6 +71,8 @@ library
     , data-default-class
     , foldable1-classes-compat
     , generic-optics
+    , lens
+    , semigroupoids
     , hashable
     , megaparsec
     , mtl
@@ -81,6 +84,7 @@ library
     , random              <1.3
     , scientific
     , text
+    , validation
     , tree-diff
 
   hs-source-dirs:   src
@@ -119,6 +123,7 @@ executable cuddle
     , optparse-applicative
     , prettyprinter
     , random
+    , mtl
     , text
 
 test-suite cuddle-test
