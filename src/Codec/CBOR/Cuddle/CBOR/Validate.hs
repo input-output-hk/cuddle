@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# OPTIONS_GHC -Wno-unused-imports -Wno-unused-matches #-}
@@ -15,6 +16,7 @@ import Control.Lens ((#))
 import Control.Monad (unless, when)
 import Control.Monad.Except
 import Data.ByteString qualified as BS
+import Data.ByteString.Base16 qualified as Base16
 import Data.ByteString.Lazy qualified as BSL
 import Data.Either
 import Data.Functor.Alt
@@ -37,382 +39,58 @@ import Debug.Trace
 -- - cuts in maps
 -- - .bits
 -- - .regexp
--- - ranges
+-- - .cbor
+-- - maps and lists .eq and .ne
 
 type CDDL' = CTreeRoot' Identity MonoRef
 type Rule' = Node MonoRef
 
-doValidate :: CDDL' -> Term -> Rule' -> Validation [Reason] ()
-doValidate cddl t theRule = case resolveIfRef cddl theRule of
-  Choice choices -> validateChoices cddl t (NE.toList choices)
-  Control And r1 r2 ->
-    doValidate cddl t r1 <* doValidate cddl t r2
-  Control Within r1 r2 ->
-    doValidate cddl t r1 <* doValidate cddl t r2
-  _ -> case t of
-    TInt i -> case resolveIfRef cddl theRule of
-      Literal (VUInt i') ->
-        if i == fromIntegral i'
-          then _Success # ()
-          else _Failure # [DidNotValidate "Expecting a different int"]
-      Literal (VNInt i') ->
-        if i == -(fromIntegral i')
-          then _Success # ()
-          else _Failure # [DidNotValidate "Expecting a different int"]
-      Postlude PTInt -> _Success # ()
-      Postlude PTUInt ->
-        if i >= 0
-          then _Success # ()
-          else _Failure # [DidNotValidate "Expecting a positive int"]
-      Postlude PTNInt ->
-        if i < 0
-          then _Success # ()
-          else _Failure # [DidNotValidate "Expecting a negative int"]
-      Control op n ctrller ->
-        let intControl = case (op, resolveIfRef cddl ctrller) of
-              (Lt, Literal (VUInt i')) ->
-                if i < fromIntegral i'
-                  then _Success # ()
-                  else _Failure # [DidNotValidate "Failed control"]
-              (Lt, Literal (VNInt i')) ->
-                if i < -(fromIntegral i')
-                  then _Success # ()
-                  else _Failure # [DidNotValidate "Failed control"]
-              (Le, Literal (VUInt i')) ->
-                if i <= fromIntegral i'
-                  then _Success # ()
-                  else _Failure # [DidNotValidate "Failed control"]
-              (Le, Literal (VNInt i')) ->
-                if i <= -(fromIntegral i')
-                  then _Success # ()
-                  else _Failure # [DidNotValidate "Failed control"]
-              (Gt, Literal (VUInt i')) ->
-                if i > fromIntegral i'
-                  then _Success # ()
-                  else _Failure # [DidNotValidate "Failed control"]
-              (Gt, Literal (VNInt i')) ->
-                if i > -(fromIntegral i')
-                  then _Success # ()
-                  else _Failure # [DidNotValidate "Failed control"]
-              (Ge, Literal (VUInt i')) ->
-                if i >= fromIntegral i'
-                  then _Success # ()
-                  else _Failure # [DidNotValidate "Failed control"]
-              (Ge, Literal (VNInt i')) ->
-                if i >= -(fromIntegral i')
-                  then _Success # ()
-                  else _Failure # [DidNotValidate "Failed control"]
-              (Eq, Literal (VUInt i')) ->
-                if i == fromIntegral i'
-                  then _Success # ()
-                  else _Failure # [DidNotValidate "Failed control"]
-              (Eq, Literal (VNInt i')) ->
-                if i == -(fromIntegral i')
-                  then _Success # ()
-                  else _Failure # [DidNotValidate "Failed control"]
-              (Ne, Literal (VUInt i')) ->
-                if i /= fromIntegral i'
-                  then _Success # ()
-                  else _Failure # [DidNotValidate "Failed control"]
-              (Ne, Literal (VNInt i')) ->
-                if i /= -(fromIntegral i')
-                  then _Success # ()
-                  else _Failure # [DidNotValidate "Failed control"]
-              _ -> error "nonsense"
-         in case resolveIfRef cddl n of
-              Postlude PTInt -> intControl
-              Postlude PTUInt ->
-                if i >= 0
-                  then intControl
-                  else _Failure # [DidNotValidate "Expecting a positive int"]
-              Postlude PTNInt ->
-                if i < 0
-                  then intControl
-                  else _Failure # [DidNotValidate "Expecting a positive int"]
-              _ -> error "nonsense"
-      _ -> _Failure # [DidNotValidate "Types mismatch!"]
-    TInteger i -> case resolveIfRef cddl theRule of
-      Literal (VBignum i') ->
-        if i == i'
-          then _Success # ()
-          else _Failure # [DidNotValidate "Expecting a different int"]
-      -- TODO: can TInteger be a Literal VUInt or VNInt?
-      Postlude PTInt -> _Success # ()
-      Postlude PTUInt ->
-        if i >= 0
-          then _Success # ()
-          else _Failure # [DidNotValidate "Expecting a positive int"]
-      Postlude PTNInt ->
-        if i < 0
-          then _Success # ()
-          else _Failure # [DidNotValidate "Expecting a negative int"]
-      Control op n ctrller ->
-        let intControl = case (op, resolveIfRef cddl ctrller) of
-              (Lt, Literal (VBignum i')) ->
-                if i < i'
-                  then _Success # ()
-                  else _Failure # [DidNotValidate "Failed control"]
-              (Le, Literal (VBignum i')) ->
-                if i <= i'
-                  then _Success # ()
-                  else _Failure # [DidNotValidate "Failed control"]
-              (Gt, Literal (VBignum i')) ->
-                if i > i'
-                  then _Success # ()
-                  else _Failure # [DidNotValidate "Failed control"]
-              (Ge, Literal (VBignum i')) ->
-                if i >= i'
-                  then _Success # ()
-                  else _Failure # [DidNotValidate "Failed control"]
-              (Eq, Literal (VBignum i')) ->
-                if i == i'
-                  then _Success # ()
-                  else _Failure # [DidNotValidate "Failed control"]
-              (Ne, Literal (VBignum i')) ->
-                if i /= i'
-                  then _Success # ()
-                  else _Failure # [DidNotValidate "Failed control"]
-              _ -> error "nonsense"
-         in case resolveIfRef cddl n of
-              Postlude PTInt -> intControl
-              Postlude PTUInt ->
-                if i >= 0
-                  then intControl
-                  else _Failure # [DidNotValidate "Expecting a positive int"]
-              Postlude PTNInt ->
-                if i < 0
-                  then intControl
-                  else _Failure # [DidNotValidate "Expecting a positive int"]
-              _ -> error "nonsense"
-      _ -> _Failure # [DidNotValidate "Types mismatch!"]
-    TBytes b -> case resolveIfRef cddl theRule of
-      Literal (VBytes b') ->
-        if b == b'
-          then _Success # ()
-          else _Failure # [DidNotValidate "Expected a different bytestring"]
-      Postlude PTBytes -> _Success # ()
-      Control op n ctrller ->
-        let bytesControl = case (op, resolveIfRef cddl ctrller) of
-              (Size, Literal (VUInt i)) ->
-                if BS.length b == fromIntegral i
-                  then _Success # ()
-                  else _Failure # [DidNotValidate "Failed control"]
-              (Lt, Literal (VBytes b')) ->
-                if b < b'
-                  then _Success # ()
-                  else _Failure # [DidNotValidate "Failed control"]
-              (Le, Literal (VBytes b')) ->
-                if b <= b'
-                  then _Success # ()
-                  else _Failure # [DidNotValidate "Failed control"]
-              (Gt, Literal (VBytes b')) ->
-                if b > b'
-                  then _Success # ()
-                  else _Failure # [DidNotValidate "Failed control"]
-              (Ge, Literal (VBytes b')) ->
-                if b >= b'
-                  then _Success # ()
-                  else _Failure # [DidNotValidate "Failed control"]
-              (Eq, Literal (VBytes b')) ->
-                if b == b'
-                  then _Success # ()
-                  else _Failure # [DidNotValidate "Failed control"]
-              (Ne, Literal (VBytes b')) ->
-                if b /= b'
-                  then _Success # ()
-                  else _Failure # [DidNotValidate "Failed control"]
-              _ -> error "nonsense"
-         in case resolveIfRef cddl n of
-              Postlude PTBytes -> bytesControl
-              _ -> error "nonsense"
-      _ -> _Failure # [DidNotValidate "Types mismatch!"]
-    TBytesI (BSL.toStrict -> b) -> case resolveIfRef cddl theRule of
-      Literal (VBytes b') ->
-        if b == b'
-          then _Success # ()
-          else _Failure # [DidNotValidate "Expected a different bytestring"]
-      Postlude PTBytes -> _Success # ()
-      Control op n ctrller ->
-        let bytesControl = case (op, resolveIfRef cddl ctrller) of
-              (Size, Literal (VUInt i)) ->
-                if BS.length b == fromIntegral i
-                  then _Success # ()
-                  else _Failure # [DidNotValidate "Failed control"]
-              (Lt, Literal (VBytes b')) ->
-                if b < b'
-                  then _Success # ()
-                  else _Failure # [DidNotValidate "Failed control"]
-              (Le, Literal (VBytes b')) ->
-                if b <= b'
-                  then _Success # ()
-                  else _Failure # [DidNotValidate "Failed control"]
-              (Gt, Literal (VBytes b')) ->
-                if b > b'
-                  then _Success # ()
-                  else _Failure # [DidNotValidate "Failed control"]
-              (Ge, Literal (VBytes b')) ->
-                if b >= b'
-                  then _Success # ()
-                  else _Failure # [DidNotValidate "Failed control"]
-              (Eq, Literal (VBytes b')) ->
-                if b == b'
-                  then _Success # ()
-                  else _Failure # [DidNotValidate "Failed control"]
-              (Ne, Literal (VBytes b')) ->
-                if b /= b'
-                  then _Success # ()
-                  else _Failure # [DidNotValidate "Failed control"]
-              _ -> error "nonsense"
-         in case resolveIfRef cddl n of
-              Postlude PTBytes -> bytesControl
-              _ -> error "nonsense"
-      _ -> _Failure # [DidNotValidate "Types mismatch!"]
-    TString s -> case resolveIfRef cddl theRule of
-      Literal (VText s') ->
-        if s == s'
-          then _Success # ()
-          else _Failure # [DidNotValidate "Expected a different text"]
-      Postlude PTText -> _Success # ()
-      Control op n ctrller ->
-        let textControl = case (op, resolveIfRef cddl ctrller) of
-              (Size, Literal (VUInt i)) ->
-                if T.length s == fromIntegral i
-                  then _Success # ()
-                  else _Failure # [DidNotValidate "Failed control"]
-              (Lt, Literal (VText b')) ->
-                if s < b'
-                  then _Success # ()
-                  else _Failure # [DidNotValidate "Failed control"]
-              (Le, Literal (VText b')) ->
-                if s <= b'
-                  then _Success # ()
-                  else _Failure # [DidNotValidate "Failed control"]
-              (Gt, Literal (VText b')) ->
-                if s > b'
-                  then _Success # ()
-                  else _Failure # [DidNotValidate "Failed control"]
-              (Ge, Literal (VText b')) ->
-                if s >= b'
-                  then _Success # ()
-                  else _Failure # [DidNotValidate "Failed control"]
-              (Eq, Literal (VText b')) ->
-                if s == b'
-                  then _Success # ()
-                  else _Failure # [DidNotValidate "Failed control"]
-              (Ne, Literal (VText b')) ->
-                if s /= b'
-                  then _Success # ()
-                  else _Failure # [DidNotValidate "Failed control"]
-              _ -> error "nonsense"
-         in case resolveIfRef cddl n of
-              Postlude PTText -> textControl
-              _ -> error "nonsense"
-      _ -> _Failure # [DidNotValidate "Types mismatch!"]
-    TStringI (TL.toStrict -> s) -> case resolveIfRef cddl theRule of
-      Literal (VText s') ->
-        if s == s'
-          then _Success # ()
-          else _Failure # [DidNotValidate "Expected a different text"]
-      Postlude PTText -> _Success # ()
-      Control op n ctrller ->
-        let textControl = case (op, resolveIfRef cddl ctrller) of
-              (Size, Literal (VUInt i)) ->
-                if T.length s == fromIntegral i
-                  then _Success # ()
-                  else _Failure # [DidNotValidate "Failed control"]
-              (Lt, Literal (VText b')) ->
-                if s < b'
-                  then _Success # ()
-                  else _Failure # [DidNotValidate "Failed control"]
-              (Le, Literal (VText b')) ->
-                if s <= b'
-                  then _Success # ()
-                  else _Failure # [DidNotValidate "Failed control"]
-              (Gt, Literal (VText b')) ->
-                if s > b'
-                  then _Success # ()
-                  else _Failure # [DidNotValidate "Failed control"]
-              (Ge, Literal (VText b')) ->
-                if s >= b'
-                  then _Success # ()
-                  else _Failure # [DidNotValidate "Failed control"]
-              (Eq, Literal (VText b')) ->
-                if s == b'
-                  then _Success # ()
-                  else _Failure # [DidNotValidate "Failed control"]
-              (Ne, Literal (VText b')) ->
-                if s /= b'
-                  then _Success # ()
-                  else _Failure # [DidNotValidate "Failed control"]
-              _ -> error "nonsense"
-         in case resolveIfRef cddl n of
-              Postlude PTText -> textControl
-              _ -> error "nonsense"
-      _ -> _Failure # [DidNotValidate "Types mismatch!"]
-    TTagged tg t' -> case resolveIfRef cddl theRule of
-      Tag tg' rule' ->
-        if tg == tg'
-          then doValidate cddl t' rule'
-          else _Failure # [DidNotValidate "Expected a different tag"]
-      _ -> _Failure # [DidNotValidate "Types mismatch!"]
-    TBool b -> case resolveIfRef cddl theRule of
-      Literal (VBool b') ->
-        if b == b'
-          then _Success # ()
-          else _Failure # [DidNotValidate "Expected a different bool"]
-      Postlude PTBool -> _Success # ()
-      Control op n ctrller ->
-        let boolControl = case (op, resolveIfRef cddl ctrller) of
-              (Eq, Literal (VBool b')) ->
-                if b == b'
-                  then _Success # ()
-                  else _Failure # [DidNotValidate "Failed control"]
-              (Ne, Literal (VBool b')) ->
-                if b /= b'
-                  then _Success # ()
-                  else _Failure # [DidNotValidate "Failed control"]
-              _ -> error "nonsense"
-         in case resolveIfRef cddl n of
-              Postlude PTBool -> boolControl
-              _ -> error "nonsense"
-      _ -> _Failure # [DidNotValidate "Types mismatch!"]
-    TNull -> case resolveIfRef cddl theRule of
-      Postlude PTNil -> _Success # ()
-      _ -> _Failure # [DidNotValidate "Types mismatch!"]
-    THalf h -> case resolveIfRef cddl theRule of
-      Literal (VFloat16 h') ->
-        if h == h'
-          then _Success # ()
-          else _Failure # [DidNotValidate "Expected a different float16"]
-      Postlude PTHalf -> _Success # ()
-      _ -> _Failure # [DidNotValidate "Types mismatch!"]
-    TFloat f -> case resolveIfRef cddl theRule of
-      Literal (VFloat32 f') ->
-        if f == f'
-          then _Success # ()
-          else _Failure # [DidNotValidate "Expected a different float32"]
-      Postlude PTFloat -> _Success # ()
-      _ -> _Failure # [DidNotValidate "Types mismatch!"]
-    TDouble d -> case resolveIfRef cddl theRule of
-      Literal (VFloat64 d') ->
-        if d == d'
-          then _Success # ()
-          else _Failure # [DidNotValidate "Expected a different float64"]
-      Postlude PTDouble -> _Success # ()
-      _ -> _Failure # [DidNotValidate "Types mismatch!"]
-    TList nodes -> case resolveIfRef cddl theRule of
-      Array nodes' -> validateGroup cddl nodes nodes'
-      _ -> _Failure # [DidNotValidate "Types mismatch!"]
-    TListI nodes -> case resolveIfRef cddl theRule of
-      Array nodes' -> validateGroup cddl nodes nodes'
-      _ -> _Failure # [DidNotValidate "Types mismatch!"]
-    TMap nodes -> case resolveIfRef cddl theRule of
-      Map nodes' -> validateGroup2 cddl nodes nodes'
-      _ -> _Failure # [DidNotValidate "Types mismatch!"]
-    TMapI nodes -> case resolveIfRef cddl theRule of
-      Map nodes' -> validateGroup2 cddl nodes nodes'
-      _ -> _Failure # [DidNotValidate "Types mismatch!"]
-    TSimple _s -> undefined
+failUnless :: Bool -> e -> Validation e ()
+failUnless cond = validateWithUnless cond (_Success # ())
+
+validateWithUnless :: Bool -> Validation e () -> e -> Validation e ()
+validateWithUnless cond val msg
+  | cond = val
+  | otherwise = _Failure # msg
+
+resolveIfRef :: CTreeRoot' Identity MonoRef -> Node MonoRef -> CTree MonoRef
+resolveIfRef _ (MIt aa) = aa
+resolveIfRef ct@(CTreeRoot cddl) (MRuleRef n) = do
+  case Map.lookup n cddl of
+    Nothing -> error $ "Unbound reference: " <> show n
+    Just val -> resolveIfRef ct $ runIdentity val
+
+{-------------------------------------------------------------------------------
+  Operators
+-------------------------------------------------------------------------------}
+
+runNumericOp ::
+  (Ord a, Show a) =>
+  String -> CtlOp -> a -> a -> Validation [Reason] ()
+runNumericOp t op i i' = case op of
+  Lt -> failUnless (i < i') [Unexpected ("a " <> t <> " < " <> show i') (show i)]
+  Le -> failUnless (i <= i') [Unexpected ("a " <> t <> " <= " <> show i') (show i)]
+  Gt -> failUnless (i > i') [Unexpected ("a " <> t <> " > " <> show i') (show i)]
+  Ge -> failUnless (i >= i') [Unexpected ("a " <> t <> " >= " <> show i') (show i)]
+  Eq -> failUnless (i == i') [Unexpected ("a " <> t <> " == " <> show i') (show i)]
+  Ne -> failUnless (i /= i') [Unexpected ("a " <> t <> " /= " <> show i') (show i)]
+  _ -> _Failure # [DidNotValidate $ "Op " <> show op <> " is not applicable to type " <> t]
+
+runStringOp ::
+  (Ord a, Show a) =>
+  String -> CtlOp -> a -> (a -> Int) -> Either Int a -> Validation [Reason] ()
+runStringOp t op i getSize i' = case (op, i') of
+  (Size, Left sz') ->
+    let sz = getSize i
+     in failUnless
+          (sz == sz')
+          [Unexpected ("a " <> t <> " of length " <> show sz') ("a " <> t <> " of length " <> show sz)]
+  (_, Right i'') -> runNumericOp t op i i''
+  _ -> _Failure # [DidNotValidate $ "Op " <> show op <> " is not applicable to type " <> t]
+
+{-------------------------------------------------------------------------------
+  Choices
+-------------------------------------------------------------------------------}
 
 validateChoices ::
   CDDL' -> Term -> [Node MonoRef] -> Validation [Reason] ()
@@ -420,14 +98,263 @@ validateChoices _ _ [] = _Failure # [DidNotValidate "None in the choice was vali
 validateChoices cddl t (choice : choices) =
   doValidate cddl t choice <!> validateChoices cddl t choices
 
+{-------------------------------------------------------------------------------
+  Int and integers
+-------------------------------------------------------------------------------}
+
+getTheInt :: CDDL' -> Rule' -> Maybe Int
+getTheInt cddl ref = case resolveIfRef cddl ref of
+  Literal (VUInt i) -> Just (fromIntegral i)
+  Literal (VNInt i) -> Just (-fromIntegral @Word64 @Int i)
+  _ -> Nothing
+
+getTheInteger :: CDDL' -> Rule' -> Maybe Integer
+getTheInteger cddl ref = case resolveIfRef cddl ref of
+  Literal (VBignum i) -> Just i
+  _ -> Nothing
+
+validateIntegral ::
+  (Integral a, Show a) => CDDL' -> a -> (CDDL' -> Rule' -> Maybe a) -> Rule' -> Validation [Reason] ()
+validateIntegral cddl i getInner theRule = case traceShowId (resolveIfRef cddl theRule, getInner cddl theRule) of
+  (_, Just i') ->
+    failUnless (i == i') [Unexpected ("the fixed int " <> show i') (show i)]
+  (Postlude PTInt, Nothing) -> _Success # ()
+  (Postlude PTUInt, Nothing) ->
+    failUnless (i >= 0) [Unexpected "a positive int" (show i)]
+  (Postlude PTNInt, Nothing) ->
+    failUnless (i < 0) [Unexpected "a negative int" (show i)]
+  (Range from to incl, Nothing) -> case (getInner cddl from, getInner cddl to) of
+    (Just low, Just high) ->
+      failUnless
+        ( low <= i && case incl of
+            ClOpen -> i < high
+            Closed -> i <= high
+        )
+        [Unexpected ("an int in " <> show (low, high, incl)) (show i)]
+    _ -> _Failure # [DidNotValidate $ "Got malformed range " <> show (Range from to incl)]
+  (Tag 2 theRule', Nothing) -> case resolveIfRef cddl theRule' of
+    Postlude PTBytes -> _Success # ()
+    _ -> _Failure # [DidNotValidate $ "Malformed rule! " <> show (Tag 3 theRule')]
+  (Tag 3 theRule', Nothing) -> case resolveIfRef cddl theRule' of
+    Postlude PTBytes -> _Success # ()
+    _ -> _Failure # [DidNotValidate $ "Malformed rule! " <> show (Tag 3 theRule')]
+  (Control op n ctrller, Nothing) ->
+    let intControl =
+          maybe
+            (_Failure # [DidNotValidate $ "Control rhs is not a single int: " <> show ctrller])
+            (runNumericOp "int" op i)
+            $ getInner cddl ctrller
+     in case (resolveIfRef cddl n, getInner cddl n) of
+          (_, Just i') ->
+            validateWithUnless
+              (i == i')
+              intControl
+              [Unexpected ("the fixed int " <> show i') (show i)]
+          (Postlude PTInt, Nothing) -> intControl
+          (Postlude PTUInt, Nothing) ->
+            validateWithUnless (i >= 0) intControl [DidNotValidate "Expecting a positive int"]
+          (Range from to incl, Nothing) -> case (getInner cddl from, getInner cddl to) of
+            (Just low, Just high) ->
+              validateWithUnless
+                ( low <= i && case incl of
+                    ClOpen -> i < high
+                    Closed -> i <= high
+                )
+                intControl
+                [Unexpected ("an int in " <> show (low, high, incl)) (show i)]
+            _ -> _Failure # [DidNotValidate $ "Got malformed range " <> show (Range from to incl)]
+          (Postlude PTNInt, Nothing) ->
+            validateWithUnless (i < 0) intControl [DidNotValidate "Expecting a positive int"]
+          lhs -> _Failure # [DidNotValidate $ "Control lhs is not valid for ints: " <> show lhs]
+  rr -> _Failure # [Unexpected "a rule for ints" (show rr)]
+
+{-------------------------------------------------------------------------------
+  ByteStrings
+-------------------------------------------------------------------------------}
+
+getTheIntOrByteString :: CDDL' -> Rule' -> Maybe (Either Int BS.ByteString)
+getTheIntOrByteString cddl rule = case resolveIfRef cddl rule of
+  Literal (VUInt i) -> Just (Left $ fromIntegral i)
+  Literal (VBytes b) -> Just (Right b)
+  _ -> Nothing
+
+validateBytes :: CDDL' -> BS.ByteString -> Rule' -> Validation [Reason] ()
+validateBytes cddl b theRule = case resolveIfRef cddl theRule of
+  Literal (VBytes (Base16.decode -> Right b')) ->
+    failUnless (b == b') [Unexpected ("the exact bytestring " <> show b') (show b)]
+  Postlude PTBytes -> _Success # ()
+  Control op n ctrller ->
+    let bytesControl =
+          maybe
+            (_Failure # [DidNotValidate $ "Control rhs is not an int or bytestring: " <> show ctrller])
+            ( runStringOp
+                "bytestring"
+                op
+                b
+                BS.length
+            )
+            $ getTheIntOrByteString cddl ctrller
+     in case resolveIfRef cddl n of
+          Postlude PTBytes -> bytesControl
+          lhs -> _Failure # [DidNotValidate $ "Control lhs is not valid for bytestrings: " <> show lhs]
+  rr -> _Failure # [Unexpected "a rule for bytestrings" (show rr)]
+
+{-------------------------------------------------------------------------------
+  Text
+-------------------------------------------------------------------------------}
+
+getTheIntOrText :: CDDL' -> Rule' -> Maybe (Either Int T.Text)
+getTheIntOrText cddl rule = case resolveIfRef cddl rule of
+  Literal (VUInt i) -> Just (Left $ fromIntegral i)
+  Literal (VText b) -> Just (Right b)
+  _ -> Nothing
+
+validateText :: CDDL' -> T.Text -> Rule' -> Validation [Reason] ()
+validateText cddl b theRule = case resolveIfRef cddl theRule of
+  Literal (VText b') ->
+    failUnless (b == b') [Unexpected ("the exact textstring " <> show b') (show b)]
+  Postlude PTText -> _Success # ()
+  Control op n ctrller ->
+    let textControl =
+          maybe
+            (_Failure # [DidNotValidate $ "Control rhs is not an int or textstring: " <> show ctrller])
+            ( runStringOp
+                "textstring"
+                op
+                b
+                T.length
+            )
+            $ getTheIntOrText cddl ctrller
+     in case resolveIfRef cddl n of
+          Postlude PTText -> textControl
+          lhs -> _Failure # [DidNotValidate $ "Control lhs is not valid for textstrings: " <> show lhs]
+  rr -> _Failure # [Unexpected "a rule for textstrings" (show rr)]
+
+{-------------------------------------------------------------------------------
+  Tags
+-------------------------------------------------------------------------------}
+
+validateTag :: CDDL' -> Word64 -> Term -> Rule' -> Validation [Reason] ()
+validateTag cddl tg t' theRule = case resolveIfRef cddl theRule of
+  Tag tg' rule' ->
+    validateWithUnless
+      (tg == tg')
+      (doValidate cddl t' rule')
+      [DidNotValidate "Expected a different tag"]
+  rr -> _Failure # [Unexpected "a rule for tags" (show rr)]
+
+{-------------------------------------------------------------------------------
+  Bool
+-------------------------------------------------------------------------------}
+
+validateBool :: CDDL' -> Bool -> Rule' -> Validation [Reason] ()
+validateBool cddl b theRule = case resolveIfRef cddl theRule of
+  Literal (VBool b') ->
+    failUnless (b == b') [DidNotValidate "Expected a different bool"]
+  Postlude PTBool -> _Success # ()
+  Control op n ctrller ->
+    let boolControl = case (op, resolveIfRef cddl ctrller) of
+          (Eq, Literal (VBool b')) ->
+            failUnless (b == b') [Unexpected ("the exact boolean " <> show b') (show b)]
+          (Ne, Literal (VBool b')) ->
+            failUnless (b /= b') [Unexpected ("the exact boolean " <> show (not b')) (show b)]
+          _ -> _Failure # [DidNotValidate $ "Control is not applicable to bool: " <> show op]
+     in case resolveIfRef cddl n of
+          Postlude PTBool -> boolControl
+          lhs -> _Failure # [DidNotValidate $ "Control lhs is not valid for bool: " <> show lhs]
+  rr -> _Failure # [Unexpected "a rule for bool" (show rr)]
+
+{-------------------------------------------------------------------------------
+  Floating points
+-------------------------------------------------------------------------------}
+
+getTheHalf :: CDDL' -> Rule' -> Maybe Float
+getTheHalf cddl ref = case resolveIfRef cddl ref of
+  Literal (VFloat16 i) -> Just i
+  _ -> Nothing
+
+precHalf :: PTerm -> Validation [Reason] () -> Validation [Reason] ()
+precHalf PTHalf = id
+precHalf pt = const $ _Failure # [DidNotValidate $ "Wanted type float16 but rule is " <> show pt]
+
+getTheFloat :: CDDL' -> Rule' -> Maybe Float
+getTheFloat cddl ref = case resolveIfRef cddl ref of
+  Literal (VFloat32 i) -> Just i
+  _ -> Nothing
+
+precFloat :: PTerm -> Validation [Reason] () -> Validation [Reason] ()
+precFloat PTFloat = id
+precFloat pt = const $ _Failure # [DidNotValidate $ "Wanted type float32 but rule is " <> show pt]
+
+getTheDouble :: CDDL' -> Rule' -> Maybe Double
+getTheDouble cddl ref = case resolveIfRef cddl ref of
+  Literal (VFloat64 i) -> Just i
+  _ -> Nothing
+
+precDouble :: PTerm -> Validation [Reason] () -> Validation [Reason] ()
+precDouble PTDouble = id
+precDouble pt = const $ _Failure # [DidNotValidate $ "Wanted type float64 but rule is " <> show pt]
+
+validateFloat ::
+  (Eq a, Show a, Ord a, Num a) =>
+  CDDL' ->
+  a ->
+  (CDDL' -> Rule' -> Maybe a) ->
+  (PTerm -> Validation [Reason] () -> Validation [Reason] ()) ->
+  Rule' ->
+  Validation [Reason] ()
+validateFloat cddl i getInner checkPrecision theRule = case (resolveIfRef cddl theRule, getInner cddl theRule) of
+  (_, Just i') ->
+    failUnless (i == i') [Unexpected ("the fixed float " <> show i') (show i)]
+  (Postlude pttype, Nothing) -> checkPrecision pttype (_Success # ())
+  (Range from to incl, Nothing) -> case (getInner cddl from, getInner cddl to) of
+    (Just low, Just high) ->
+      failUnless
+        ( low <= i && case incl of
+            ClOpen -> i < high
+            Closed -> i <= high
+        )
+        [Unexpected ("a float in " <> show (low, high, incl)) (show i)]
+    _ -> _Failure # [DidNotValidate $ "Got malformed range " <> show (Range from to incl)]
+  (Control op n ctrller, Nothing) ->
+    let floatControl =
+          maybe
+            undefined
+            (runNumericOp "float" op i)
+            $ getInner cddl ctrller
+     in case (resolveIfRef cddl n, getInner cddl n) of
+          (_, Just i') ->
+            validateWithUnless
+              (i == i')
+              floatControl
+              [Unexpected ("the fixed float " <> show i') (show i)]
+          (Range from to incl, Nothing) -> case (getInner cddl from, getInner cddl to) of
+            (Just low, Just high) ->
+              validateWithUnless
+                ( low <= i && case incl of
+                    ClOpen -> i < high
+                    Closed -> i <= high
+                )
+                floatControl
+                [Unexpected ("a float in " <> show (low, high, incl)) (show i)]
+            _ -> _Failure # [DidNotValidate $ "Got malformed range " <> show (Range from to incl)]
+          (Postlude pttype, Nothing) -> checkPrecision pttype floatControl
+          lhs -> _Failure # [DidNotValidate $ "Control lhs is not valid for floats: " <> show lhs]
+  rr -> _Failure # [Unexpected "a rule for floats" (show rr)]
+
+{-------------------------------------------------------------------------------
+  Groups
+-------------------------------------------------------------------------------}
+
 validateGroup ::
   CDDL' ->
-  [Term] ->
+  (CDDL' -> NE.NonEmpty a -> Rule' -> Validation [Reason] ()) ->
+  [a] ->
   [Node MonoRef] ->
   Validation [Reason] ()
-validateGroup _ [] [] = _Success # ()
-validateGroup _ _ [] = _Failure # [DidNotValidate "Remaining items in array"]
-validateGroup cddl [] ns =
+validateGroup _ _ [] [] = _Success # ()
+validateGroup _ _ _ [] = _Failure # [DidNotValidate "Remaining items in array"]
+validateGroup cddl _ [] ns =
   if all isOptional ns
     then _Success # ()
     else _Failure # [DidNotValidate "Non-optional rules remaining"]
@@ -438,42 +365,43 @@ validateGroup cddl [] ns =
       Occur _ (OIBounded Nothing _) -> True
       Occur _ (OIBounded (Just 0) _) -> True
       _ -> False
-validateGroup cddl tss@(t : ts) (n : ns) = case resolveIfRef cddl n of
+validateGroup cddl doValidateItem tss@(t : ts) (n : ns) = case resolveIfRef cddl n of
   Occur newRule OIOptional ->
-    validateGroup cddl (t : ts) ns
-      <!> (validateItem cddl (t NE.:| []) newRule *> validateGroup cddl ts ns)
+    validateGroup cddl doValidateItem (t : ts) ns
+      <!> (doValidateItem cddl (t NE.:| []) newRule *> validateGroup cddl doValidateItem ts ns)
   Occur newRule OIOneOrMore ->
     L.foldl1'
       (<!>)
-      [ validateItem cddl pre' newRule *> validateGroup cddl post ns
+      [ doValidateItem cddl (t NE.:| pre) newRule *> validateGroup cddl doValidateItem post ns
       | (pre, post) <-
           [ splitAt l tss
-          | l <- [1 .. length tss]
+          | l <- [0 .. length ts]
           ]
-      , let pre' = fromJust $ NE.nonEmpty pre
       ]
   Occur newRule OIZeroOrMore ->
-    validateGroup cddl (t : ts) ns
+    validateGroup cddl doValidateItem (t : ts) ns
       <!> L.foldl1'
         (<!>)
-        [ validateItem cddl pre' newRule *> validateGroup cddl post ns
+        [ doValidateItem cddl (t NE.:| pre) newRule *> validateGroup cddl doValidateItem post ns
         | (pre, post) <-
             [ splitAt l tss
-            | l <- [1 .. length tss]
+            | l <- [0 .. length ts]
             ]
-        , let pre' = fromJust $ NE.nonEmpty pre
         ]
   Occur newRule (OIBounded (fromIntegral . fromMaybe 0 -> lower) (fmap fromIntegral -> upper)) ->
     L.foldl1'
       (<!>)
-      [ validateItem cddl pre' newRule *> validateGroup cddl post ns
+      [ ( case NE.nonEmpty pre of
+            Nothing -> pure ()
+            Just pre' -> doValidateItem cddl pre' newRule
+        )
+          *> validateGroup cddl doValidateItem post ns
       | (pre, post) <-
           [ splitAt l tss
-          | l <- maybe [lower .. length tss] (\x -> [lower .. x]) upper
+          | l <- [lower .. fromMaybe (length tss) upper]
           ]
-      , let pre' = fromJust $ NE.nonEmpty pre
       ]
-  _ -> validateItem cddl (t NE.:| []) n *> validateGroup cddl ts ns
+  _ -> doValidateItem cddl (t NE.:| []) n *> validateGroup cddl doValidateItem ts ns
 
 validateItem :: CDDL' -> NE.NonEmpty Term -> Node MonoRef -> Validation [Reason] ()
 validateItem cddl tss rule = case (tss, resolveIfRef cddl rule) of
@@ -481,65 +409,10 @@ validateItem cddl tss rule = case (tss, resolveIfRef cddl rule) of
     doValidate cddl tv v
       *> (maybe (pure ()) (\ne -> validateItem cddl ne rule) $ NE.nonEmpty ts)
   (_, Group newRules) ->
-    validateGroup cddl (NE.toList tss) newRules
+    validateGroup cddl validateItem (NE.toList tss) newRules
   (t NE.:| ts, _) ->
     doValidate cddl t rule
       *> (maybe (pure ()) (\ne -> validateItem cddl ne rule) $ NE.nonEmpty ts)
-
-validateGroup2 ::
-  CDDL' ->
-  [(Term, Term)] ->
-  [Node MonoRef] ->
-  Validation [Reason] ()
-validateGroup2 _ [] [] = _Success # ()
-validateGroup2 _ _ [] = _Failure # [DidNotValidate "Remaining items in array"]
-validateGroup2 cddl [] ns =
-  if all isOptional ns
-    then _Success # ()
-    else _Failure # [DidNotValidate "Non-optional rules remaining"]
-  where
-    isOptional n = case resolveIfRef cddl n of
-      Occur _ OIOptional -> True
-      Occur _ OIZeroOrMore -> True
-      Occur _ (OIBounded Nothing _) -> True
-      Occur _ (OIBounded (Just 0) _) -> True
-      _ -> False
-validateGroup2 cddl tss@(t : ts) (n : ns) = case traceShowId $ resolveIfRef cddl n of
-  Occur newRule OIOptional ->
-    validateGroup2 cddl (t : ts) ns
-      <!> (validateItem2 cddl (t NE.:| []) newRule *> validateGroup2 cddl ts ns)
-  Occur newRule OIOneOrMore ->
-    L.foldl1'
-      (<!>)
-      [ validateItem2 cddl pre' newRule *> validateGroup2 cddl post ns
-      | (pre, post) <-
-          [ splitAt l tss
-          | l <- [1 .. length tss]
-          ]
-      , let pre' = fromJust $ NE.nonEmpty pre
-      ]
-  Occur newRule OIZeroOrMore ->
-    validateGroup2 cddl (t : ts) ns
-      <!> L.foldl1'
-        (<!>)
-        [ validateItem2 cddl pre' newRule *> validateGroup2 cddl post ns
-        | (pre, post) <-
-            [ splitAt l tss
-            | l <- [1 .. length tss]
-            ]
-        , let pre' = fromJust $ NE.nonEmpty pre
-        ]
-  Occur newRule (OIBounded (fromIntegral . fromMaybe 0 -> lower) (fmap fromIntegral -> upper)) ->
-    L.foldl1'
-      (<!>)
-      [ validateItem2 cddl pre' newRule *> validateGroup2 cddl post ns
-      | (pre, post) <-
-          [ splitAt l tss
-          | l <- maybe [lower .. length tss] (\x -> [lower .. x]) upper
-          ]
-      , let pre' = fromJust $ NE.nonEmpty pre
-      ]
-  _ -> validateItem2 cddl (t NE.:| []) n *> validateGroup2 cddl ts ns
 
 validateItem2 :: CDDL' -> NE.NonEmpty (Term, Term) -> Node MonoRef -> Validation [Reason] ()
 validateItem2 cddl tss rule = case (tss, resolveIfRef cddl rule) of
@@ -548,27 +421,68 @@ validateItem2 cddl tss rule = case (tss, resolveIfRef cddl rule) of
       *> doValidate cddl tv v
       *> (maybe (pure ()) (\ne -> validateItem2 cddl ne rule) $ NE.nonEmpty ts)
   (_, Group newRules) ->
-    validateGroup2 cddl (NE.toList tss) newRules
-  (_ NE.:| _, _) -> _Failure # [DidNotValidate "Not group in map?"]
+    validateGroup cddl validateItem2 (NE.toList tss) newRules
+  (_ NE.:| _, _) -> _Failure # [DidNotValidate $ "No group and no key-value rule in map: " <> show rule]
+
+{-------------------------------------------------------------------------------
+  Do validate
+-------------------------------------------------------------------------------}
+
+doValidate :: CDDL' -> Term -> Rule' -> Validation [Reason] ()
+doValidate cddl t theRule = case resolveIfRef cddl theRule of
+  Choice choices -> validateChoices cddl t (NE.toList choices)
+  Control And r1 r2 ->
+    doValidate cddl t r1 <* doValidate cddl t r2
+  Control Within r1 r2 ->
+    doValidate cddl t r1 <* doValidate cddl t r2
+  Postlude PTAny -> _Success # ()
+  _ -> case t of
+    TInt i -> validateIntegral cddl i getTheInt theRule
+    TInteger i -> validateIntegral cddl i getTheInteger theRule
+    TBytes b -> validateBytes cddl b theRule
+    TBytesI (BSL.toStrict -> b) -> validateBytes cddl b theRule
+    TString s -> validateText cddl s theRule
+    TStringI (TL.toStrict -> s) -> validateText cddl s theRule
+    TTagged tg t' -> validateTag cddl tg t' theRule
+    TBool b -> validateBool cddl b theRule
+    THalf h -> validateFloat cddl h getTheHalf precHalf theRule
+    TFloat f -> validateFloat cddl f getTheFloat precFloat theRule
+    TDouble d -> validateFloat cddl d getTheDouble precDouble theRule
+    TList nodes -> case resolveIfRef cddl theRule of
+      Array nodes' -> validateGroup cddl validateItem nodes nodes'
+      rr -> _Failure # [Unexpected "a rule for lists" (show rr)]
+    TListI nodes -> case resolveIfRef cddl theRule of
+      Array nodes' -> validateGroup cddl validateItem nodes nodes'
+      rr -> _Failure # [Unexpected "a rule for lists" (show rr)]
+    TMap nodes -> case resolveIfRef cddl theRule of
+      Map nodes' -> validateGroup cddl validateItem2 nodes nodes'
+      rr -> _Failure # [Unexpected "a rule for maps" (show rr)]
+    TMapI nodes -> case resolveIfRef cddl theRule of
+      Map nodes' -> validateGroup cddl validateItem2 nodes nodes'
+      rr -> _Failure # [Unexpected "a rule for maps" (show rr)]
+    TNull -> case resolveIfRef cddl theRule of
+      Postlude PTNil -> _Success # ()
+      rr -> _Failure # [Unexpected "a rule for nil" (show rr)]
+    TSimple _s -> error "Validating TSimple unimplemented"
 
 data Reason
-  = InvalidCBOR
+  = UnboundRef Name
+  | InvalidCBOR
   | NotASingleTerm
   | DidNotValidate String
+  | Unexpected
+      -- | Expecting
+      String
+      -- | but got
+      String
   deriving (Show)
 
-validateCBOR :: BSL.ByteString -> Name -> CTreeRoot' Identity MonoRef -> Except [Reason] ()
+validateCBOR :: BS.ByteString -> Name -> CDDL' -> Except [Reason] ()
 validateCBOR bs name ct@(CTreeRoot cddl) = do
   case Map.lookup name cddl of
-    Nothing -> error $ "Unbound reference: " <> show name
+    Nothing -> throwError [UnboundRef name]
     Just rule -> do
-      (rest, term) <- modifyError (const [InvalidCBOR]) $ liftEither $ deserialiseFromBytes decodeTerm bs
-      when (not (BSL.null rest)) $ throwError [NotASingleTerm]
+      (rest, term) <-
+        modifyError (const [InvalidCBOR]) $ liftEither $ deserialiseFromBytes decodeTerm (BSL.fromStrict bs)
+      unless (BSL.null rest) $ throwError [NotASingleTerm]
       liftEither $ toEither $ traceShow term $ doValidate ct term (runIdentity rule)
-
-resolveIfRef :: CTreeRoot' Identity MonoRef -> Node MonoRef -> CTree MonoRef
-resolveIfRef _ (MIt aa) = aa
-resolveIfRef ct@(CTreeRoot cddl) (MRuleRef n) = do
-  case Map.lookup n cddl of
-    Nothing -> error $ "Unbound reference: " <> show n
-    Just val -> resolveIfRef ct $ runIdentity val

@@ -18,7 +18,6 @@ import Codec.CBOR.Write (toStrictByteString)
 import Control.Monad.Except
 import Data.ByteString.Base16 qualified as Base16
 import Data.ByteString.Char8 qualified as BSC
-import Data.ByteString.Lazy qualified as BSL
 import Data.Text qualified as T
 import Data.Text.IO qualified as T
 import Options.Applicative
@@ -218,7 +217,7 @@ run (Opts cmd cddlFile) = do
                         Nothing -> BSC.putStrLn . Base16.encode . toStrictByteString $ encodeTerm term
                         Just out -> BSC.writeFile out $ toStrictByteString $ encodeTerm term
                       AsPrettyCBOR -> putStrLn . prettyHexEnc $ encodeTerm term
-        (ValidateCBOR vcOpts) ->
+        ValidateCBOR vcOpts ->
           let
             res'
               | vcNoPrelude vcOpts = res
@@ -227,7 +226,7 @@ run (Opts cmd cddlFile) = do
             case fullResolveCDDL res' of
               Left err -> putStrLnErr (show err) >> exitFailure
               Right mt -> do
-                cbor <- BSL.readFile (vcInput vcOpts)
+                cbor <- BSC.readFile (vcInput vcOpts)
                 case runExcept $ validateCBOR cbor (Name $ vcItemName vcOpts) mt of
                   Left e -> print e
                   Right () -> putStrLn "Validate"
