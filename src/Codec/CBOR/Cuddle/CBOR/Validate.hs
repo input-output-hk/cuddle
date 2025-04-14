@@ -1,3 +1,4 @@
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE ViewPatterns #-}
@@ -30,6 +31,7 @@ import Data.Text.Lazy qualified as TL
 import Data.Validation
 import Data.Word
 import Debug.Trace
+import Data.ByteString.Base16 qualified as Base16
 
 -- We make the conscious choice of parsing the provided term instead
 -- of navigating the rule, as rules might be circular but the term
@@ -39,7 +41,9 @@ import Debug.Trace
 -- - cuts in maps
 -- - .bits
 -- - .regexp
--- - .cbor
+-- - .default
+-- - Enum
+-- - Unwrap
 -- - maps and lists .eq and .ne
 
 type CDDL' = CTreeRoot' Identity MonoRef
@@ -87,6 +91,29 @@ runStringOp t op i getSize i' = case (op, i') of
           [Unexpected ("a " <> t <> " of length " <> show sz') ("a " <> t <> " of length " <> show sz)]
   (_, Right i'') -> runNumericOp t op i i''
   _ -> _Failure # [DidNotValidate $ "Op " <> show op <> " is not applicable to type " <> t]
+
+runBytesOp ::
+  CDDL' -> CtlOp -> BS.ByteString -> Rule' -> Validation [Reason] ()
+runBytesOp cddl op bs rule = case op of
+  Cbor ->
+    case runExcept $
+          liftEither $ deserialiseFromBytes decodeTerm (BSL.fromStrict bs) of
+      Left _err -> _Failure # [InvalidInnerCBOR]
+      Right (rest, term) ->
+       failUnless (BSL.null rest) [NotASingleInnerTerm] *>
+       doValidate cddl term rule
+  Cborseq ->
+    case runExcept $
+          liftEither $ deserialiseFromBytes decodeTerm (traceShowWith (Base16.encode . BSL.toStrict) $ BSL.snoc (BSL.cons 0x9f $ BSL.fromStrict bs) 0xff) of
+      Right (rest, TListI xs) ->
+       failUnless (BSL.null rest) [NotASingleInnerTerm] *>
+       L.foldl1' (<!>) [ doValidate cddl t rule | t <- xs ]
+      _ -> _Failure # [InvalidInnerCBOR]
+  Bits -> undefined
+  _ -> maybe
+        (_Failure # [DidNotValidate $ "Control rhs is not an int or bytestring: " <> show rule])
+        (runStringOp "bytestring" op bs BS.length)
+        (getTheIntOrByteString cddl rule)
 
 {-------------------------------------------------------------------------------
   Choices
@@ -184,16 +211,7 @@ validateBytes cddl b theRule = case resolveIfRef cddl theRule of
     failUnless (b == b') [Unexpected ("the exact bytestring " <> show b') (show b)]
   Postlude PTBytes -> _Success # ()
   Control op n ctrller ->
-    let bytesControl =
-          maybe
-            (_Failure # [DidNotValidate $ "Control rhs is not an int or bytestring: " <> show ctrller])
-            ( runStringOp
-                "bytestring"
-                op
-                b
-                BS.length
-            )
-            $ getTheIntOrByteString cddl ctrller
+    let bytesControl = runBytesOp cddl op b ctrller
      in case resolveIfRef cddl n of
           Postlude PTBytes -> bytesControl
           lhs -> _Failure # [DidNotValidate $ "Control lhs is not valid for bytestrings: " <> show lhs]
@@ -429,7 +447,7 @@ validateItem2 cddl tss rule = case (tss, resolveIfRef cddl rule) of
 -------------------------------------------------------------------------------}
 
 doValidate :: CDDL' -> Term -> Rule' -> Validation [Reason] ()
-doValidate cddl t theRule = case resolveIfRef cddl theRule of
+doValidate cddl t theRule = case resolveIfRef cddl (traceShowWith (t,) theRule) of
   Choice choices -> validateChoices cddl t (NE.toList choices)
   Control And r1 r2 ->
     doValidate cddl t r1 <* doValidate cddl t r2
@@ -467,15 +485,25 @@ doValidate cddl t theRule = case resolveIfRef cddl theRule of
 
 data Reason
   = UnboundRef Name
-  | InvalidCBOR
-  | NotASingleTerm
+  | InvalidTopCBOR
+  | InvalidInnerCBOR
+  | NotASingleTopTerm
+  | NotASingleInnerTerm
   | DidNotValidate String
   | Unexpected
       -- | Expecting
       String
       -- | but got
       String
-  deriving (Show)
+
+instance Show Reason where
+  show (UnboundRef r) = "Unbound reference " <> show r
+  show InvalidTopCBOR = "Invalid CBOR found"
+  show InvalidInnerCBOR = "Invalid CBOR in a .cbor control found"
+  show NotASingleTopTerm = "Parsed CBOR is not a single term"
+  show NotASingleInnerTerm = "Parsed CBOR in a .cbor control is not a single term"
+  show (DidNotValidate s) = "Validation failure: " <> s
+  show (Unexpected expected got) = "Expected " <> expected <> " but got " <> got
 
 validateCBOR :: BS.ByteString -> Name -> CDDL' -> Except [Reason] ()
 validateCBOR bs name ct@(CTreeRoot cddl) = do
@@ -483,6 +511,6 @@ validateCBOR bs name ct@(CTreeRoot cddl) = do
     Nothing -> throwError [UnboundRef name]
     Just rule -> do
       (rest, term) <-
-        modifyError (const [InvalidCBOR]) $ liftEither $ deserialiseFromBytes decodeTerm (BSL.fromStrict bs)
-      unless (BSL.null rest) $ throwError [NotASingleTerm]
-      liftEither $ toEither $ traceShow term $ doValidate ct term (runIdentity rule)
+        modifyError (const [InvalidTopCBOR]) $ liftEither $ deserialiseFromBytes decodeTerm (BSL.fromStrict bs)
+      unless (BSL.null rest) $ throwError [NotASingleTopTerm]
+      liftEither $ toEither $ traceShow ct $ doValidate (traceShowId ct) term (runIdentity rule)
