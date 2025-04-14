@@ -3,6 +3,7 @@
 module Main (main) where
 
 import Codec.CBOR.Cuddle.CBOR.Gen (generateCBORTerm)
+import Codec.CBOR.Cuddle.CBOR.Validate
 import Codec.CBOR.Cuddle.CDDL (Name (..), sortCDDL)
 import Codec.CBOR.Cuddle.CDDL.Prelude (prependPrelude)
 import Codec.CBOR.Cuddle.CDDL.Resolve (
@@ -14,6 +15,7 @@ import Codec.CBOR.FlatTerm (toFlatTerm)
 import Codec.CBOR.Pretty (prettyHexEnc)
 import Codec.CBOR.Term (encodeTerm)
 import Codec.CBOR.Write (toStrictByteString)
+import Control.Monad.Except
 import Data.ByteString.Base16 qualified as Base16
 import Data.ByteString.Char8 qualified as BSC
 import Data.ByteString.Lazy qualified as BSL
@@ -26,8 +28,6 @@ import System.Exit (exitFailure, exitSuccess)
 import System.IO (hPutStrLn, stderr)
 import System.Random (getStdGen)
 import Text.Megaparsec (ParseErrorBundle, Parsec, errorBundlePretty, runParser)
-import Codec.CBOR.Cuddle.CBOR.Validate
-import Control.Monad.Except
 
 data Opts = Opts Command String
 
@@ -85,11 +85,13 @@ pGenOpts =
           <> help "Output format"
           <> value AsCBOR
       )
-    <*> optional (strOption
-      ( long "out-file"
-          <> short 'o'
-          <> help "Write to"
-      ))
+    <*> optional
+      ( strOption
+          ( long "out-file"
+              <> short 'o'
+              <> help "Write to"
+          )
+      )
     <*> switch
       ( long "no-prelude"
           <> help "Do not include the CDDL prelude."
