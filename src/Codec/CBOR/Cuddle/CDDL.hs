@@ -1,5 +1,9 @@
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 -- | This module defined the data structure of CDDL as specified in
 --   https://datatracker.ietf.org/doc/rfc8610/
@@ -31,29 +35,84 @@ module Codec.CBOR.Cuddle.CDDL (
   noComment,
   unwrap,
   groupEntryOccurrenceIndicator,
+  fromRule,
+  cddlTopLevel,
 ) where
 
 import Codec.CBOR.Cuddle.CDDL.CtlOp (CtlOp)
+import Control.Monad.Identity (Identity (..))
 import Data.ByteString qualified as B
+import Data.Function (on)
 import Data.Hashable (Hashable)
-import Data.List.NonEmpty (NonEmpty)
+import Data.Kind (Constraint, Type)
+import Data.List.NonEmpty (NonEmpty (..), prependList)
 import Data.List.NonEmpty qualified as NE
 import Data.Text qualified as T
 import Data.TreeDiff (ToExpr)
 import Data.Word (Word64, Word8)
 import GHC.Generics (Generic)
 
-newtype CDDL = CDDL (NE.NonEmpty TopLevel)
-  deriving (Eq, Generic, Show)
+data CDDL f = CDDL [Comment] (Rule f) [TopLevel f]
+  deriving (Generic)
 
-data TopLevel
-  = TopLevelRule (Maybe Comment) Rule (Maybe Comment)
+type CDDLTypes f =
+  '[ f (Rule f)
+   , f Name
+   , f Assign
+   ]
+
+type family All (as :: [Type]) (c :: Type -> Constraint) :: Constraint where
+  All '[] _ = ()
+  All (x : xs) c = (c x, All xs c)
+
+type CDDLFix f = 
+  ( All (CDDLTypes f) Eq
+  , All (CDDLTypes f) Show
+  , All (CDDLTypes f) ToExpr
+  )
+
+deriving instance CDDLFix f => Eq (CDDL f)
+
+deriving instance CDDLFix f => Show (CDDL f)
+
+instance CDDLFix f => ToExpr (CDDL f)
+
+data TopLevel (f :: Type -> Type)
+  = TopLevelRule (f (Rule f))
   | TopLevelComment Comment
-  deriving (Eq, Ord, Generic, Show)
+  deriving (Generic)
+
+deriving instance CDDLFix f => Eq (TopLevel f)
+
+deriving instance CDDLFix f => Show (TopLevel f)
+
+instance CDDLFix f => ToExpr (TopLevel f)
 
 -- | Sort the CDDL Rules on the basis of their names
-sortCDDL :: CDDL -> CDDL
-sortCDDL (CDDL xs) = CDDL $ NE.sort xs
+-- Top level comments will be dropped!
+sortCDDL :: CDDL Identity -> CDDL Identity
+sortCDDL = fromRules . NE.sortBy (compare `on` ruleName) . fmap runIdentity . cddlRules
+
+cddlTopLevel :: Applicative f => CDDL f -> NonEmpty (TopLevel f)
+cddlTopLevel (CDDL cmts cHead cTail) =
+  prependList (TopLevelComment <$> cmts) $ TopLevelRule (pure cHead) :| cTail
+
+cddlRules :: Applicative f => CDDL f -> NonEmpty (f (Rule f))
+cddlRules (CDDL _ x tls) = pure x :| concatMap getRule tls
+  where
+    getRule (TopLevelRule r) = [r]
+    getRule _ = mempty
+
+fromRules :: Applicative f => NonEmpty (Rule f) -> CDDL f
+fromRules (x :| xs) = CDDL [] x $ TopLevelRule . pure <$> xs
+
+fromRule :: Rule f -> CDDL f
+fromRule x = CDDL [] x []
+
+instance Applicative f => Semigroup (CDDL f) where
+  CDDL aComments aHead aTail <> CDDL bComments bHead bTail =
+    CDDL aComments aHead $
+      aTail <> fmap TopLevelComment bComments <> (TopLevelRule (pure bHead) : bTail)
 
 data WithComments a = WithComments a (Maybe Comment)
   deriving (Eq, Show, Generic)
@@ -130,10 +189,15 @@ data Assign = AssignEq | AssignExt
 --
 --   Generic rules can be used for establishing names for both types and
 --   groups.
-newtype GenericParam = GenericParam (NE.NonEmpty Name)
-  deriving (Eq, Generic, Show)
+newtype GenericParam f = GenericParam (NE.NonEmpty (f Name))
+  deriving (Generic)
   deriving newtype (Semigroup)
-  deriving anyclass (ToExpr)
+
+deriving instance CDDLFix f => Eq (GenericParam f)
+
+deriving instance CDDLFix f => Show (GenericParam f)
+
+instance CDDLFix f => ToExpr (GenericParam f)
 
 newtype GenericArg = GenericArg (NE.NonEmpty Type1)
   deriving (Eq, Generic, Show)
@@ -163,12 +227,19 @@ newtype GenericArg = GenericArg (NE.NonEmpty Type1)
 --   clear immediately either whether "b" stands for a group or a type --
 --   this semantic processing may need to span several levels of rule
 --   definitions before a determination can be made.)
-data Rule = Rule Name (Maybe GenericParam) Assign TypeOrGroup
-  deriving (Eq, Generic, Show)
-  deriving anyclass (ToExpr)
+data Rule f = Rule
+  { ruleName :: f Name
+  , ruleGenericParam :: Maybe (GenericParam f)
+  , ruleAssign :: f Assign
+  , ruleValue :: TypeOrGroup f
+  }
+  deriving (Generic)
 
-instance Ord Rule where
-  compare (Rule n1 _ _ _) (Rule n2 _ _ _) = compare n1 n2
+deriving instance CDDLFix f => Eq (Rule f)
+
+deriving instance CDDLFix f => Show (Rule f)
+
+instance CDDLFix f => ToExpr (Rule f)
 
 -- |
 --   A range operator can be used to join two type expressions that stand
@@ -186,7 +257,7 @@ data TyOp = RangeOp RangeBound | CtrlOp CtlOp
   deriving (Eq, Generic, Show)
   deriving anyclass (ToExpr)
 
-data TypeOrGroup = TOGType Type0 | TOGGroup GroupEntry
+data TypeOrGroup f = TOGType Type0 | TOGGroup GroupEntry
   deriving (Eq, Generic, Show)
   deriving anyclass (ToExpr)
 
@@ -239,7 +310,7 @@ data TypeOrGroup = TOGType Type0 | TOGGroup GroupEntry
    described as "threading in" the group or type inside the referenced type,
    which suggested the thread-like "~" character.)
 -}
-unwrap :: TypeOrGroup -> Maybe Group
+unwrap :: TypeOrGroup f -> Maybe Group
 unwrap (TOGType (Type0 (Type1 t2 Nothing NE.:| []))) = case t2 of
   T2Map g -> Just g
   T2Array g -> Just g
