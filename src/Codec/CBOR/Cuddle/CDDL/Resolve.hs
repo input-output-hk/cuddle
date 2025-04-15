@@ -191,10 +191,27 @@ buildRefCTree rules = CTreeRoot $ fmap toCTreeRule rules
       toCTreeT0 t0
     toCTreeT2 (T2Tag (Just tag) t0) =
       It . CTree.Tag tag $ toCTreeT0 t0
+    toCTreeT2 (T2DataItem 7 (Just mmin)) =
+      toCTreeDataItem mmin
     toCTreeT2 (T2DataItem _maj _mmin) =
       -- We don't validate numerical items yet
       It $ CTree.Postlude PTAny
     toCTreeT2 T2Any = It $ CTree.Postlude PTAny
+
+    toCTreeDataItem 20 =
+      It . CTree.Literal $ VBool False
+    toCTreeDataItem 21 =
+      It . CTree.Literal $ VBool True
+    toCTreeDataItem 25 =
+      It $ CTree.Postlude PTHalf
+    toCTreeDataItem 26 =
+      It $ CTree.Postlude PTFloat
+    toCTreeDataItem 27 =
+      It $ CTree.Postlude PTDouble
+    toCTreeDataItem 23 =
+      It $ CTree.Postlude PTUndefined
+    toCTreeDataItem _ =
+      It $ CTree.Postlude PTAny
 
     toCTreeGroupEntryNC :: WithComments GroupEntry -> CTree.Node OrRef
     toCTreeGroupEntryNC = toCTreeGroupEntry . stripComment

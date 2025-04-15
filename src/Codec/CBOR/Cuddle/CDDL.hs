@@ -375,6 +375,7 @@ data Value
   | VFloat64 Double
   | VText T.Text
   | VBytes B.ByteString
+  | VBool Bool
   deriving (Eq, Generic, Show)
   deriving anyclass (ToExpr)
 
