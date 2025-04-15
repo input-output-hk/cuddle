@@ -35,7 +35,6 @@ import Data.Text qualified as T
 import Data.Text.Lazy qualified as TL
 import Data.Validation
 import Data.Word
-import Debug.Trace
 
 -- We make the conscious choice of parsing the provided term instead
 -- of navigating the rule, as rules might be circular but the term
@@ -62,7 +61,7 @@ validateChoices cddl t (choice : choices) =
 
 validateIntegral ::
   (Integral a, Show a, Ops a) => CDDL' -> a -> Rule' -> Validation [Reason] ()
-validateIntegral cddl i theRule = case traceShowId (resolveIfRef cddl theRule, get cddl theRule) of
+validateIntegral cddl i theRule = case (resolveIfRef cddl theRule, get cddl theRule) of
   (_, Just i') ->
     failUnless (i == i') [Unexpected ("the fixed int " <> show i') (show i)]
   (Postlude PTInt, Nothing) -> _Success # ()
@@ -322,7 +321,7 @@ validateItem2 cddl tss rule = case (tss, resolveIfRef cddl rule) of
 -------------------------------------------------------------------------------}
 
 doValidate :: CDDL' -> Term -> Rule' -> Validation [Reason] ()
-doValidate cddl t theRule = case resolveIfRef cddl (traceShowWith (t,) theRule) of
+doValidate cddl t theRule = case resolveIfRef cddl theRule of
   Choice choices -> validateChoices cddl t (NE.toList choices)
   Control And r1 r2 ->
     doValidate cddl t r1 <* doValidate cddl t r2
@@ -368,4 +367,4 @@ validateCBOR bs name ct@(CTreeRoot cddl) = do
           liftEither $
             deserialiseFromBytes decodeTerm (BSL.fromStrict bs)
       unless (BSL.null rest) $ throwError [NotASingleTopTerm]
-      liftEither $ toEither $ traceShow ct $ doValidate (traceShowId ct) term (runIdentity rule)
+      liftEither $ toEither $ doValidate ct term (runIdentity rule)

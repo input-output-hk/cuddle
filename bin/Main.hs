@@ -229,7 +229,7 @@ run (Opts cmd cddlFile) = do
                 cbor <- BSC.readFile (vcInput vcOpts)
                 case runExcept $ validateCBOR cbor (Name $ vcItemName vcOpts) mt of
                   Left e -> print e >> exitFailure
-                  Right () -> putStrLn "Validate"
+                  Right () -> putStrLn "Valid"
 
 putStrLnErr :: String -> IO ()
 putStrLnErr = hPutStrLn stderr
