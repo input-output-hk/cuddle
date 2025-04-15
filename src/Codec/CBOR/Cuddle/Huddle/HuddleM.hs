@@ -29,13 +29,13 @@ type HuddleM = State Huddle
 (=:=) :: IsType0 a => T.Text -> a -> HuddleM Rule
 n =:= b = let r = n Huddle.=:= b in include r
 
-infixl 1 =:=
+infixl 4 =:=
 
 -- | Overridden version of group assignment which adds the rule to the state
 (=:~) :: T.Text -> Group -> HuddleM (Named Group)
 n =:~ b = let r = n Huddle.=:~ b in include r
 
-infixl 1 =:~
+infixl 4 =:~
 
 binding ::
   forall t0.

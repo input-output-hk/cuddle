@@ -708,12 +708,12 @@ infixl 8 ==>
 (=:=) :: IsType0 a => T.Text -> a -> Rule
 n =:= b = Named n (toType0 b) Nothing
 
-infixl 1 =:=
+infixl 4 =:=
 
 (=:~) :: T.Text -> Group -> Named Group
 n =:~ b = Named n b Nothing
 
-infixl 1 =:~
+infixl 4 =:~
 
 class IsGroupOrArrayEntry a where
   toGroupOrArrayEntry :: IsType0 x => x -> a
