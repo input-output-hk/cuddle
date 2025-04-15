@@ -45,6 +45,9 @@ library
   exposed-modules:
     Codec.CBOR.Cuddle.CBOR.Gen
     Codec.CBOR.Cuddle.CBOR.Validate
+    Codec.CBOR.Cuddle.CBOR.Validate.Ops
+    Codec.CBOR.Cuddle.CBOR.Validate.Types
+    Codec.CBOR.Cuddle.CBOR.Validate.Combinators
     Codec.CBOR.Cuddle.CDDL
     Codec.CBOR.Cuddle.CDDL.CtlOp
     Codec.CBOR.Cuddle.CDDL.CTree
@@ -71,6 +74,7 @@ library
     , data-default-class
     , foldable1-classes-compat
     , generic-optics
+    , regex-tdfa
     , lens
     , semigroupoids
     , hashable
