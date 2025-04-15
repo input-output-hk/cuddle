@@ -8,6 +8,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE ViewPatterns #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
 -- | Module for building CDDL in Haskell
@@ -76,10 +77,14 @@ module Codec.CBOR.Cuddle.Huddle (
   -- * Generics
   GRef,
   GRuleDef,
+  GRuleDef',
   GRuleCall,
+  GRuleCall',
   binding,
   binding2,
+  binding',
   callToDef,
+  (<--),
 
   -- * Conversion to CDDL
   collectFrom,
@@ -91,6 +96,7 @@ where
 import Codec.CBOR.Cuddle.CDDL (CDDL, TopLevel (..), WithComments (..))
 import Codec.CBOR.Cuddle.CDDL qualified as C
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
+import Codec.CBOR.Cuddle.Huddle.Generic (FnWithArg (..), result)
 import Control.Monad (when)
 import Control.Monad.State (MonadState (get), execState, modify)
 import Data.ByteString (ByteString)
@@ -128,6 +134,7 @@ type Rule = Named Type0
 data HuddleItem
   = HIRule Rule
   | HIGRule GRuleDef
+  | HIGRule' GRuleDef'
   | HIGroup (Named Group)
   deriving (Generic, Show)
 
@@ -273,6 +280,7 @@ data Type2
   | T2Group (Named Group)
   | -- | Call to a generic rule, binding arguments
     T2Generic GRuleCall
+  | T2Generic' GRuleCall'
   | -- | Reference to a generic parameter within the body of the definition
     T2GenericRef GRef
   deriving (Show)
@@ -475,9 +483,12 @@ sized v sz =
     []
 
 class IsCborable a
+
 instance IsCborable ByteString
-instance IsCborable (AnyRef a)
-instance IsCborable GRef
+
+instance IsCborable CRefType
+
+instance IsCborable CGRefType
 
 cbor :: (IsCborable b, IsConstrainable c b) => c -> Rule -> Constrained
 cbor v r@(Named n _ _) =
@@ -493,9 +504,12 @@ cbor v r@(Named n _ _) =
     [r]
 
 class IsComparable a
+
 instance IsComparable Int
-instance IsComparable (AnyRef a)
-instance IsComparable GRef
+
+instance IsComparable CRefType
+
+instance IsComparable CGRefType
 
 le :: (IsComparable a, IsConstrainable c a) => c -> Word64 -> Constrained
 le v bound =
@@ -605,6 +619,9 @@ instance IsType0 (Named Group) where
 instance IsType0 GRuleCall where
   toType0 = NoChoice . T2Generic
 
+instance IsType0 GRuleCall' where
+  toType0 = NoChoice . T2Generic'
+
 instance IsType0 GRef where
   toType0 = NoChoice . T2GenericRef
 
@@ -616,7 +633,14 @@ instance IsType0 HuddleItem where
   toType0 (HIGroup g) = toType0 g
   toType0 (HIGRule g) =
     error $
-      "Attempt to reference generic rule from HuddleItem not supported: " <> show g
+      "Attempt to reference a raw generic rule: "
+        <> show g
+        <> ". Most likely this indicates you haven't provided generic parameters."
+  toType0 (HIGRule' g) =
+    error $
+      "Attempt to reference a raw generic rule: "
+        <> show g
+        <> ". Most likely this indicates you haven't provided generic parameters."
 
 class CanQuantify a where
   -- | Apply a lower bound
@@ -684,12 +708,12 @@ infixl 8 ==>
 (=:=) :: IsType0 a => T.Text -> a -> Rule
 n =:= b = Named n (toType0 b) Nothing
 
-infixl 1 =:=
+infixl 4 =:=
 
 (=:~) :: T.Text -> Group -> Named Group
 n =:~ b = Named n b Nothing
 
-infixl 1 =:~
+infixl 4 =:~
 
 class IsGroupOrArrayEntry a where
   toGroupOrArrayEntry :: IsType0 x => x -> a
@@ -934,6 +958,54 @@ binding2 fRule t0 t1 =
       _ -> error "Cannot use a choice of types as a generic argument"
 
 --------------------------------------------------------------------------------
+-- Generics (Take 2)
+--------------------------------------------------------------------------------
+
+type GRuleDef' = Named (FnWithArg GRef Type0)
+
+data GRuleCallAux = GRuleCallAux
+  { defFn :: FnWithArg GRef Type0
+  , callArg :: Type2
+  }
+
+type GRuleCall' = Named GRuleCallAux
+
+-- | Create a generic rule definition binding a single generic parameter.
+binding' :: (GRef -> Rule) -> GRuleDef'
+binding' fRule =
+  Named
+    (getField @"name" $ result defFn)
+    (getField @"value" <$> defFn)
+    Nothing
+  where
+    defFn = FnWithArg fRule (freshName 0)
+
+class IsGRuleDef f where
+  toGRuleDef :: f -> GRuleDef'
+
+instance IsGRuleDef GRuleDef' where
+  toGRuleDef = id
+
+instance IsGRuleDef HuddleItem where
+  toGRuleDef (HIGRule' gd) = gd
+  toGRuleDef hi =
+    error $
+      "Attempt to apply generic parameters to a non-generic rule: " <> show hi
+
+-- | Call a generic definition, applying the given type parameter.
+(<--) :: (IsType0 t0, IsGRuleDef gd) => gd -> t0 -> GRuleCall'
+(toGRuleDef -> f) <-- t0 = fmap toCall f
+  where
+    toCall rd =
+      GRuleCallAux
+        { defFn = rd
+        , callArg = t2
+        }
+    t2 = case toType0 t0 of
+      NoChoice x -> x
+      _ -> error "Cannot use a choice of types as a generic argument"
+
+--------------------------------------------------------------------------------
 -- Collecting all top-level rules
 --------------------------------------------------------------------------------
 
@@ -1022,6 +1094,7 @@ toCDDL' mkPseudoRoot hdl =
     toCDDLItem (HIRule r) = toCDDLRule r
     toCDDLItem (HIGroup g) = toCDDLGroup g
     toCDDLItem (HIGRule g) = toGenRuleDef g
+    toCDDLItem (HIGRule' g) = toGenRuleDef' g
     toTopLevelPseudoRoot :: [Rule] -> C.WithComments C.Rule
     toTopLevelPseudoRoot topRs =
       toCDDLRule $
@@ -1084,6 +1157,7 @@ toCDDL' mkPseudoRoot hdl =
       T2Ref (Named n _ _) -> C.Type1 (C.T2Name (C.Name n) Nothing) Nothing
       T2Group (Named n _ _) -> C.Type1 (C.T2Name (C.Name n) Nothing) Nothing
       T2Generic g -> C.Type1 (toGenericCall g) Nothing
+      T2Generic' g -> C.Type1 (toGenericCall' g) Nothing
       T2GenericRef (GRef n) -> C.Type1 (C.T2Name (C.Name n) Nothing) Nothing
 
     toMemberKey :: Key -> C.MemberKey
@@ -1158,6 +1232,12 @@ toCDDL' mkPseudoRoot hdl =
         (C.Name n)
         (Just . C.GenericArg $ fmap toCDDLType1 (args gr))
 
+    toGenericCall' :: GRuleCall' -> C.Type2
+    toGenericCall' (Named n gr _) =
+      C.T2Name
+        (C.Name n)
+        (Just . C.GenericArg $ toCDDLType1 (callArg gr) NE.:| [])
+
     toGenRuleDef :: GRuleDef -> C.WithComments C.Rule
     toGenRuleDef (Named n gr c) =
       C.WithComments
@@ -1170,3 +1250,16 @@ toCDDL' mkPseudoRoot hdl =
       where
         gps =
           C.GenericParam $ fmap (\(GRef t) -> C.Name t) (args gr)
+
+    toGenRuleDef' :: GRuleDef' -> C.WithComments C.Rule
+    toGenRuleDef' (Named n g c) =
+      C.WithComments
+        ( C.Rule (C.Name n) (Just gps) C.AssignEq
+            . C.TOGType
+            $ C.Type0
+            $ toCDDLType1 <$> choiceToNE (fn g (arg g))
+        )
+        (C.comment <$> c)
+      where
+        gps =
+          C.GenericParam $ fmap (\(GRef t) -> C.Name t) (arg g NE.:| [])
