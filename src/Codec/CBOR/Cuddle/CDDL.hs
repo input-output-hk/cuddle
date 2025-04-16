@@ -29,6 +29,7 @@ module Codec.CBOR.Cuddle.CDDL (
   GroupEntryVariant (..),
   MemberKey (..),
   Value (..),
+  ValueVariant (..),
   GrpChoice (..),
   unwrap,
   compareRuleName,
@@ -165,8 +166,7 @@ newtype GenericArg = GenericArg (NE.NonEmpty Type1)
   deriving newtype (Semigroup)
   deriving anyclass (ToExpr)
 
-instance CollectComments GenericArg where
-  collectComments (GenericArg x) = concatMap collectComments x
+instance CollectComments GenericArg
 
 -- |
 --  rule = typename [genericparm] S assignt S type
@@ -226,6 +226,8 @@ data TyOp = RangeOp RangeBound | CtrlOp CtlOp
 data TypeOrGroup = TOGType Type0 | TOGGroup GroupEntry
   deriving (Eq, Generic, Show)
   deriving anyclass (ToExpr)
+
+instance CollectComments TypeOrGroup
 
 {-- |
    The group that is used to define a map or an array can often be reused in the
@@ -298,8 +300,7 @@ newtype Type0 = Type0 {t0Type1 :: NE.NonEmpty Type1}
 instance HasComment Type0 where
   commentL = lens (view commentL . t0Type1) (\(Type0 x) y -> Type0 $ x & commentL .~ y)
 
-instance CollectComments Type0 where
-  collectComments (Type0 x) = concatMap collectComments x
+instance CollectComments Type0
 
 -- |
 -- Two types can be combined with a range operator (see below)
@@ -354,16 +355,7 @@ data Type2
   deriving (Eq, Generic, Show, Default)
   deriving anyclass (ToExpr)
 
-instance CollectComments Type2 where
-  collectComments (T2Name n ga) = collectComments n <> collectComments ga
-  collectComments (T2Group t0) = collectComments t0
-  collectComments (T2Map g) = collectComments g
-  collectComments (T2Array g) = collectComments g
-  collectComments (T2Unwrapped n ga) = collectComments n <> collectComments ga
-  collectComments (T2Enum g) = collectComments g
-  collectComments (T2EnumRef n ga) = collectComments n <> collectComments ga
-  collectComments (T2Tag _ t0) = collectComments t0
-  collectComments _ = []
+instance CollectComments Type2
 
 -- |
 --  An optional _occurrence_ indicator can be given in front of a group
@@ -462,7 +454,11 @@ data MemberKey
   deriving (Eq, Generic, Show)
   deriving anyclass (ToExpr)
 
-data Value
+data Value = Value ValueVariant Comment
+  deriving (Eq, Generic, Show, Default)
+  deriving anyclass (ToExpr, Hashable, CollectComments)
+
+data ValueVariant
   = VUInt Word64
   | VNInt Word64
   | VBignum Integer
@@ -473,6 +469,4 @@ data Value
   | VBytes B.ByteString
   | VBool Bool
   deriving (Eq, Generic, Show, Default)
-  deriving anyclass (ToExpr)
-
-instance Hashable Value
+  deriving anyclass (ToExpr, Hashable, CollectComments)

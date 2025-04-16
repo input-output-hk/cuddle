@@ -200,9 +200,9 @@ buildRefCTree rules = CTreeRoot $ fmap toCTreeRule rules
     toCTreeT2 T2Any = It $ CTree.Postlude PTAny
 
     toCTreeDataItem 20 =
-      It . CTree.Literal $ VBool False
+      It . CTree.Literal $ Value (VBool False) mempty
     toCTreeDataItem 21 =
-      It . CTree.Literal $ VBool True
+      It . CTree.Literal $ Value (VBool True) mempty
     toCTreeDataItem 25 =
       It $ CTree.Postlude PTHalf
     toCTreeDataItem 26 =
@@ -292,7 +292,7 @@ buildRefCTree rules = CTreeRoot $ fmap toCTreeRule rules
 
     toCTreeMemberKey :: MemberKey -> CTree.Node OrRef
     toCTreeMemberKey (MKValue v) = It $ CTree.Literal v
-    toCTreeMemberKey (MKBareword (Name n _)) = It $ CTree.Literal (VText n)
+    toCTreeMemberKey (MKBareword (Name n _)) = It $ CTree.Literal (Value (VText n) mempty)
     toCTreeMemberKey (MKType t1) = toCTreeT1 t1
 
 --------------------------------------------------------------------------------

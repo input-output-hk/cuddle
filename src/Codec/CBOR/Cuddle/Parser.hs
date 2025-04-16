@@ -240,7 +240,7 @@ pOccur =
 
 pValue :: Parser Value
 pValue =
-  label "value" $
+  label "value" $ (`Value` mempty) <$>
     choice
       [ try pFloat
       , try pInt

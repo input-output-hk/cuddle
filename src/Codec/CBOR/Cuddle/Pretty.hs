@@ -61,7 +61,7 @@ type0Def t = nest 2 $ line' <> pretty t
 instance Pretty Rule where
   pretty (Rule n mgen assign tog cmt) =
     pretty cmt
-      <> group
+      <> groupIfNoComments tog
         ( pretty n <> pretty mgen <+> case tog of
             TOGType t -> ppAssignT <> softline <> type0Def t
             TOGGroup g -> ppAssignG <> softline <> nest 2 (line' <> pretty g)
@@ -75,10 +75,14 @@ instance Pretty Rule where
         AssignExt -> "//="
 
 instance Pretty GenericArg where
-  pretty (GenericArg (NE.toList -> l)) = cEncloseSep "<" ">" "," $ fmap pretty l
+  pretty (GenericArg (NE.toList -> l)) 
+    | null (collectComments l) = group . cEncloseSep "<" ">" "," $ fmap pretty l
+    | otherwise = columnarListing "<" ">" "," . Columnar $ singletonRow . pretty <$> l
 
 instance Pretty GenericParam where
-  pretty (GenericParam (NE.toList -> l)) = cEncloseSep "<" ">" "," $ fmap pretty l
+  pretty (GenericParam (NE.toList -> l))
+    | null (collectComments l) = group . cEncloseSep "<" ">" "," $ fmap pretty l
+    | otherwise = columnarListing "<" ">" "," . Columnar $ singletonRow . pretty <$> l
 
 instance Pretty Type0 where
   pretty t0@(Type0 (NE.toList -> l)) =
@@ -190,6 +194,9 @@ instance Pretty MemberKey where
   pretty (MKValue v) = pretty v
 
 instance Pretty Value where
+  pretty (Value v cmt) = pretty v <> prettyCommentNoBreakWS cmt
+
+instance Pretty ValueVariant where
   pretty (VUInt i) = pretty i
   pretty (VNInt i) = "-" <> pretty i
   pretty (VBignum i) = pretty i

@@ -1,6 +1,11 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE EmptyCase #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeOperators #-}
 
 module Codec.CBOR.Cuddle.Comments (
   HasComment (..),
@@ -16,14 +21,17 @@ module Codec.CBOR.Cuddle.Comments (
   withComment,
 ) where
 
+import Data.ByteString (ByteString)
+import Data.Default.Class (Default (..))
 import Data.Hashable (Hashable)
+import Data.List qualified as L
+import Data.List.NonEmpty (NonEmpty (..))
+import Data.String (IsString (..))
 import Data.Text qualified as T
 import Data.TreeDiff (ToExpr)
-import GHC.Generics (Generic)
-import Optics.Core (Lens', lens, view, (%~), (&), (^.), (.~))
-import Data.List.NonEmpty (NonEmpty (..))
-import Data.Default.Class (Default (..))
-import Data.String (IsString (..))
+import Data.Word (Word16, Word32, Word64, Word8)
+import GHC.Generics (Generic (..), K1 (..), M1 (..), U1 (..), V1, (:*:) (..), (:+:) (..))
+import Optics.Core (Lens', lens, view, (%~), (&), (.~), (^.))
 
 newtype Comment = Comment T.Text
   deriving (Eq, Ord, Generic, Show)
@@ -43,18 +51,81 @@ instance Default Comment where def = mempty
 class HasComment a where
   commentL :: Lens' a Comment
 
+class GCollectComments f where
+  collectCommentsG :: f a -> [Comment]
+
+instance GCollectComments V1 where
+  collectCommentsG = \case {}
+
+instance GCollectComments U1 where
+  collectCommentsG U1 = []
+
+instance
+  ( GCollectComments a
+  , GCollectComments b
+  ) =>
+  GCollectComments (a :+: b)
+  where
+  collectCommentsG (L1 x) = collectCommentsG x
+  collectCommentsG (R1 x) = collectCommentsG x
+
+instance
+  ( GCollectComments a
+  , GCollectComments b
+  ) =>
+  GCollectComments (a :*: b)
+  where
+  collectCommentsG (a :*: b) = collectCommentsG a <> collectCommentsG b
+
+instance CollectComments a => GCollectComments (K1 s a) where
+  collectCommentsG (K1 x) = collectComments x
+
+instance GCollectComments a => GCollectComments (M1 i c a) where
+  collectCommentsG (M1 x) = collectCommentsG x
+
 class CollectComments a where
   collectComments :: a -> [Comment]
+  default collectComments :: (Generic a, GCollectComments (Rep a)) => a -> [Comment]
+  collectComments = collectCommentsG . from
 
 instance CollectComments a => CollectComments (Maybe a) where
   collectComments Nothing = []
   collectComments (Just x) = collectComments x
+
+instance CollectComments a => CollectComments [a]
+
+instance CollectComments a => CollectComments (NonEmpty a)
+
+instance CollectComments Word8 where collectComments = mempty
+
+instance CollectComments Word16 where collectComments = mempty
+
+instance CollectComments Word32 where collectComments = mempty
+
+instance CollectComments Word64 where collectComments = mempty
+
+instance CollectComments Integer where collectComments = mempty
+
+instance CollectComments Float where collectComments = mempty
+
+instance CollectComments Double where collectComments = mempty
+
+instance CollectComments T.Text where collectComments = mempty
+
+instance CollectComments ByteString where collectComments = mempty
+
+instance CollectComments Bool where collectComments = mempty
+
+instance CollectComments Comment where
+  collectComments = L.singleton
 
 hasComment :: HasComment a => a -> Bool
 hasComment = (/= mempty) . view commentL
 
 (//-) :: HasComment a => a -> Comment -> a
 x //- cmt = x & commentL %~ (<> cmt)
+
+infixr 0 //-
 
 (<*!) :: (HasComment a, Applicative m) => m a -> m Comment -> m a
 (<*!) = liftA2 (//-)

@@ -107,7 +107,7 @@ import Data.Void (Void)
 import Data.Word (Word64)
 import GHC.Exts (IsList (Item, fromList, toList))
 import GHC.Generics (Generic)
-import Optics.Core (view, (%~), (&), (.~), (^.))
+import Optics.Core (lens, view, (%~), (&), (.~), (^.))
 import Prelude hiding ((/))
 
 data Named a = Named
@@ -191,11 +191,11 @@ data Key
 
 -- | Instance for the very general case where we use text keys
 instance IsString Key where
-  fromString = LiteralKey . LText . T.pack
+  fromString x = LiteralKey $ Literal (LText $ T.pack x) mempty
 
 -- | Use a number as a key
 idx :: Word64 -> Key
-idx = LiteralKey . LInt
+idx x = LiteralKey $ Literal (LInt x) mempty
 
 asKey :: IsType0 r => r -> Key
 asKey r = case toType0 r of
@@ -206,9 +206,12 @@ data MapEntry = MapEntry
   { key :: Key
   , value :: Type0
   , quantifier :: Occurs
-  , description :: Maybe T.Text
+  , meDescription :: C.Comment
   }
   deriving (Generic, Show)
+
+instance C.HasComment MapEntry where
+  commentL = lens meDescription (\x y -> x {meDescription = y})
 
 newtype MapChoice = MapChoice {unMapChoice :: [MapEntry]}
   deriving (Show)
@@ -227,31 +230,46 @@ data ArrayEntry = ArrayEntry
   -- here because they can be illustrative in the generated CDDL.
   , value :: Type0
   , quantifier :: Occurs
-  , description :: Maybe T.Text
+  , aeDescription :: C.Comment
   }
   deriving (Generic, Show)
+
+instance C.HasComment ArrayEntry where
+  commentL = lens aeDescription (\x y -> x {aeDescription = y})
 
 instance Num ArrayEntry where
   fromInteger i =
     ArrayEntry
       Nothing
-      (NoChoice . T2Range . Unranged $ LInt (fromIntegral i))
+      (NoChoice . T2Range . Unranged $ Literal (LInt (fromIntegral i)) mempty)
       def
-      Nothing
+      mempty
   (+) = error "Cannot treat ArrayEntry as a number"
   (*) = error "Cannot treat ArrayEntry as a number"
   abs = error "Cannot treat ArrayEntry as a number"
   signum = error "Cannot treat ArrayEntry as a number"
   negate = error "Cannot treat ArrayEntry as a number"
 
-newtype ArrayChoice = ArrayChoice {unArrayChoice :: [ArrayEntry]}
-  deriving (Show, Monoid, Semigroup)
+data ArrayChoice = ArrayChoice
+  { unArrayChoice :: [ArrayEntry]
+  , acComment :: C.Comment
+  }
+  deriving (Show)
+
+instance Semigroup ArrayChoice where
+  ArrayChoice x xc <> ArrayChoice y yc = ArrayChoice (x <> y) (xc <> yc)
+
+instance Monoid ArrayChoice where
+  mempty = ArrayChoice mempty mempty
+
+instance C.HasComment ArrayChoice where
+  commentL = lens acComment (\x y -> x {acComment = y})
 
 instance IsList ArrayChoice where
   type Item ArrayChoice = ArrayEntry
 
-  fromList = ArrayChoice
-  toList (ArrayChoice l) = l
+  fromList = (`ArrayChoice` mempty)
+  toList (ArrayChoice l _) = l
 
 type Array = Choice ArrayChoice
 
@@ -281,7 +299,7 @@ data Type2
 type Type0 = Choice Type2
 
 instance Num Type0 where
-  fromInteger i = NoChoice . T2Range . Unranged $ LInt (fromIntegral i)
+  fromInteger i = NoChoice . T2Range . Unranged $ Literal (LInt (fromIntegral i)) mempty
   (+) = error "Cannot treat Type0 as a number"
   (*) = error "Cannot treat Type0 as a number"
   abs = error "Cannot treat Type0 as a number"
@@ -319,32 +337,41 @@ deriving instance Show (Value a)
 -- Literals
 --------------------------------------------------------------------------------
 
-data Literal where
+data Literal = Literal
+  { litVariant :: LiteralVariant
+  , litComment :: C.Comment
+  }
+  deriving (Show)
+
+instance C.HasComment Literal where
+  commentL = lens litComment (\x y -> x {litComment = y})
+
+data LiteralVariant where
   -- | We store both int and nint as a Word64, since the sign is indicated in
   -- the type.
-  LInt :: Word64 -> Literal
-  LNInt :: Word64 -> Literal
-  LBignum :: Integer -> Literal
-  LText :: T.Text -> Literal
-  LFloat :: Float -> Literal
-  LDouble :: Double -> Literal
-  LBytes :: ByteString -> Literal
+  LInt :: Word64 -> LiteralVariant
+  LNInt :: Word64 -> LiteralVariant
+  LBignum :: Integer -> LiteralVariant
+  LText :: T.Text -> LiteralVariant
+  LFloat :: Float -> LiteralVariant
+  LDouble :: Double -> LiteralVariant
+  LBytes :: ByteString -> LiteralVariant
   deriving (Show)
 
 int :: Integer -> Literal
 int = inferInteger
 
 bstr :: ByteString -> Literal
-bstr = LBytes
+bstr x = Literal (LBytes x) mempty
 
 text :: T.Text -> Literal
-text = LText
+text x = Literal (LText x) mempty
 
 inferInteger :: Integer -> Literal
 inferInteger i
-  | i >= 0 && i < fromIntegral (maxBound @Word64) = LInt (fromInteger i)
-  | i < 0 && (-i) < fromIntegral (maxBound @Word64) = LNInt (fromInteger (-i))
-  | otherwise = LBignum i
+  | i >= 0 && i < fromIntegral (maxBound @Word64) = Literal (LInt (fromInteger i)) mempty
+  | i < 0 && (-i) < fromIntegral (maxBound @Word64) = Literal (LNInt (fromInteger (-i))) mempty
+  | otherwise = Literal (LBignum i) mempty
 
 --------------------------------------------------------------------------------
 -- Constraints and Ranges
@@ -433,11 +460,11 @@ class IsSize a where
   sizeAsString :: a -> String
 
 instance IsSize Word where
-  sizeAsCDDL = C.T2Value . C.VUInt . fromIntegral
+  sizeAsCDDL x = C.T2Value $ C.Value (C.VUInt $ fromIntegral x) mempty
   sizeAsString = show
 
 instance IsSize Word64 where
-  sizeAsCDDL = C.T2Value . C.VUInt
+  sizeAsCDDL x = C.T2Value $ C.Value (C.VUInt x) mempty
   sizeAsString = show
 
 instance IsSize (Word64, Word64) where
@@ -445,8 +472,8 @@ instance IsSize (Word64, Word64) where
     C.T2Group
       ( C.Type0
           ( C.Type1
-              (C.T2Value (C.VUInt x))
-              (Just (C.RangeOp C.Closed, C.T2Value (C.VUInt y)))
+              (C.T2Value (C.Value (C.VUInt x) mempty))
+              (Just (C.RangeOp C.Closed, C.T2Value (C.Value (C.VUInt y) mempty)))
               mempty
               NE.:| []
           )
@@ -509,7 +536,7 @@ le v bound =
       { applyConstraint = \t2 ->
           C.Type1
             t2
-            (Just (C.CtrlOp CtlOp.Le, C.T2Value (C.VUInt $ fromIntegral bound)))
+            (Just (C.CtrlOp CtlOp.Le, C.T2Value (C.Value (C.VUInt $ fromIntegral bound) mempty)))
             mempty
       , showConstraint = ".le " <> show bound
       }
@@ -590,16 +617,16 @@ instance IsType0 Integer where
 
 instance IsType0 T.Text where
   toType0 :: T.Text -> Type0
-  toType0 = NoChoice . T2Range . Unranged . LText
+  toType0 x = NoChoice . T2Range . Unranged $ Literal (LText x) mempty
 
 instance IsType0 ByteString where
-  toType0 = NoChoice . T2Range . Unranged . LBytes
+  toType0 x = NoChoice . T2Range . Unranged $ Literal (LBytes x) mempty
 
 instance IsType0 Float where
-  toType0 = NoChoice . T2Range . Unranged . LFloat
+  toType0 x = NoChoice . T2Range . Unranged $ Literal (LFloat x) mempty
 
 instance IsType0 Double where
-  toType0 = NoChoice . T2Range . Unranged . LDouble
+  toType0 x = NoChoice . T2Range . Unranged $ Literal (LDouble x) mempty
 
 instance IsType0 (Value a) where
   toType0 = NoChoice . T2Constrained . unconstrained
@@ -667,7 +694,7 @@ instance IsEntryLike ArrayEntry where
       , value =
           getField @"value" me
       , quantifier = getField @"quantifier" me
-      , description = Nothing
+      , aeDescription = mempty
       }
 
 instance IsEntryLike Type0 where
@@ -680,7 +707,7 @@ k ==> gc =
       { key = k
       , value = toType0 gc
       , quantifier = def
-      , description = Nothing
+      , meDescription = mempty
       }
 
 infixl 8 ==>
@@ -705,7 +732,7 @@ instance IsGroupOrArrayEntry ArrayEntry where
       { key = Nothing
       , value = toType0 x
       , quantifier = def
-      , description = Nothing
+      , aeDescription = mempty
       }
 
 instance IsGroupOrArrayEntry Type0 where
@@ -743,7 +770,7 @@ instance IsChoosable GRef Type2 where
   toChoice = toChoice . T2GenericRef
 
 instance IsChoosable ByteString Type2 where
-  toChoice = toChoice . T2Range . Unranged . LBytes
+  toChoice x = toChoice . T2Range . Unranged $ Literal (LBytes x) mempty
 
 instance IsChoosable Constrained Type2 where
   toChoice = toChoice . T2Constrained
@@ -1039,13 +1066,14 @@ toCDDL' mkPseudoRoot hdl =
         . C.Type0
         $ toCDDLType1 <$> choiceToNE t0
     toCDDLValue :: Literal -> C.Value
-    toCDDLValue (LInt i) = C.VUInt i
-    toCDDLValue (LNInt i) = C.VNInt i
-    toCDDLValue (LBignum i) = C.VBignum i
-    toCDDLValue (LFloat i) = C.VFloat32 i
-    toCDDLValue (LDouble d) = C.VFloat64 d
-    toCDDLValue (LText t) = C.VText t
-    toCDDLValue (LBytes b) = C.VBytes b
+    toCDDLValue (Literal x cmt) = C.Value (toCDDLValue' x) cmt
+    toCDDLValue' (LInt i) = C.VUInt i
+    toCDDLValue' (LNInt i) = C.VNInt i
+    toCDDLValue' (LBignum i) = C.VBignum i
+    toCDDLValue' (LFloat i) = C.VFloat32 i
+    toCDDLValue' (LDouble d) = C.VFloat64 d
+    toCDDLValue' (LText t) = C.VText t
+    toCDDLValue' (LBytes b) = C.VBytes b
 
     mapToCDDLGroup :: Map -> C.Group
     mapToCDDLGroup xs = C.Group $ mapChoiceToCDDL <$> choiceToNE xs
@@ -1057,7 +1085,7 @@ toCDDL' mkPseudoRoot hdl =
     mapEntryToCDDL (MapEntry k v occ cmnt) =
       C.GroupEntry
         (toOccurrenceIndicator occ)
-        (foldMap C.Comment cmnt)
+        cmnt
         (C.GEType (Just $ toMemberKey k) (toCDDLType0 v))
 
     toOccurrenceIndicator :: Occurs -> Maybe C.OccurrenceIndicator
@@ -1087,7 +1115,7 @@ toCDDL' mkPseudoRoot hdl =
       T2GenericRef (GRef n) -> C.Type1 (C.T2Name (C.Name n mempty) Nothing) Nothing mempty
 
     toMemberKey :: Key -> C.MemberKey
-    toMemberKey (LiteralKey (LText t)) = C.MKBareword (C.Name t mempty)
+    toMemberKey (LiteralKey (Literal (LText t) _)) = C.MKBareword (C.Name t mempty)
     toMemberKey (LiteralKey v) = C.MKValue $ toCDDLValue v
     toMemberKey (TypeKey t) = C.MKType (toCDDLType1 t)
 
@@ -1098,13 +1126,13 @@ toCDDL' mkPseudoRoot hdl =
     arrayToCDDLGroup xs = C.Group $ arrayChoiceToCDDL <$> choiceToNE xs
 
     arrayChoiceToCDDL :: ArrayChoice -> C.GrpChoice
-    arrayChoiceToCDDL (ArrayChoice entries) = C.GrpChoice (fmap arrayEntryToCDDL entries) mempty
+    arrayChoiceToCDDL (ArrayChoice entries cmt) = C.GrpChoice (fmap arrayEntryToCDDL entries) cmt
 
     arrayEntryToCDDL :: ArrayEntry -> C.GroupEntry
     arrayEntryToCDDL (ArrayEntry k v occ cmnt) =
       C.GroupEntry
         (toOccurrenceIndicator occ)
-        (foldMap C.Comment cmnt)
+        cmnt
         (C.GEType (fmap toMemberKey k) (toCDDLType0 v))
 
     toCDDLPostlude :: Value a -> C.Name
