@@ -1,7 +1,7 @@
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE LambdaCase #-}
-{-# OPTIONS_GHC -Wno-orphans -Wno-incomplete-patterns -Wno-unused-matches #-}
+{-# OPTIONS_GHC -Wno-orphans -Wno-incomplete-patterns -Wno-unused-matches -Wno-unused-imports #-}
 -- |
 
 module Parser where
@@ -11,25 +11,33 @@ import Codec.CBOR.Cuddle.CDDL.CTree
 import Codec.CBOR.Cuddle.CDDL.Resolve
 import Codec.CBOR.Cuddle.CDDL.CtlOp
 import Codec.CBOR.Cuddle.CDDL.Postlude
+import Codec.CBOR.FlatTerm
 import Codec.CBOR.Term
 import Data.Functor.Identity
 import Data.Void
 import Data.Map.Strict qualified as Map
+import Data.Set qualified as Set
 import Codec.CBOR.Cuddle.CDDL hiding (CDDL, Rule, Group)
 import Data.Text.Lazy qualified as TL
 import Data.ByteString.Lazy qualified as BSL
 import Data.Text qualified as T
 import Data.ByteString qualified as BS
 import Data.Either
+import Data.List.NonEmpty qualified as NE
+import Data.List qualified as L
+import Codec.CBOR.Cuddle.Pretty
+import Prettyprinter
+import Prettyprinter.Util (putDocW)
+import Prettyprinter.Render.String
 
 type CDDL = CTreeRoot' Identity MonoRef
 type Rule = Node MonoRef
 type ResolvedRule = CTree MonoRef
 
-instance VisualStream [Term] where
+instance VisualStream [TermToken] where
   showTokens _ = show
 
-instance TraversableStream [Term] where
+instance TraversableStream [TermToken] where
   reachOffset i s = (Nothing, s { pstateInput = drop (i - pstateOffset s) (pstateInput s) })
 
 resolveIfRef :: CDDL -> Rule -> ResolvedRule
@@ -39,115 +47,195 @@ resolveIfRef ct@(CTreeRoot cddl) (MRuleRef n) = do
     Nothing -> error $ "Unbound reference: " <> show n
     Just val -> resolveIfRef ct $ runIdentity val
 
+token' :: MonadParsec e s m => (Token s -> Maybe a) -> m a
+token' a = token a Set.empty
 
-mkParser :: CDDL -> Rule -> Parsec Void [Term] Term
+mkParser :: CDDL -> Rule -> Parsec Void [TermToken] Term
 mkParser cddl rule = case resolveIfRef cddl rule of
-  Literal (VUInt i) -> satisfy (\case
-                                   TInt i' -> fromIntegral i == i'
-                                   _ -> False
-                               ) <?> ("a literal int " <> show i)
-  Literal (VNInt (negate . fromIntegral -> i)) -> satisfy (\case
-                                   TInt i' -> i == i'
-                                   _ -> False
-                               ) <?> ("a literal int " <> show i)
-  Literal (VBignum i) -> satisfy (\case
-                                   TInteger i' -> i == i'
-                                   TInt i' -> i == toInteger i'
-                                   _ -> False
-                               ) <?> ("a literal int " <> show i)
+  Literal (VUInt (fromIntegral -> i)) ->
+    token' (\case
+               TkInt i' -> if i == i' then Just (TInt i') else Nothing
+               _ -> Nothing
+           ) <?> ("a literal int " <> show i)
+  Literal (VNInt (negate . fromIntegral -> i)) ->
+    token' (\case
+                TkInt i' -> if i == i' then Just (TInt i') else Nothing
+                _ -> Nothing
+            ) <?> ("a literal int " <> show i)
+  Literal (VBignum i) ->
+    token' (\case
+               TkInteger i' -> if i == i' then Just (TInteger i') else Nothing
+               TkInt i' -> if i == toInteger i' then Just (TInt i') else Nothing
+               _ -> Nothing
+           ) <?> ("a literal int " <> show i)
 
-  Literal (VFloat16 i) -> satisfy (\case
-                                   THalf i' -> i == i'
-                                   _ -> False
-                               ) <?> ("a literal float " <> show i)
-  Literal (VFloat32 i) -> satisfy (\case
-                                   TFloat i' -> i == i'
-                                   _ -> False
-                               ) <?> ("a literal float " <> show i)
-  Literal (VFloat64 i) -> satisfy (\case
-                                   TDouble i' -> i == i'
-                                   _ -> False
-                               ) <?> ("a literal float " <> show i)
-  Literal (VText i) -> satisfy (\case
-                                   TString i' -> i == i'
-                                   TStringI (TL.toStrict -> i') -> i == i'
-                                   _ -> False
-                               ) <?> ("a literal text " <> show i)
-  Literal (VBytes i) -> satisfy (\case
-                                   TBytes i' -> i == i'
-                                   TBytesI (BSL.toStrict -> i') -> i == i'
-                                   _ -> False
-                               ) <?> ("a literal bytes " <> show i)
-  Literal (VBool i) -> satisfy (\case
-                                   TBool i' -> i == i'
-                                   _ -> False
-                               ) <?> ("a literal bool " <> show i)
+  Literal (VFloat16 i) ->
+    token' (\case
+               TkFloat16 i' -> if i == i' then Just (THalf i') else Nothing
+               _ -> Nothing
+           ) <?> ("a literal float " <> show i)
+  Literal (VFloat32 i) ->
+    token' (\case
+               TkFloat32 i' -> if i == i' then Just (TFloat i') else Nothing
+               _ -> Nothing
+           ) <?> ("a literal float " <> show i)
+  Literal (VFloat64 i) ->
+    token' (\case
+               TkFloat64 i' -> if i == i' then Just (TDouble i') else Nothing
+               _ -> Nothing
+           ) <?> ("a literal float " <> show i)
 
-  Postlude PTBool -> satisfy (\case
-                                TBool{} -> True
-                                _ -> False
-                            ) <?> "a boolean"
+  Literal (VText i) ->
+    let tst = \case
+                TkString i' -> if i == i' then Just i else Nothing
+                _ -> Nothing
+    in
+    (    ( TString <$> token' tst )
+      <|> ( between
+              (satisfy ((==) TkStringBegin))
+              (satisfy ((==) TkBreak))
+              (TStringI . TL.fromStrict <$> token' tst)
+          )
+    ) <?> ("a literal text " <> show i)
+  Literal (VBytes i) ->
+    let tst = \case
+                TkBytes i' -> if i == i' then Just i' else Nothing
+                _ -> Nothing
+    in
+    (     ( TBytes <$> token' tst )
+      <|> ( between
+                (satisfy ((==) TkBytesBegin))
+                (satisfy ((==) TkBreak))
+                (TBytesI . BSL.fromStrict <$> token' tst)
+          )
+    ) <?> ("a literal bytestring " <> show i)
 
-  Postlude PTUInt -> satisfy (\case
-                                TInt i -> i >= 0
-                                _ -> False
-                            ) <?> "an unsigned integer"
+  Literal (VBool i) ->
+    token' (\case
+               TkBool i' -> if i == i' then Just (TBool i') else Nothing
+               _ -> Nothing
+           ) <?> ("a literal bool " <> show i)
 
-  Postlude PTNInt -> satisfy (\case
-                                TInt i -> i < 0
-                                _ -> False
-                            ) <?> "a negative integer"
-  Postlude PTInt -> satisfy (\case
-                                TInt{} -> True
-                                _ -> False
-                            ) <?> "an integer"
-  Postlude PTHalf -> satisfy (\case
-                                THalf{} -> True
-                                _ -> False
-                            ) <?> "a float16"
-  Postlude PTFloat -> satisfy (\case
-                                TFloat{} -> True
-                                _ -> False
-                            ) <?> "a float32"
-  Postlude PTDouble -> satisfy (\case
-                                TDouble{} -> True
-                                _ -> False
-                            ) <?> "a float64"
-  Postlude PTBytes -> satisfy (\case
-                                TBytes{} -> True
-                                TBytesI{} -> True
-                                _ -> False
-                            ) <?> "a bytestring"
-  Postlude PTText -> satisfy (\case
-                                TString{} -> True
-                                TStringI{} -> True
-                                _ -> False
-                            ) <?> "a textstring"
-  Postlude PTNil -> satisfy (\case
-                                TNull{} -> True
-                                _ -> False
-                            ) <?> "a nil"
-  Postlude PTUndefined -> satisfy (\case
-                                TSimple 23 -> True
-                                _ -> False
-                            ) <?> "an undefined"
+  Postlude PTBool ->
+    token' (\case
+              TkBool i -> Just $ TBool i
+              _ -> Nothing
+          ) <?> "a boolean"
+
+  Postlude PTUInt ->
+    token' (\case
+              TkInt i -> if i >= 0 then Just (TInt i) else Nothing
+              _ -> Nothing
+          ) <?> "an unsigned integer"
+
+  Postlude PTNInt ->
+    token' (\case
+              TkInt i -> if i < 0 then Just (TInt i) else Nothing
+              _ -> Nothing
+          ) <?> "a negative integer"
+
+  Postlude PTInt ->
+    token' (\case
+               TkInt i -> Just (TInt i)
+               _ -> Nothing
+           ) <?> "an integer"
+
+  Postlude PTHalf ->
+    token' (\case
+               TkFloat16 i -> Just (THalf i)
+               _ -> Nothing
+           ) <?> "a float16"
+
+  Postlude PTFloat ->
+    token' (\case
+               TkFloat32 i  -> Just (TFloat i)
+               _ -> Nothing
+           ) <?> "a float32"
+
+  Postlude PTDouble ->
+    token' (\case
+               TkFloat64 i -> Just (TDouble i)
+               _ -> Nothing
+           ) <?> "a float64"
+
+  Postlude PTBytes ->
+    let tst = \case
+                TkBytes b -> Just b
+                _ -> Nothing
+    in
+    (     ( TBytes <$> token' tst )
+      <|> ( between
+                (satisfy ((==) TkBytesBegin))
+                (satisfy ((==) TkBreak))
+                (TBytesI . BSL.fromStrict <$> token' tst)
+          )
+    ) <?> "a  bytestring"
+
+  Postlude PTText ->
+    let tst = \case
+                TkString i' -> Just i'
+                _ -> Nothing
+    in
+    (    ( TString <$> token' tst )
+      <|> ( between
+              (satisfy ((==) TkStringBegin))
+              (satisfy ((==) TkBreak))
+              (TStringI . TL.fromStrict <$> token' tst)
+          )
+    ) <?> "a text"
+
+
+  Postlude PTNil ->
+    token' (\case
+               TkNull -> Just TNull
+               _ -> Nothing
+           ) <?> "a nil"
+  Postlude PTUndefined ->
+    token' (\case
+               TkSimple 23 -> Just (TSimple 23)
+               _ -> Nothing
+           ) <?> "an undefined"
 
   Control op tgt ctrl ->
     lookAhead (mkParser cddl tgt) *> mkOpParser cddl op tgt ctrl
 
-  Map nodes -> undefined
+  Map nodes ->
+    (    between
+           (satisfy ((==) TkMapBegin))
+           (satisfy ((==) TkBreak))
+           (TMapI <$> traverse (mkParser2 cddl) (flattenGroup cddl nodes))
+     <|> ( do
+             llen <- token' (\case TkMapLen w -> Just (fromIntegral w); _ -> Nothing)
+             elems <- traverse (mkParser2 cddl) (flattenGroup cddl nodes)
+             if length elems == llen
+               then pure $ TMap elems
+               else fail "Different number of elements!"
+          )
+    ) <?> "a proper map"
 
-  Array nodes -> satisfy (\case
-                             TList nodes' ->
-                               isRight $ parse (traverse (mkParser cddl) $ flattenGroup cddl nodes) "" nodes'
-                             TListI nodes' ->
-                               isRight $ parse (traverse (mkParser cddl) $ flattenGroup cddl nodes) "" nodes'
-                             _ -> False
-                         ) <?> "a list"
+  Array nodes ->
+    (    between
+           (satisfy ((==) TkListBegin))
+           (satisfy ((==) TkBreak))
+           (TListI <$> traverse (mkParser cddl) (flattenGroup cddl nodes))
+     <|> ( do
+             llen <- token' (\case TkListLen w -> Just (fromIntegral w); _ -> Nothing)
+             elems <- traverse (mkParser cddl) (flattenGroup cddl nodes)
+             if length elems == llen
+               then pure $ TList elems
+               else fail "Different number of elements!"
+          )
+    ) <?> "a proper list"
 
-  Choice nodes -> undefined
+  Choice nodes ->
+    L.foldl1' (<|>) [ mkParser cddl n | n <- NE.toList nodes ]
+    <?> ("something in the choice " <> show (NE.toList nodes))
 
-  Group nodes -> undefined
+  -- Group nodes -> undefined
+
+mkParser2 :: CDDL -> Rule -> ParsecT Void [TermToken] Identity (Term, Term)
+mkParser2 cddl rule = case resolveIfRef cddl rule of
+  KV k v _ -> (,) <$> mkParser cddl k <*> mkParser cddl v
 
 flattenGroup :: CDDL -> [Rule] -> [Rule]
 flattenGroup cddl nodes =
@@ -177,19 +265,25 @@ flattenGroup cddl nodes =
   | rule <- nodes
   ]
 
-mkOpParser :: CDDL -> CtlOp -> Rule -> Rule -> Parsec Void [Term] Term
+mkOpParser :: CDDL -> CtlOp -> Rule -> Rule -> Parsec Void [TermToken] Term
 mkOpParser cddl Size tgt ctrl
   | Just name <- supportsSize cddl tgt = case resolveIfRef cddl ctrl of
       Literal (VUInt (fromIntegral -> sz)) ->
-        satisfy (\case
-                    TBytesI (BSL.length -> sz') -> sz == sz'
-                    TBytes (fromIntegral . BS.length -> sz') -> sz == sz'
-                    TString (fromIntegral . T.length -> sz') -> sz == sz'
-                    TStringI (TL.length -> sz') -> sz == sz'
-                    TInt i -> 0 <= i && i < 256 ^ sz
-                    TInteger i -> 0 <= i && i < 256 ^ sz
-                    _ -> False
-                ) <?> (name <> " of size " <> show sz)
+        let tst = \case
+                    TkBytes s -> if sz == BS.length s then Just (TBytes s) else Nothing
+                    TkString s -> if sz == T.length s then Just (TString s) else Nothing
+                    _ -> Nothing
+        in (     token' tst
+             <|> between
+                   (satisfy ((==) TkStringBegin))
+                   (satisfy ((==) TkBreak))
+                   (token' tst)
+             <|> token' (\case
+                            TkInt i -> if 0 <= i && i < 256 ^ sz then Just (TInt i) else Nothing
+                            TkInteger i -> if 0 <= i && i < 256 ^ sz then Just (TInteger i) else Nothing
+                            _ -> Nothing
+                        )
+           ) <?> (name <> " of size " <> show sz)
   | otherwise = error $ "Malformed cddl: " <> show tgt
 mkOpParser cddl Bits tgt ctrl
   | Just name <- supportsBits cddl tgt = case resolveIfRef cddl tgt of
@@ -239,40 +333,54 @@ supportsCborseq cddl rule = case resolveIfRef cddl rule of
 aCDDL :: IO ()
 aCDDL =
   sequence_ (map (uncurry parseTest)
-    [ foo (Literal (VUInt 1)) (TInt 1)
-    , foo (Literal (VNInt 1)) (TInt (-1))
-    , foo (Literal (VBignum 1)) (TInteger 1)
-    , foo (Literal (VFloat16 1.5)) (THalf 1.5)
-    , foo (Literal (VFloat32 1.5)) (TFloat 1.5)
-    , foo (Literal (VFloat64 1.5)) (TDouble 1.5)
-    , foo (Literal (VText "hi")) (TString "hi")
-    , foo (Literal (VText "hi")) (TStringI "hi")
-    , foo (Literal (VBytes "hi")) (TBytes "hi")
-    , foo (Literal (VBytes "hi")) (TBytesI "hi")
-    , foo (Literal (VBool True)) (TBool True)
-    , foo (Postlude PTBool) (TBool True)
-    , foo (Postlude PTUInt) (TInt 1)
-    , foo (Postlude PTNInt) (TInt (-1))
-    , foo (Postlude PTInt) (TInt 1)
-    , foo (Postlude PTHalf) (THalf 1.5)
-    , foo (Postlude PTFloat) (TFloat 1.5)
-    , foo (Postlude PTDouble) (TDouble 1.5)
-    , foo (Postlude PTBytes) (TBytes "hi")
-    , foo (Postlude PTBytes) (TBytesI "hi")
-    , foo (Postlude PTText) (TString "hi")
-    , foo (Postlude PTText) (TStringI "hi")
-    , foo (Postlude PTNil) TNull
-    , foo (Postlude PTUndefined) (TSimple 23)
-    , foo (Control Size (MIt (Postlude PTUInt)) (MIt (Literal (VUInt 1)))) (TInt 100)
-    , foo (Control Size (MIt (Postlude PTBytes)) (MIt (Literal (VUInt 5)))) (TBytes "12345")
-    , foo (Array [MIt (Postlude PTUInt), MIt (Postlude PTUInt)]) (TList [TInt 1, TInt 2])
-    , foo (Array [MIt (Postlude PTUInt), MIt (Postlude PTUInt)]) (TList [TBytes "AA", TInt 2])
+    [ foo (Literal (VUInt 1)) [TkInt 1]
+    , foo (Literal (VNInt 1)) [TkInt (-1)]
+    , foo (Literal (VBignum 1)) [TkInteger 1]
+    , foo (Literal (VFloat16 1.5)) [TkFloat16 1.5]
+    , foo (Literal (VFloat32 1.5)) [TkFloat32 1.5]
+    , foo (Literal (VFloat64 1.5)) [TkFloat64 1.5]
+    , foo (Literal (VText "hi")) [TkString "hi"]
+    , foo (Literal (VText "hi")) [TkStringBegin, TkString "hi", TkBreak]
+    , foo (Literal (VBytes "hi")) [TkBytes "hi"]
+    , foo (Literal (VBytes "hi")) [TkBytesBegin, TkBytes "hi", TkBreak]
+    , foo (Literal (VBool True)) [TkBool True]
+    , foo (Postlude PTBool) [TkBool True]
+    , foo (Postlude PTUInt) [TkInt 1]
+    , foo (Postlude PTNInt) [TkInt (-1)]
+    , foo (Postlude PTInt) [TkInt 1]
+    , foo (Postlude PTHalf) [TkFloat16 1.5]
+    , foo (Postlude PTFloat) [TkFloat32 1.5]
+    , foo (Postlude PTDouble) [TkFloat64 1.5]
+    , foo (Postlude PTBytes) [TkBytes "hi"]
+    , foo (Postlude PTBytes) [TkBytesBegin, TkBytes "hi", TkBreak]
+    , foo (Postlude PTText) [TkString "hi"]
+    , foo (Postlude PTText) [TkStringBegin, TkString "hi", TkBreak]
+    , foo (Postlude PTNil) [TkNull]
+    , foo (Postlude PTUndefined) [TkSimple 23]
+    , foo (Control Size (MIt (Postlude PTUInt)) (MIt (Literal (VUInt 1)))) [TkInt 100]
+    , foo (Control Size (MIt (Postlude PTBytes)) (MIt (Literal (VUInt 5)))) [TkBytes "12345"]
+    , foo (Array [MIt (Postlude PTUInt), MIt (Postlude PTUInt)]) [TkListBegin, TkInt 1, TkInt 2, TkBreak]
+    , foo (Array [MIt (Postlude PTUInt), MIt (Postlude PTUInt)]) [TkListLen 2, TkInt 1, TkInt 2]
+    , foo (Map [MIt (KV (MIt (Postlude PTUInt)) (MIt (Postlude PTUInt)) False)]) [TkMapBegin, TkInt 1, TkInt 2, TkBreak]
+    , foo (Map [MIt (KV (MIt (Postlude PTUInt)) (MIt (Postlude PTUInt)) False)]) [TkMapLen 1, TkInt 1, TkInt 2]
+    , foo (Choice (MIt
+                     (Map [MIt (KV (MIt (Postlude PTUInt)) (MIt (Postlude PTUInt)) False)])
+                   NE.:|
+                    [ MIt ((Array [MIt (Postlude PTUInt), MIt (Postlude PTUInt)])) ]
+                  ))
+                     [TkMapLen 1, TkInt 1, TkInt 2]
+    , foo (Choice (MIt
+                     (Map [MIt (KV (MIt (Postlude PTUInt)) (MIt (Postlude PTUInt)) False)])
+                   NE.:|
+                    [ MIt ((Array [MIt (Postlude PTUInt), MIt (Postlude PTUInt)])) ]
+                  ))
+                     [TkListLen 2, TkInt 1, TkInt 2]
     ])
 
-foo :: CTree MonoRef -> Term -> (Parsec Void [Term] Term, [Term])
+foo :: CTree MonoRef -> [TermToken] -> (Parsec Void [TermToken] Term, [TermToken])
 foo a b = (
         mkParser
           (CTreeRoot (Map.singleton (Name "foo") (Identity (MIt a))))
           (MRuleRef (Name "foo"))
-     ,[b]
+     ,b
      )
