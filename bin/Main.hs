@@ -3,6 +3,7 @@
 module Main (main) where
 
 import Codec.CBOR.Cuddle.CBOR.Gen (generateCBORTerm)
+import Codec.CBOR.Cuddle.CBOR.Validate
 import Codec.CBOR.Cuddle.CDDL (Name (..), sortCDDL)
 import Codec.CBOR.Cuddle.CDDL.Prelude (prependPrelude)
 import Codec.CBOR.Cuddle.CDDL.Resolve (
@@ -14,6 +15,7 @@ import Codec.CBOR.FlatTerm (toFlatTerm)
 import Codec.CBOR.Pretty (prettyHexEnc)
 import Codec.CBOR.Term (encodeTerm)
 import Codec.CBOR.Write (toStrictByteString)
+import Control.Monad.Except
 import Data.ByteString.Base16 qualified as Base16
 import Data.ByteString.Char8 qualified as BSC
 import Data.Text qualified as T
@@ -28,12 +30,21 @@ import Text.Megaparsec (ParseErrorBundle, Parsec, errorBundlePretty, runParser)
 
 data Opts = Opts Command String
 
-newtype ValidateOpts = ValidateOpts {vNoPrelude :: Bool}
-
 data Command
   = Format FormatOpts
   | Validate ValidateOpts
   | GenerateCBOR GenOpts
+  | ValidateCBOR ValidateCBOROpts
+
+newtype ValidateOpts = ValidateOpts {vNoPrelude :: Bool}
+
+pValidateOpts :: Parser ValidateOpts
+pValidateOpts =
+  ValidateOpts
+    <$> switch
+      ( long "no-prelude"
+          <> help "Do not include the CDDL prelude."
+      )
 
 -- | Various formats for outputtting CBOR
 data CBOROutputFormat
@@ -53,6 +64,7 @@ pCBOROutputFormat = eitherReader $ \case
 data GenOpts = GenOpts
   { itemName :: T.Text
   , outputFormat :: CBOROutputFormat
+  , outputTo :: Maybe String
   , gNoPrelude :: Bool
   }
 
@@ -72,6 +84,13 @@ pGenOpts =
           <> help "Output format"
           <> value AsCBOR
       )
+    <*> optional
+      ( strOption
+          ( long "out-file"
+              <> short 'o'
+              <> help "Write to"
+          )
+      )
     <*> switch
       ( long "no-prelude"
           <> help "Do not include the CDDL prelude."
@@ -88,10 +107,27 @@ pFormatOpts =
           <> help "Sort the CDDL rule definitions before printing."
       )
 
-pValidateOpts :: Parser ValidateOpts
-pValidateOpts =
-  ValidateOpts
-    <$> switch
+data ValidateCBOROpts = ValidateCBOROpts
+  { vcItemName :: T.Text
+  , vcInput :: FilePath
+  , vcNoPrelude :: Bool
+  }
+
+pValidateCBOROpts :: Parser ValidateCBOROpts
+pValidateCBOROpts =
+  ValidateCBOROpts
+    <$> strOption
+      ( long "rule"
+          <> short 'r'
+          <> metavar "RULE"
+          <> help "Name of the CDDL rule to validate this file with"
+      )
+    <*> strOption
+      ( long "cbor"
+          <> short 'c'
+          <> help "CBOR file"
+      )
+    <*> switch
       ( long "no-prelude"
           <> help "Do not include the CDDL prelude."
       )
@@ -117,6 +153,12 @@ opts =
             ( info
                 (GenerateCBOR <$> pGenOpts <**> helper)
                 (progDesc "Generate a CBOR term matching the schema")
+            )
+          <> command
+            "validate-cbor"
+            ( info
+                (ValidateCBOR <$> pValidateCBOROpts <**> helper)
+                (progDesc "Validate a CBOR file against a schema")
             )
       )
     <*> argument str (metavar "CDDL_FILE")
@@ -171,8 +213,23 @@ run (Opts cmd cddlFile) = do
                  in case outputFormat gOpts of
                       AsTerm -> print term
                       AsFlatTerm -> print $ toFlatTerm (encodeTerm term)
-                      AsCBOR -> BSC.putStrLn . Base16.encode . toStrictByteString $ encodeTerm term
+                      AsCBOR -> case outputTo gOpts of
+                        Nothing -> BSC.putStrLn . Base16.encode . toStrictByteString $ encodeTerm term
+                        Just out -> BSC.writeFile out $ toStrictByteString $ encodeTerm term
                       AsPrettyCBOR -> putStrLn . prettyHexEnc $ encodeTerm term
+        ValidateCBOR vcOpts ->
+          let
+            res'
+              | vcNoPrelude vcOpts = res
+              | otherwise = prependPrelude res
+           in
+            case fullResolveCDDL res' of
+              Left err -> putStrLnErr (show err) >> exitFailure
+              Right mt -> do
+                cbor <- BSC.readFile (vcInput vcOpts)
+                case runExcept $ validateCBOR cbor (Name $ vcItemName vcOpts) mt of
+                  Left e -> print e >> exitFailure
+                  Right () -> putStrLn "Valid"
 
 putStrLnErr :: String -> IO ()
 putStrLnErr = hPutStrLn stderr
