@@ -20,6 +20,7 @@ module Codec.CBOR.Cuddle.Huddle (
   -- * Core Types
   Huddle,
   HuddleItem (..),
+  huddleJoin,
   Rule,
   Named,
   IsType0 (..),
@@ -83,6 +84,7 @@ module Codec.CBOR.Cuddle.Huddle (
 
   -- * Conversion to CDDL
   collectFrom,
+  collectFromInit,
   toCDDL,
   toCDDLNoRoot,
 )
@@ -96,9 +98,11 @@ import Control.Monad (when)
 import Control.Monad.State (MonadState (get), execState, modify)
 import Data.ByteString (ByteString)
 import Data.Default.Class (Default (..))
+import Data.Function (on)
 import Data.Generics.Product (HasField' (field'), field, getField)
+import Data.List qualified as L
 import Data.List.NonEmpty qualified as NE
-import Data.Map.Ordered.Strict (OMap)
+import Data.Map.Ordered.Strict (OMap, (|<>))
 import Data.Map.Ordered.Strict qualified as OMap
 import Data.String (IsString (fromString))
 import Data.Text qualified as T
@@ -139,6 +143,10 @@ data Huddle = Huddle
   , items :: OMap T.Text HuddleItem
   }
   deriving (Generic, Show)
+
+huddleJoin :: Huddle -> Huddle -> Huddle
+huddleJoin (Huddle rootsL itemsL) (Huddle rootsR itemsR) =
+  Huddle (L.nubBy ((==) `on` name) $ rootsL <> rootsR) (itemsL |<> itemsR)
 
 -- | This semigroup instance:
 --   - Takes takes the roots from the RHS unless they are empty, in which case
@@ -1028,6 +1036,14 @@ collectFrom topRs =
     goRanged (Ranged lb ub _) = goRangeBound lb >> goRangeBound ub
     goRangeBound (RangeBoundLiteral _) = pure ()
     goRangeBound (RangeBoundRef r) = goRule r
+
+-- | Same as `collectFrom`, but the rules passed into this function will be put
+--   at the top of the Huddle, and all of their dependencies will be added at
+--   the end in depth-first order.
+collectFromInit :: [Rule] -> Huddle
+collectFromInit rules =
+  Huddle rules (OMap.fromList $ (\r@(Named n _ _) -> (n, HIRule r)) <$> rules)
+    `huddleJoin` collectFrom rules
 
 --------------------------------------------------------------------------------
 -- Conversion to CDDL
