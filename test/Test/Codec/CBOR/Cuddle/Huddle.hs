@@ -14,6 +14,7 @@ import Test.Hspec
 import Test.Hspec.Megaparsec
 import Text.Megaparsec
 import Prelude hiding ((/))
+import qualified Test.Codec.CBOR.Cuddle.CDDL.Pretty as Pretty
 
 huddleSpec :: Spec
 huddleSpec = describe "huddle" $ do
@@ -24,6 +25,7 @@ huddleSpec = describe "huddle" $ do
   nestedSpec
   genericSpec
   constraintSpec
+  Pretty.spec
 
 basicAssign :: Spec
 basicAssign = describe "basic assignment" $ do

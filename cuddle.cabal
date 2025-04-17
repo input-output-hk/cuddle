@@ -50,12 +50,15 @@ library
     Codec.CBOR.Cuddle.CDDL.Postlude
     Codec.CBOR.Cuddle.CDDL.Prelude
     Codec.CBOR.Cuddle.CDDL.Resolve
+    Codec.CBOR.Cuddle.Comments
     Codec.CBOR.Cuddle.Huddle
     Codec.CBOR.Cuddle.Huddle.HuddleM
     Codec.CBOR.Cuddle.Huddle.Optics
     Codec.CBOR.Cuddle.Parser
     Codec.CBOR.Cuddle.Parser.Lexer
     Codec.CBOR.Cuddle.Pretty
+    Codec.CBOR.Cuddle.Pretty.Columnar
+    Codec.CBOR.Cuddle.Pretty.Utils
 
   other-modules:
 
@@ -63,6 +66,7 @@ library
   build-depends:
     , base                >=4.14.0.0
     , base16-bytestring
+    , boxes
     , bytestring
     , capability
     , cborg
@@ -128,6 +132,7 @@ test-suite cuddle-test
     Test.Codec.CBOR.Cuddle.CDDL.Examples
     Test.Codec.CBOR.Cuddle.CDDL.Gen
     Test.Codec.CBOR.Cuddle.CDDL.Parser
+    Test.Codec.CBOR.Cuddle.CDDL.Pretty
     Test.Codec.CBOR.Cuddle.Huddle
 
   -- other-extensions:
@@ -136,11 +141,15 @@ test-suite cuddle-test
   main-is:          Main.hs
   build-depends:
     , base              >=4.14.0.0
+    , bytestring
     , cuddle
+    , data-default-class
     , hspec
     , hspec-megaparsec
+    , HUnit
     , megaparsec
     , prettyprinter
+    , string-qq
     , QuickCheck
     , text
     , tree-diff
