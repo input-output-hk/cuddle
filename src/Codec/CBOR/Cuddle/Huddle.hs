@@ -977,21 +977,33 @@ binding2 fRule t0 t1 =
 -- Collecting all top-level rules
 --------------------------------------------------------------------------------
 
+hiRule :: HuddleItem -> [Rule]
+hiRule (HIRule r) = [r]
+hiRule _ = []
+
+hiName :: HuddleItem -> T.Text
+hiName (HIRule (Named n _ _)) = n
+hiName (HIGroup (Named n _ _)) = n
+hiName (HIGRule (Named n _ _)) = n
+
 -- | Collect all rules starting from a given point. This will also insert a
 --   single pseudo-rule as the first element which references the specified
 --   top-level rules.
-collectFrom :: [Rule] -> Huddle
+collectFrom :: [HuddleItem] -> Huddle
 collectFrom topRs =
   toHuddle $
     execState
-      (traverse goRule topRs)
+      (traverse goHuddleItem topRs)
       OMap.empty
   where
     toHuddle items =
       Huddle
-        { roots = topRs
+        { roots = concatMap hiRule topRs
         , items = items
         }
+    goHuddleItem (HIRule r) = goRule r
+    goHuddleItem (HIGroup g) = goNamedGroup g
+    goHuddleItem (HIGRule (Named _ (GRule _ t0) _)) = goT0 t0
     goRule r@(Named n t0 _) = do
       items <- get
       when (OMap.notMember n items) $ do
@@ -1000,17 +1012,12 @@ collectFrom topRs =
     goChoice f (NoChoice x) = f x
     goChoice f (ChoiceOf x xs) = f x >> goChoice f xs
     goT0 = goChoice goT2
-    goT2 (T2Range r) = goRanged r
-    goT2 (T2Map m) = goChoice (mapM_ goMapEntry . unMapChoice) m
-    goT2 (T2Array m) = goChoice (mapM_ goArrayEntry . unArrayChoice) m
-    goT2 (T2Tagged (Tagged _ t0)) = goT0 t0
-    goT2 (T2Ref n) = goRule n
-    goT2 (T2Group r@(Named n g _)) = do
+    goNamedGroup r@(Named n g _) = do
       items <- get
       when (OMap.notMember n items) $ do
         modify (OMap.|> (n, HIGroup r))
         goGroup g
-    goT2 (T2Generic r@(Named n g _)) = do
+    goGRule r@(Named n g _) = do
       items <- get
       when (OMap.notMember n items) $ do
         modify (OMap.|> (n, HIGRule $ fmap callToDef r))
@@ -1018,6 +1025,13 @@ collectFrom topRs =
       -- Note that the parameters here may be different, so this doesn't live
       -- under the guard
       mapM_ goT2 $ args g
+    goT2 (T2Range r) = goRanged r
+    goT2 (T2Map m) = goChoice (mapM_ goMapEntry . unMapChoice) m
+    goT2 (T2Array m) = goChoice (mapM_ goArrayEntry . unArrayChoice) m
+    goT2 (T2Tagged (Tagged _ t0)) = goT0 t0
+    goT2 (T2Ref n) = goRule n
+    goT2 (T2Group r) = goNamedGroup r
+    goT2 (T2Generic x) = goGRule x
     goT2 (T2Constrained (Constrained c _ refs)) =
       ( case c of
           CValue _ -> pure ()
@@ -1040,9 +1054,9 @@ collectFrom topRs =
 -- | Same as `collectFrom`, but the rules passed into this function will be put
 --   at the top of the Huddle, and all of their dependencies will be added at
 --   the end in depth-first order.
-collectFromInit :: [Rule] -> Huddle
+collectFromInit :: [HuddleItem] -> Huddle
 collectFromInit rules =
-  Huddle rules (OMap.fromList $ (\r@(Named n _ _) -> (n, HIRule r)) <$> rules)
+  Huddle (concatMap hiRule rules) (OMap.fromList $ (\x -> (hiName x, x)) <$> rules)
     `huddleJoin` collectFrom rules
 
 --------------------------------------------------------------------------------
