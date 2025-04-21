@@ -6,6 +6,8 @@
 
 module Parser where
 
+import Control.Monad (guard)
+import Data.Maybe
 import Text.Megaparsec
 import Codec.CBOR.Cuddle.CDDL.CTree
 import Codec.CBOR.Cuddle.CDDL.Resolve
@@ -203,10 +205,10 @@ mkParser cddl rule = case resolveIfRef cddl rule of
     (    between
            (satisfy ((==) TkMapBegin))
            (satisfy ((==) TkBreak))
-           (TMapI <$> traverse (mkParser2 cddl) (flattenGroup cddl nodes))
+           (TMapI . concat <$> traverse (mkGroupParser2 cddl) (flattenGroup cddl nodes))
      <|> ( do
              llen <- token' (\case TkMapLen w -> Just (fromIntegral w); _ -> Nothing)
-             elems <- traverse (mkParser2 cddl) (flattenGroup cddl nodes)
+             elems <- concat <$> traverse (mkGroupParser2 cddl) (flattenGroup cddl nodes)
              if length elems == llen
                then pure $ TMap elems
                else fail "Different number of elements!"
@@ -217,10 +219,10 @@ mkParser cddl rule = case resolveIfRef cddl rule of
     (    between
            (satisfy ((==) TkListBegin))
            (satisfy ((==) TkBreak))
-           (TListI <$> traverse (mkParser cddl) (flattenGroup cddl nodes))
+           (TListI . concat <$> traverse (mkGroupParser cddl) (flattenGroup cddl nodes))
      <|> ( do
              llen <- token' (\case TkListLen w -> Just (fromIntegral w); _ -> Nothing)
-             elems <- traverse (mkParser cddl) (flattenGroup cddl nodes)
+             elems <- concat <$> traverse (mkGroupParser cddl) (flattenGroup cddl nodes)
              if length elems == llen
                then pure $ TList elems
                else fail "Different number of elements!"
@@ -231,7 +233,53 @@ mkParser cddl rule = case resolveIfRef cddl rule of
     L.foldl1' (<|>) [ mkParser cddl n | n <- NE.toList nodes ]
     <?> ("something in the choice " <> show (NE.toList nodes))
 
-  -- Group nodes -> undefined
+  Range low high inc ->
+    case (resolveIfRef cddl low, resolveIfRef cddl high) of
+      (Literal (VUInt low'), Literal (VUInt high')) -> do
+        TInt i <- mkParser cddl (MIt (Postlude PTInt))
+        (guard $ fromIntegral low' <= i && (case inc of
+                                ClOpen -> (<)
+                                Closed -> (<=)
+                             ) i (fromIntegral high')
+          ) <?> "in range [" <> show low' <> ", " <> show high' <> (case inc of ClOpen -> ")"; Closed -> "]")
+        pure $ TInt i
+  Group{} -> fail "Found lone group!"
+
+mkGroupParser :: CDDL -> Rule -> ParsecT Void [TermToken] Identity [Term]
+mkGroupParser cddl rule = case resolveIfRef cddl rule of
+  Occur o OIOptional -> maybeToList <$> optional (mkParser cddl o)
+  Occur o OIZeroOrMore -> many (mkParser cddl o)
+  Occur o OIOneOrMore -> some (mkParser cddl o)
+  Occur o (OIBounded low high) -> case (low, high) of
+    (Nothing, Nothing) -> many (mkParser cddl o)
+    (Just low', Nothing) -> do
+      n <- many (mkParser cddl o)
+      guard $ length n >= fromIntegral low'
+      pure n
+    (Just low', Just high') -> count' (fromIntegral low') (fromIntegral high') (mkParser cddl o)
+    (Nothing, Just high') -> do
+      n <- many (mkParser cddl o)
+      guard $ length n <= fromIntegral high'
+      pure n
+  _ -> (:[]) <$> mkParser cddl rule
+
+mkGroupParser2 :: CDDL -> Rule -> ParsecT Void [TermToken] Identity [(Term, Term)]
+mkGroupParser2 cddl rule = case resolveIfRef cddl rule of
+  Occur o OIOptional -> maybeToList <$> optional (mkParser2 cddl o)
+  Occur o OIZeroOrMore -> many (mkParser2 cddl o)
+  Occur o OIOneOrMore -> some (mkParser2 cddl o)
+  Occur o (OIBounded low high) -> case (low, high) of
+    (Nothing, Nothing) -> many (mkParser2 cddl o)
+    (Just low', Nothing) -> do
+      n <- many (mkParser2 cddl o)
+      guard $ length n >= fromIntegral low'
+      pure n
+    (Just low', Just high') -> count' (fromIntegral low') (fromIntegral high') (mkParser2 cddl o)
+    (Nothing, Just high') -> do
+      n <- many (mkParser2 cddl o)
+      guard $ length n <= fromIntegral high'
+      pure n
+  _ -> (:[]) <$> mkParser2 cddl rule
 
 mkParser2 :: CDDL -> Rule -> ParsecT Void [TermToken] Identity (Term, Term)
 mkParser2 cddl rule = case resolveIfRef cddl rule of
@@ -363,6 +411,12 @@ aCDDL =
     , foo (Array [MIt (Postlude PTUInt), MIt (Postlude PTUInt)]) [TkListLen 2, TkInt 1, TkInt 2]
     , foo (Map [MIt (KV (MIt (Postlude PTUInt)) (MIt (Postlude PTUInt)) False)]) [TkMapBegin, TkInt 1, TkInt 2, TkBreak]
     , foo (Map [MIt (KV (MIt (Postlude PTUInt)) (MIt (Postlude PTUInt)) False)]) [TkMapLen 1, TkInt 1, TkInt 2]
+    , foo (Map [MIt (Occur (MIt (KV (MIt (Postlude PTUInt)) (MIt (Postlude PTUInt)) False)) OIZeroOrMore)]) [TkMapLen 2, TkInt 1, TkInt 2, TkInt 3, TkInt 4]
+    , foo (Map [
+                MIt (Occur (MIt (KV (MIt (Postlude PTUInt)) (MIt (Postlude PTUInt)) False)) OIZeroOrMore)
+              , MIt (KV (MIt (Postlude PTUInt)) (MIt (Postlude PTUInt)) False)
+              ]) [TkMapLen 2, TkInt 1, TkInt 2, TkInt 3, TkInt 4]
+    , foo (Range (MIt (Literal (VUInt 0))) (MIt (Literal (VUInt 2))) Closed) [TkInt 1]
     , foo (Choice (MIt
                      (Map [MIt (KV (MIt (Postlude PTUInt)) (MIt (Postlude PTUInt)) False)])
                    NE.:|
