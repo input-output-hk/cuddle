@@ -4,7 +4,7 @@
 {-# OPTIONS_GHC -Wno-orphans -Wno-incomplete-patterns -Wno-unused-matches -Wno-unused-imports #-}
 -- |
 
-module Parser where
+module Codec.CBOR.Cuddle.CBOR.Validator where
 
 import Control.Monad (guard)
 import Data.Maybe
@@ -52,42 +52,45 @@ resolveIfRef ct@(CTreeRoot cddl) (MRuleRef n) = do
 token' :: MonadParsec e s m => (Token s -> Maybe a) -> m a
 token' a = token a Set.empty
 
-mkParser :: CDDL -> Rule -> Parsec Void [TermToken] Term
-mkParser cddl rule = case resolveIfRef cddl rule of
-  Literal (VUInt (fromIntegral -> i)) ->
+-- | A type can be just a single value (such as 1 or "icecream" or h'0815'),
+-- which matches only a data item with that specific value (no conversions
+-- defined),
+parseLiteral :: Value -> Parsec Void [TermToken] Term
+parseLiteral = \case
+  VUInt (fromIntegral -> i) ->
     token' (\case
                TkInt i' -> if i == i' then Just (TInt i') else Nothing
                _ -> Nothing
            ) <?> ("a literal int " <> show i)
-  Literal (VNInt (negate . fromIntegral -> i)) ->
+  VNInt (negate . fromIntegral -> i) ->
     token' (\case
                 TkInt i' -> if i == i' then Just (TInt i') else Nothing
                 _ -> Nothing
             ) <?> ("a literal int " <> show i)
-  Literal (VBignum i) ->
+  VBignum i ->
     token' (\case
                TkInteger i' -> if i == i' then Just (TInteger i') else Nothing
                TkInt i' -> if i == toInteger i' then Just (TInt i') else Nothing
                _ -> Nothing
            ) <?> ("a literal int " <> show i)
 
-  Literal (VFloat16 i) ->
+  VFloat16 i ->
     token' (\case
                TkFloat16 i' -> if i == i' then Just (THalf i') else Nothing
                _ -> Nothing
            ) <?> ("a literal float " <> show i)
-  Literal (VFloat32 i) ->
+  VFloat32 i ->
     token' (\case
                TkFloat32 i' -> if i == i' then Just (TFloat i') else Nothing
                _ -> Nothing
            ) <?> ("a literal float " <> show i)
-  Literal (VFloat64 i) ->
+  VFloat64 i ->
     token' (\case
                TkFloat64 i' -> if i == i' then Just (TDouble i') else Nothing
                _ -> Nothing
            ) <?> ("a literal float " <> show i)
 
-  Literal (VText i) ->
+  VText i ->
     let tst = \case
                 TkString i' -> if i == i' then Just i else Nothing
                 _ -> Nothing
@@ -99,7 +102,7 @@ mkParser cddl rule = case resolveIfRef cddl rule of
               (TStringI . TL.fromStrict <$> token' tst)
           )
     ) <?> ("a literal text " <> show i)
-  Literal (VBytes i) ->
+  VBytes i ->
     let tst = \case
                 TkBytes i' -> if i == i' then Just i' else Nothing
                 _ -> Nothing
@@ -112,55 +115,59 @@ mkParser cddl rule = case resolveIfRef cddl rule of
           )
     ) <?> ("a literal bytestring " <> show i)
 
-  Literal (VBool i) ->
+  VBool i ->
     token' (\case
                TkBool i' -> if i == i' then Just (TBool i') else Nothing
                _ -> Nothing
            ) <?> ("a literal bool " <> show i)
 
-  Postlude PTBool ->
+-- | or be defined by a rule giving a meaning to a name (possibly after
+-- supplying generic arguments as required by the generic parameters),
+parseType :: PTerm -> Parsec Void [TermToken] Term
+parseType = \case
+  PTBool ->
     token' (\case
               TkBool i -> Just $ TBool i
               _ -> Nothing
           ) <?> "a boolean"
 
-  Postlude PTUInt ->
+  PTUInt ->
     token' (\case
               TkInt i -> if i >= 0 then Just (TInt i) else Nothing
               _ -> Nothing
           ) <?> "an unsigned integer"
 
-  Postlude PTNInt ->
+  PTNInt ->
     token' (\case
               TkInt i -> if i < 0 then Just (TInt i) else Nothing
               _ -> Nothing
           ) <?> "a negative integer"
 
-  Postlude PTInt ->
+  PTInt ->
     token' (\case
                TkInt i -> Just (TInt i)
                _ -> Nothing
            ) <?> "an integer"
 
-  Postlude PTHalf ->
+  PTHalf ->
     token' (\case
                TkFloat16 i -> Just (THalf i)
                _ -> Nothing
            ) <?> "a float16"
 
-  Postlude PTFloat ->
+  PTFloat ->
     token' (\case
                TkFloat32 i  -> Just (TFloat i)
                _ -> Nothing
            ) <?> "a float32"
 
-  Postlude PTDouble ->
+  PTDouble ->
     token' (\case
                TkFloat64 i -> Just (TDouble i)
                _ -> Nothing
            ) <?> "a float64"
 
-  Postlude PTBytes ->
+  PTBytes ->
     let tst = \case
                 TkBytes b -> Just b
                 _ -> Nothing
@@ -173,7 +180,7 @@ mkParser cddl rule = case resolveIfRef cddl rule of
           )
     ) <?> "a  bytestring"
 
-  Postlude PTText ->
+  PTText ->
     let tst = \case
                 TkString i' -> Just i'
                 _ -> Nothing
@@ -186,55 +193,87 @@ mkParser cddl rule = case resolveIfRef cddl rule of
           )
     ) <?> "a text"
 
-
-  Postlude PTNil ->
+  PTNil ->
     token' (\case
                TkNull -> Just TNull
                _ -> Nothing
            ) <?> "a nil"
-  Postlude PTUndefined ->
+  PTUndefined ->
     token' (\case
                TkSimple 23 -> Just (TSimple 23)
                _ -> Nothing
            ) <?> "an undefined"
 
-  Control op tgt ctrl ->
-    lookAhead (mkParser cddl tgt) *> mkOpParser cddl op tgt ctrl
+-- | a map expression, which matches a valid CBOR map the key/value pairs of
+-- which can be ordered in such a way that the resulting sequence matches the
+-- group expression
+--
+-- TODO: It is unclear to me how to do this "ordered in such a way that"
+parseMap :: CDDL
+         -> [Rule]
+         -> ParsecT Void [TermToken] Identity Term
+parseMap cddl nodes =
+  parseCollection
+    cddl
+    nodes
+    TkMapBegin
+    TMapI
+    TMap
+    (\case TkMapLen w -> Just (fromIntegral w); _ -> Nothing)
+    (mkGroupParser parseKeyValue)
+  <?> "a proper map"
 
-  Map nodes ->
-    (    between
-           (satisfy ((==) TkMapBegin))
+-- | an array expression, which matches a CBOR array the elements of which --
+-- when taken as values and complemented by a wildcard (matches anything) key
+-- each -- match the group
+parseArray :: CDDL
+         -> [Rule]
+         -> ParsecT Void [TermToken] Identity Term
+parseArray cddl nodes =
+  parseCollection
+    cddl
+    nodes
+    TkListBegin
+    TListI
+    TList
+    (\case TkListLen w -> Just (fromIntegral w); _ -> Nothing)
+    (mkGroupParser mkParser)
+  <?> "a proper list"
+
+parseCollection :: CDDL
+                -> [Rule]
+                -> TermToken
+                -> ([a] -> Term)
+                -> ([a] -> Term)
+                -> (TermToken -> Maybe Int)
+                -> (CDDL -> Rule -> Parsec Void [TermToken] [a])
+                -> Parsec Void [TermToken] Term
+parseCollection cddl nodes beginToken indefConstructor defConstructor parseLength groupParser =
+  (    between
+           (satisfy ((==) beginToken))
            (satisfy ((==) TkBreak))
-           (TMapI . concat <$> traverse (mkGroupParser2 cddl) (flattenGroup cddl nodes))
+           (indefConstructor . concat <$> traverse (groupParser cddl) (flattenGroup cddl nodes))
      <|> ( do
-             llen <- token' (\case TkMapLen w -> Just (fromIntegral w); _ -> Nothing)
-             elems <- concat <$> traverse (mkGroupParser2 cddl) (flattenGroup cddl nodes)
+             llen <- token' parseLength
+             elems <- concat <$> traverse (groupParser cddl) (flattenGroup cddl nodes)
              if length elems == llen
-               then pure $ TMap elems
+               then pure $ defConstructor elems
                else fail "Different number of elements!"
           )
-    ) <?> "a proper map"
+    )
 
-  Array nodes ->
-    (    between
-           (satisfy ((==) TkListBegin))
-           (satisfy ((==) TkBreak))
-           (TListI . concat <$> traverse (mkGroupParser cddl) (flattenGroup cddl nodes))
-     <|> ( do
-             llen <- token' (\case TkListLen w -> Just (fromIntegral w); _ -> Nothing)
-             elems <- concat <$> traverse (mkGroupParser cddl) (flattenGroup cddl nodes)
-             if length elems == llen
-               then pure $ TList elems
-               else fail "Different number of elements!"
-          )
-    ) <?> "a proper list"
-
-  Choice nodes ->
-    L.foldl1' (<|>) [ mkParser cddl n | n <- NE.toList nodes ]
-    <?> ("something in the choice " <> show (NE.toList nodes))
-
-  Range low high inc ->
-    case (resolveIfRef cddl low, resolveIfRef cddl high) of
+-- | A range operator can be used to join two type expressions that stand for
+-- either two integer values or two floating-point values; it matches any value
+-- that is between the two values, where the first value is always included in
+-- the matching set and the second value is included for ".." and excluded for
+-- "...".
+parseRange :: CDDL
+           -> Rule
+           -> Rule
+           -> RangeBound
+           -> ParsecT Void [TermToken] Identity Term
+parseRange cddl low high inc =
+  case (resolveIfRef cddl low, resolveIfRef cddl high) of
       (Literal (VUInt low'), Literal (VUInt high')) -> do
         TInt i <- mkParser cddl (MIt (Postlude PTInt))
         (guard $ fromIntegral low' <= i && (case inc of
@@ -243,46 +282,96 @@ mkParser cddl rule = case resolveIfRef cddl rule of
                              ) i (fromIntegral high')
           ) <?> "in range [" <> show low' <> ", " <> show high' <> (case inc of ClOpen -> ")"; Closed -> "]")
         pure $ TInt i
+      (Literal (VNInt low'), Literal (VUInt high')) -> do
+        TInt i <- mkParser cddl (MIt (Postlude PTInt))
+        (guard $ - (fromIntegral low') <= i && (case inc of
+                                ClOpen -> (<)
+                                Closed -> (<=)
+                             ) i (fromIntegral high')
+          ) <?> "in range [" <> show (- fromIntegral low' :: Int) <> ", " <> show high' <> (case inc of ClOpen -> ")"; Closed -> "]")
+        pure $ TInt i
+      (Literal (VNInt low'), Literal (VNInt high')) -> do
+        TInt i <- mkParser cddl (MIt (Postlude PTInt))
+        (guard $ - (fromIntegral low') <= i && (case inc of
+                                ClOpen -> (<)
+                                Closed -> (<=)
+                             ) i (- fromIntegral high')
+          ) <?> "in range [" <> show (- fromIntegral low' :: Int) <> ", " <> show (- fromIntegral high' :: Int) <> (case inc of ClOpen -> ")"; Closed -> "]")
+        pure $ TInt i
+
+      (Literal (VFloat16 low'), Literal (VFloat16 high')) -> do
+        THalf i <- mkParser cddl (MIt (Postlude PTHalf))
+        (guard $ low' <= i && (case inc of
+                                ClOpen -> (<)
+                                Closed -> (<=)
+                             ) i high'
+          ) <?> "in range [" <> show low' <> ", " <> show high' <> (case inc of ClOpen -> ")"; Closed -> "]")
+        pure $ THalf i
+
+      (Literal (VFloat32 low'), Literal (VFloat32 high')) -> do
+        TFloat i <- mkParser cddl (MIt (Postlude PTFloat))
+        (guard $ low' <= i && (case inc of
+                                ClOpen -> (<)
+                                Closed -> (<=)
+                             ) i high'
+          ) <?> "in range [" <> show low' <> ", " <> show high' <> (case inc of ClOpen -> ")"; Closed -> "]")
+        pure $ TFloat i
+
+      (Literal (VFloat64 low'), Literal (VFloat64 high')) -> do
+        TDouble i <- mkParser cddl (MIt (Postlude PTDouble))
+        (guard $ low' <= i && (case inc of
+                                ClOpen -> (<)
+                                Closed -> (<=)
+                             ) i high'
+          ) <?> "in range [" <> show low' <> ", " <> show high' <> (case inc of ClOpen -> ")"; Closed -> "]")
+        pure $ TDouble i
+
+mkParser :: CDDL -> Rule -> Parsec Void [TermToken] Term
+mkParser cddl rule = case resolveIfRef cddl rule of
+  Literal l -> parseLiteral l
+  Postlude p -> parseType p
+  Control op tgt ctrl ->
+    lookAhead (mkParser cddl tgt) *> mkOpParser cddl op tgt ctrl
+
+  Map nodes ->
+    parseMap cddl nodes
+
+  Array nodes ->
+    parseArray cddl nodes
+
+  Choice nodes ->
+    L.foldl1' (<|>) [ mkParser cddl n | n <- NE.toList nodes ]
+    <?> ("something in the choice " <> show (NE.toList nodes))
+
+  Range low high inc ->
+    parseRange cddl low high inc
+
   Group{} -> fail "Found lone group!"
 
-mkGroupParser :: CDDL -> Rule -> ParsecT Void [TermToken] Identity [Term]
-mkGroupParser cddl rule = case resolveIfRef cddl rule of
-  Occur o OIOptional -> maybeToList <$> optional (mkParser cddl o)
-  Occur o OIZeroOrMore -> many (mkParser cddl o)
-  Occur o OIOneOrMore -> some (mkParser cddl o)
+mkGroupParser ::
+     (CDDL -> Node MonoRef -> Parsec Void [TermToken] a)
+  -> CDDL
+  -> Rule
+  -> ParsecT Void [TermToken] Identity [a]
+mkGroupParser p cddl rule = case resolveIfRef cddl rule of
+  Occur o OIOptional -> maybeToList <$> optional (p cddl o)
+  Occur o OIZeroOrMore -> many (p cddl o)
+  Occur o OIOneOrMore -> some (p cddl o)
   Occur o (OIBounded low high) -> case (low, high) of
-    (Nothing, Nothing) -> many (mkParser cddl o)
+    (Nothing, Nothing) -> many (p cddl o)
     (Just low', Nothing) -> do
-      n <- many (mkParser cddl o)
+      n <- many (p cddl o)
       guard $ length n >= fromIntegral low'
       pure n
-    (Just low', Just high') -> count' (fromIntegral low') (fromIntegral high') (mkParser cddl o)
+    (Just low', Just high') -> count' (fromIntegral low') (fromIntegral high') (p cddl o)
     (Nothing, Just high') -> do
-      n <- many (mkParser cddl o)
+      n <- many (p cddl o)
       guard $ length n <= fromIntegral high'
       pure n
-  _ -> (:[]) <$> mkParser cddl rule
+  _ -> (:[]) <$> p cddl rule
 
-mkGroupParser2 :: CDDL -> Rule -> ParsecT Void [TermToken] Identity [(Term, Term)]
-mkGroupParser2 cddl rule = case resolveIfRef cddl rule of
-  Occur o OIOptional -> maybeToList <$> optional (mkParser2 cddl o)
-  Occur o OIZeroOrMore -> many (mkParser2 cddl o)
-  Occur o OIOneOrMore -> some (mkParser2 cddl o)
-  Occur o (OIBounded low high) -> case (low, high) of
-    (Nothing, Nothing) -> many (mkParser2 cddl o)
-    (Just low', Nothing) -> do
-      n <- many (mkParser2 cddl o)
-      guard $ length n >= fromIntegral low'
-      pure n
-    (Just low', Just high') -> count' (fromIntegral low') (fromIntegral high') (mkParser2 cddl o)
-    (Nothing, Just high') -> do
-      n <- many (mkParser2 cddl o)
-      guard $ length n <= fromIntegral high'
-      pure n
-  _ -> (:[]) <$> mkParser2 cddl rule
-
-mkParser2 :: CDDL -> Rule -> ParsecT Void [TermToken] Identity (Term, Term)
-mkParser2 cddl rule = case resolveIfRef cddl rule of
+parseKeyValue :: CDDL -> Rule -> ParsecT Void [TermToken] Identity (Term, Term)
+parseKeyValue cddl rule = case resolveIfRef cddl rule of
   KV k v _ -> (,) <$> mkParser cddl k <*> mkParser cddl v
 
 flattenGroup :: CDDL -> [Rule] -> [Rule]
