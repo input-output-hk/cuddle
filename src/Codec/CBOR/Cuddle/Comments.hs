@@ -121,14 +121,24 @@ instance CollectComments Comment where
 hasComment :: HasComment a => a -> Bool
 hasComment = (/= mempty) . view commentL
 
+-- | This operator is used to attach comments to terms. It will not overwrite
+-- any comments that are already present, but will add the new comments on a
+-- new line
+-- ```
+-- arr [0, 1] //- "This is an array with two values"
+-- ```
 (//-) :: HasComment a => a -> Comment -> a
-x //- cmt = x & commentL %~ (<> cmt)
+x //- c = x & commentL %~ (<> c)
 
 infixr 0 //-
 
+-- | This operator will parse the values from left to right and then append the
+-- parsed comment on the right to the parsed value on the left.
 (<*!) :: (HasComment a, Applicative m) => m a -> m Comment -> m a
-(<*!) c x = (//-) <$> c <*> x
+(<*!) x c = (//-) <$> x <*> c
 
+-- | This operator will parse the values from left to right and then append the
+-- parsed comment on the left to the parsed value on the right.
 (!*>) :: (HasComment a, Applicative m) => m Comment -> m a -> m a
 (!*>) c x = flip (//-) <$> c <*> x
 
@@ -154,6 +164,11 @@ instance CollectComments a => CollectComments (WithComment a) where
 withComment :: a -> WithComment a
 withComment = WithComment mempty
 
+-- | This operator maps a function over a functor containing a `WithComment` and
+-- applies the comment within to the output of the applied function.
+-- ```
+-- (\x -> LInt x "a") !$> WithComment "b" (1 :: Integer) == Literal (LInt 1) "a\nb"
+-- ```
 (!$>) :: (HasComment b, Functor f) => (a -> b) -> f (WithComment a) -> f b
 f !$> wc = fmap (\(WithComment c x) -> f x //- c) wc
 

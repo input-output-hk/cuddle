@@ -160,7 +160,7 @@ unitSpec = describe "HUnit" $ do
                   :| []
               )
           )
-          `prettyPrintsTo` "[ 1 ;one\n, 2 ;two\n]"
+          `prettyPrintsTo` "[ 1 ; one\n, 2 ; two\n]"
       it "two elements with multiline comments" $
         T2Array
           ( Group
@@ -173,7 +173,7 @@ unitSpec = describe "HUnit" $ do
                   :| []
               )
           )
-          `prettyPrintsTo` "[ 1 ;first\n    ;multiline comment\n, 2 ;second\n    ;multiline comment\n]"
+          `prettyPrintsTo` "[ 1 ; first\n    ; multiline comment\n, 2 ; second\n    ; multiline comment\n]"
   describe "Rule" $ do
     it "simple assignment" $
       Rule

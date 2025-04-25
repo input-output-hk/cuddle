@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE LambdaCase #-}
@@ -58,12 +59,14 @@ import Data.Functor.Identity (Identity (..))
 import Data.Generics.Product
 import Data.Generics.Sum
 import Data.Hashable
+#if __GLASGOW_HASKELL__ < 910
+import Data.List (foldl')
+#endif
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import GHC.Generics (Generic)
 import Optics.Core
-import Data.List (foldl')
 
 --------------------------------------------------------------------------------
 -- 1. Rule extensions
@@ -214,9 +217,6 @@ buildRefCTree rules = CTreeRoot $ fmap toCTreeRule rules
     toCTreeDataItem _ =
       It $ CTree.Postlude PTAny
 
-    toCTreeGroupEntryNC :: GroupEntry -> CTree.Node OrRef
-    toCTreeGroupEntryNC = toCTreeGroupEntry
-
     toCTreeGroupEntry :: GroupEntry -> CTree.Node OrRef
     toCTreeGroupEntry (GroupEntry (Just occi) _ (GEType mmkey t0)) =
       It $
@@ -247,20 +247,20 @@ buildRefCTree rules = CTreeRoot $ fmap toCTreeRule rules
     -- choice options
     toCTreeEnum :: Group -> CTree.Node OrRef
     toCTreeEnum (Group (a NE.:| [])) =
-      It . CTree.Enum . It . CTree.Group $ toCTreeGroupEntryNC <$> gcGroupEntries a
+      It . CTree.Enum . It . CTree.Group $ toCTreeGroupEntry <$> gcGroupEntries a
     toCTreeEnum (Group xs) =
       It . CTree.Choice $
-        It . CTree.Enum . It . CTree.Group . fmap toCTreeGroupEntryNC <$> groupEntries
+        It . CTree.Enum . It . CTree.Group . fmap toCTreeGroupEntry <$> groupEntries
       where
         groupEntries = fmap gcGroupEntries xs
 
     -- Embed a group in another group, again floating out the choice options
     groupToGroup :: Group -> CTree.Node OrRef
     groupToGroup (Group (a NE.:| [])) =
-      It . CTree.Group $ fmap toCTreeGroupEntryNC (gcGroupEntries a)
+      It . CTree.Group $ fmap toCTreeGroupEntry (gcGroupEntries a)
     groupToGroup (Group xs) =
       It . CTree.Choice $
-        fmap (It . CTree.Group . fmap toCTreeGroupEntryNC) (gcGroupEntries <$> xs)
+        fmap (It . CTree.Group . fmap toCTreeGroupEntry) (gcGroupEntries <$> xs)
 
     toKVPair :: Maybe MemberKey -> Type0 -> CTree.Node OrRef
     toKVPair Nothing t0 = toCTreeT0 t0
@@ -275,20 +275,20 @@ buildRefCTree rules = CTreeRoot $ fmap toCTreeRule rules
 
     -- Interpret a group as a map. Note that we float out the choice options
     toCTreeMap :: Group -> CTree.Node OrRef
-    toCTreeMap (Group (a NE.:| [])) = It . CTree.Map $ fmap toCTreeGroupEntryNC (gcGroupEntries a)
+    toCTreeMap (Group (a NE.:| [])) = It . CTree.Map $ fmap toCTreeGroupEntry (gcGroupEntries a)
     toCTreeMap (Group xs) =
       It
         . CTree.Choice
-        $ fmap (It . CTree.Map . fmap toCTreeGroupEntryNC) (gcGroupEntries <$> xs)
+        $ fmap (It . CTree.Map . fmap toCTreeGroupEntry) (gcGroupEntries <$> xs)
 
     -- Interpret a group as an array. Note that we float out the choice
     -- options
     toCTreeArray :: Group -> CTree.Node OrRef
     toCTreeArray (Group (a NE.:| [])) =
-      It . CTree.Array $ fmap toCTreeGroupEntryNC (gcGroupEntries a)
+      It . CTree.Array $ fmap toCTreeGroupEntry (gcGroupEntries a)
     toCTreeArray (Group xs) =
       It . CTree.Choice $
-        fmap (It . CTree.Array . fmap toCTreeGroupEntryNC) (gcGroupEntries <$> xs)
+        fmap (It . CTree.Array . fmap toCTreeGroupEntry) (gcGroupEntries <$> xs)
 
     toCTreeMemberKey :: MemberKey -> CTree.Node OrRef
     toCTreeMemberKey (MKValue v) = It $ CTree.Literal v
