@@ -3,7 +3,7 @@
 module Main (main) where
 
 import Codec.CBOR.Cuddle.CBOR.Gen (generateCBORTerm)
-import Codec.CBOR.Cuddle.CBOR.Validate
+import Codec.CBOR.Cuddle.CBOR.Validator
 import Codec.CBOR.Cuddle.CDDL (Name (..), sortCDDL)
 import Codec.CBOR.Cuddle.CDDL.Prelude (prependPrelude)
 import Codec.CBOR.Cuddle.CDDL.Resolve (
@@ -15,7 +15,6 @@ import Codec.CBOR.FlatTerm (toFlatTerm)
 import Codec.CBOR.Pretty (prettyHexEnc)
 import Codec.CBOR.Term (encodeTerm)
 import Codec.CBOR.Write (toStrictByteString)
-import Control.Monad.Except
 import Data.ByteString.Base16 qualified as Base16
 import Data.ByteString.Char8 qualified as BSC
 import Data.Text qualified as T
@@ -227,9 +226,7 @@ run (Opts cmd cddlFile) = do
               Left err -> putStrLnErr (show err) >> exitFailure
               Right mt -> do
                 cbor <- BSC.readFile (vcInput vcOpts)
-                case runExcept $ validateCBOR cbor (Name $ vcItemName vcOpts) mt of
-                  Left e -> print e >> exitFailure
-                  Right () -> putStrLn "Valid"
+                validateCBOR cbor (Name $ vcItemName vcOpts) mt
 
 putStrLnErr :: String -> IO ()
 putStrLnErr = hPutStrLn stderr

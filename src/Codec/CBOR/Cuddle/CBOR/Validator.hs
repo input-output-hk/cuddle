@@ -6,6 +6,8 @@
 
 module Codec.CBOR.Cuddle.CBOR.Validator where
 
+import Data.Bifunctor
+import Data.ByteString.Base16 qualified as Base16
 import Control.Monad (guard)
 import Data.Maybe
 import Text.Megaparsec
@@ -31,6 +33,11 @@ import Codec.CBOR.Cuddle.Pretty
 import Prettyprinter
 import Prettyprinter.Util (putDocW)
 import Prettyprinter.Render.String
+import Codec.CBOR.Read
+import System.Exit
+import Control.Monad.ST
+import GHC.Float
+import Text.Regex.TDFA
 
 type CDDL = CTreeRoot' Identity MonoRef
 type Rule = Node MonoRef
@@ -51,6 +58,34 @@ resolveIfRef ct@(CTreeRoot cddl) (MRuleRef n) = do
 
 token' :: MonadParsec e s m => (Token s -> Maybe a) -> m a
 token' a = token a Set.empty
+
+validateCBOR' :: BS.ByteString -> Name -> CDDL -> Either (Either DeserialiseFailure (ParseErrorBundle [TermToken] Void)) Term
+validateCBOR' bs rule cddl@(CTreeRoot tree) =
+  case decodeFlatTerm bs of
+    Left e -> Left $ Left e
+    Right fterm -> bimap Right id $ parse (mkParser cddl $ runIdentity $ tree Map.! rule) "" fterm
+
+validateCBOR :: BS.ByteString -> Name -> CDDL -> IO ()
+validateCBOR bs rule cddl =
+  case validateCBOR' bs rule cddl of
+    Left (Left e) -> print e
+    Left (Right e) -> putStrLn (errorBundlePretty e)
+    Right _ -> putStrLn "Valid"
+
+decodeFlatTerm :: BS.ByteString -> Either DeserialiseFailure FlatTerm
+decodeFlatTerm bs = runST $
+    go =<< deserialiseIncremental decodeTermToken
+  where
+    go :: forall s. IDecode s TermToken -> ST s (Either DeserialiseFailure FlatTerm)
+    go = \case
+      Partial next -> go =<< next (Just bs)
+      Done nextbs _ tt ->
+        if BS.null nextbs
+        then pure $ Right [tt]
+        else case decodeFlatTerm nextbs of
+          Left e -> pure $ Left e
+          Right ft -> pure $ Right (tt:ft)
+      Fail _ _ e -> pure $ Left e
 
 -- | A type can be just a single value (such as 1 or "icecream" or h'0815'),
 -- which matches only a data item with that specific value (no conversions
@@ -102,7 +137,7 @@ parseLiteral = \case
               (TStringI . TL.fromStrict <$> token' tst)
           )
     ) <?> ("a literal text " <> show i)
-  VBytes i ->
+  VBytes (either undefined id . Base16.decode -> i) ->
     let tst = \case
                 TkBytes i' -> if i == i' then Just i' else Nothing
                 _ -> Nothing
@@ -404,39 +439,214 @@ flattenGroup cddl nodes =
 
 mkOpParser :: CDDL -> CtlOp -> Rule -> Rule -> Parsec Void [TermToken] Term
 mkOpParser cddl Size tgt ctrl
-  | Just name <- supportsSize cddl tgt = case resolveIfRef cddl ctrl of
-      Literal (VUInt (fromIntegral -> sz)) ->
+  | Just name <- supportsSize cddl tgt =
+      case resolveIfRef cddl ctrl of
+        Literal (VUInt (fromIntegral -> sz)) ->
+          let tst = \case
+                      TkBytes s -> if sz == BS.length s then Just (TBytes s) else Nothing
+                      TkString s -> if sz == T.length s then Just (TString s) else Nothing
+                      _ -> Nothing
+          in (     token' tst
+               <|> between
+                     (satisfy (\case
+                                  TkStringBegin -> True
+                                  TkBytesBegin -> True
+                                  _ -> False
+                              ))
+                     (satisfy ((==) TkBreak))
+                     (token' tst)
+               <|> token' (\case
+                              TkInt i -> if 0 <= i && i < 256 ^ sz then Just (TInt i) else Nothing
+                              TkInteger i -> if 0 <= i && i < 256 ^ sz then Just (TInteger i) else Nothing
+                              _ -> Nothing
+                          )
+             ) <?> (name <> " of size " <> show sz)
+  | otherwise = error $ "Malformed cddl: " <> show tgt
+mkOpParser cddl Bits tgt ctrl
+  | Just name <- supportsBits cddl tgt = undefined
+  | otherwise = error $ "Malformed cddl: " <> show tgt
+mkOpParser cddl Regexp tgt ctrl
+  | Just name <- supportsRegexp cddl tgt =
+      case resolveIfRef cddl ctrl of
+       Literal (VText s') ->
         let tst = \case
-                    TkBytes s -> if sz == BS.length s then Just (TBytes s) else Nothing
-                    TkString s -> if sz == T.length s then Just (TString s) else Nothing
-                    _ -> Nothing
+                      TkString s -> if s =~ s' then Just (TString s) else Nothing
+                      _ -> Nothing
         in (     token' tst
+               <|> between
+                     (satisfy (\case
+                                  TkStringBegin -> True
+                                  _ -> False
+                              ))
+                     (satisfy ((==) TkBreak))
+                     (token' tst)
+           ) <?> " a regex "
+  | otherwise = error $ "Malformed cddl: " <> show tgt
+mkOpParser cddl Cbor tgt ctrl
+  | Just name <- supportsCbor cddl tgt =
+      let tst n = \case
+                  TkBytes bs -> case validateCBOR' bs n cddl of
+                    Left {} -> Nothing
+                    Right t -> Just t
+      in case ctrl of
+           MRuleRef n ->
+             (   token' (tst n)
              <|> between
                    (satisfy ((==) TkStringBegin))
                    (satisfy ((==) TkBreak))
-                   (token' tst)
-             <|> token' (\case
-                            TkInt i -> if 0 <= i && i < 256 ^ sz then Just (TInt i) else Nothing
-                            TkInteger i -> if 0 <= i && i < 256 ^ sz then Just (TInteger i) else Nothing
-                            _ -> Nothing
-                        )
-           ) <?> (name <> " of size " <> show sz)
-  | otherwise = error $ "Malformed cddl: " <> show tgt
-mkOpParser cddl Bits tgt ctrl
-  | Just name <- supportsBits cddl tgt = case resolveIfRef cddl tgt of
-      _ -> undefined
-  | otherwise = error $ "Malformed cddl: " <> show tgt
-mkOpParser cddl Regexp tgt ctrl
-  | Just name <- supportsRegexp cddl tgt = case resolveIfRef cddl tgt of
-      _ -> undefined
-  | otherwise = error $ "Malformed cddl: " <> show tgt
-mkOpParser cddl Cbor tgt ctrl
-  | Just name <- supportsCbor cddl tgt = case resolveIfRef cddl tgt of
-      _ -> undefined
+                   (token' (tst n))
+             ) <?> " cbor "
   | otherwise = error $ "Malformed cddl: " <> show tgt
 mkOpParser cddl Cborseq tgt ctrl
-  | Just name <- supportsCborseq cddl tgt = case resolveIfRef cddl tgt of
-      _ -> undefined
+  | Just name <- supportsCborseq cddl tgt =
+      let tst n = \case
+                  TkBytes bs -> case validateCBOR' (BS.snoc (BS.cons 0x9f bs) 0xff) n cddl of
+                    Left {} -> Nothing
+                    Right t -> Just t
+      in case ctrl of
+           MRuleRef n ->
+             (   token' (tst n)
+             <|> between
+                   (satisfy ((==) TkStringBegin))
+                   (satisfy ((==) TkBreak))
+                   (token' (tst n))
+             ) <?> " cborseq "
+  | otherwise = error $ "Malformed cddl: " <> show tgt
+mkOpParser cddl Within _ ctrl =
+  mkParser cddl ctrl
+mkOpParser cddl And _ ctrl =
+  mkParser cddl ctrl
+mkOpParser cddl Lt tgt ctrl
+  | Just name <- supportsIntAlgebra cddl tgt =
+      let lt = case resolveIfRef cddl ctrl of
+                  Literal (VUInt lt') -> fromIntegral lt'
+                  Literal (VNInt lt') -> - fromIntegral lt'
+      in token' (\case
+                       TkInt i -> if fromIntegral i < lt then Just (TInt i) else Nothing
+                       TkInteger i -> if i < lt then Just (TInteger i) else Nothing
+                       _ -> Nothing
+                  ) <?> (name <> " < " <> show lt)
+  | Just name <- supportsFloatAlgebra cddl tgt =
+      let lt = case resolveIfRef cddl ctrl of
+                  Literal (VFloat16 lt') -> float2Double lt'
+                  Literal (VFloat32 lt') -> float2Double lt'
+                  Literal (VFloat64 lt') -> lt'
+      in token' (\case
+                       TkFloat16 i -> if float2Double i < lt then Just (THalf i) else Nothing
+                       TkFloat32 i -> if float2Double i < lt then Just (TFloat i) else Nothing
+                       TkFloat64 i -> if i < lt then Just (TDouble i) else Nothing
+                       _ -> Nothing
+                  ) <?> (name <> " < " <> show lt)
+  | otherwise = error $ "Malformed cddl: " <> show tgt
+mkOpParser cddl Le tgt ctrl
+  | Just name <- supportsIntAlgebra cddl tgt =
+      let lt = case resolveIfRef cddl ctrl of
+                  Literal (VUInt lt') -> fromIntegral lt'
+                  Literal (VNInt lt') -> - fromIntegral lt'
+      in token' (\case
+                       TkInt i -> if fromIntegral i <= lt then Just (TInt i) else Nothing
+                       TkInteger i -> if i <= lt then Just (TInteger i) else Nothing
+                       _ -> Nothing
+                  ) <?> (name <> " <= " <> show lt)
+  | Just name <- supportsFloatAlgebra cddl tgt =
+      let lt = case resolveIfRef cddl ctrl of
+                  Literal (VFloat16 lt') -> float2Double lt'
+                  Literal (VFloat32 lt') -> float2Double lt'
+                  Literal (VFloat64 lt') -> lt'
+      in token' (\case
+                       TkFloat16 i -> if float2Double i <= lt then Just (THalf i) else Nothing
+                       TkFloat32 i -> if float2Double i <= lt then Just (TFloat i) else Nothing
+                       TkFloat64 i -> if i <= lt then Just (TDouble i) else Nothing
+                       _ -> Nothing
+                  ) <?> (name <> " <= " <> show lt)
+  | otherwise = error $ "Malformed cddl: " <> show tgt
+mkOpParser cddl Gt tgt ctrl
+  | Just name <- supportsIntAlgebra cddl tgt =
+      let lt = case resolveIfRef cddl ctrl of
+                  Literal (VUInt lt') -> fromIntegral lt'
+                  Literal (VNInt lt') -> - fromIntegral lt'
+      in token' (\case
+                       TkInt i -> if fromIntegral i > lt then Just (TInt i) else Nothing
+                       TkInteger i -> if i > lt then Just (TInteger i) else Nothing
+                       _ -> Nothing
+                  ) <?> (name <> " > " <> show lt)
+  | Just name <- supportsFloatAlgebra cddl tgt =
+      let lt = case resolveIfRef cddl ctrl of
+                  Literal (VFloat16 lt') -> float2Double lt'
+                  Literal (VFloat32 lt') -> float2Double lt'
+                  Literal (VFloat64 lt') -> lt'
+      in token' (\case
+                       TkFloat16 i -> if float2Double i > lt then Just (THalf i) else Nothing
+                       TkFloat32 i -> if float2Double i > lt then Just (TFloat i) else Nothing
+                       TkFloat64 i -> if i > lt then Just (TDouble i) else Nothing
+                       _ -> Nothing
+                  ) <?> (name <> " > " <> show lt)
+  | otherwise = error $ "Malformed cddl: " <> show tgt
+mkOpParser cddl Ge tgt ctrl
+  | Just name <- supportsIntAlgebra cddl tgt =
+      let lt = case resolveIfRef cddl ctrl of
+                  Literal (VUInt lt') -> fromIntegral lt'
+                  Literal (VNInt lt') -> - fromIntegral lt'
+      in token' (\case
+                       TkInt i -> if fromIntegral i >= lt then Just (TInt i) else Nothing
+                       TkInteger i -> if i >= lt then Just (TInteger i) else Nothing
+                       _ -> Nothing
+                  ) <?> (name <> " >= " <> show lt)
+  | Just name <- supportsFloatAlgebra cddl tgt =
+      let lt = case resolveIfRef cddl ctrl of
+                  Literal (VFloat16 lt') -> float2Double lt'
+                  Literal (VFloat32 lt') -> float2Double lt'
+                  Literal (VFloat64 lt') -> lt'
+      in token' (\case
+                       TkFloat16 i -> if float2Double i >= lt then Just (THalf i) else Nothing
+                       TkFloat32 i -> if float2Double i >= lt then Just (TFloat i) else Nothing
+                       TkFloat64 i -> if i >= lt then Just (TDouble i) else Nothing
+                       _ -> Nothing
+                  ) <?> (name <> " >= " <> show lt)
+  | otherwise = error $ "Malformed cddl: " <> show tgt
+mkOpParser cddl Eq tgt ctrl
+  | Just name <- supportsIntAlgebra cddl tgt =
+      let lt = case resolveIfRef cddl ctrl of
+                  Literal (VUInt lt') -> fromIntegral lt'
+                  Literal (VNInt lt') -> - fromIntegral lt'
+      in token' (\case
+                       TkInt i -> if fromIntegral i == lt then Just (TInt i) else Nothing
+                       TkInteger i -> if i == lt then Just (TInteger i) else Nothing
+                       _ -> Nothing
+                  ) <?> (name <> " == " <> show lt)
+  | Just name <- supportsFloatAlgebra cddl tgt =
+      let lt = case resolveIfRef cddl ctrl of
+                  Literal (VFloat16 lt') -> float2Double lt'
+                  Literal (VFloat32 lt') -> float2Double lt'
+                  Literal (VFloat64 lt') -> lt'
+      in token' (\case
+                       TkFloat16 i -> if float2Double i == lt then Just (THalf i) else Nothing
+                       TkFloat32 i -> if float2Double i == lt then Just (TFloat i) else Nothing
+                       TkFloat64 i -> if i == lt then Just (TDouble i) else Nothing
+                       _ -> Nothing
+                  ) <?> (name <> " == " <> show lt)
+  | otherwise = error $ "Malformed cddl: " <> show tgt
+mkOpParser cddl Ne tgt ctrl
+  | Just name <- supportsIntAlgebra cddl tgt =
+      let lt = case resolveIfRef cddl ctrl of
+                  Literal (VUInt lt') -> fromIntegral lt'
+                  Literal (VNInt lt') -> - fromIntegral lt'
+      in token' (\case
+                       TkInt i -> if fromIntegral i /= lt then Just (TInt i) else Nothing
+                       TkInteger i -> if i /= lt then Just (TInteger i) else Nothing
+                       _ -> Nothing
+                  ) <?> (name <> " /= " <> show lt)
+  | Just name <- supportsFloatAlgebra cddl tgt =
+      let lt = case resolveIfRef cddl ctrl of
+                  Literal (VFloat16 lt') -> float2Double lt'
+                  Literal (VFloat32 lt') -> float2Double lt'
+                  Literal (VFloat64 lt') -> lt'
+      in token' (\case
+                       TkFloat16 i -> if float2Double i /= lt then Just (THalf i) else Nothing
+                       TkFloat32 i -> if float2Double i /= lt then Just (TFloat i) else Nothing
+                       TkFloat64 i -> if i /= lt then Just (TDouble i) else Nothing
+                       _ -> Nothing
+                  ) <?> (name <> " /= " <> show lt)
   | otherwise = error $ "Malformed cddl: " <> show tgt
 
 supportsSize :: CDDL -> Rule -> Maybe String
@@ -465,6 +675,20 @@ supportsCbor cddl rule = case resolveIfRef cddl rule of
 supportsCborseq :: CDDL -> Rule -> Maybe String
 supportsCborseq cddl rule = case resolveIfRef cddl rule of
   Postlude PTBytes -> Just "bytes"
+  _ -> Nothing
+
+supportsIntAlgebra :: CDDL -> Rule -> Maybe String
+supportsIntAlgebra cddl rule = case resolveIfRef cddl rule of
+  Postlude PTUInt -> Just "uint"
+  Postlude PTNInt -> Just "nint"
+  Postlude PTInt -> Just "int"
+  _ -> Nothing
+
+supportsFloatAlgebra :: CDDL -> Rule -> Maybe String
+supportsFloatAlgebra cddl rule = case resolveIfRef cddl rule of
+  Postlude PTHalf -> Just "half"
+  Postlude PTFloat -> Just "float"
+  Postlude PTDouble -> Just "double"
   _ -> Nothing
 
 aCDDL :: IO ()

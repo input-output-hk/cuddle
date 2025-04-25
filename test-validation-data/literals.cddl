@@ -1,0 +1,9 @@
+literal-uint = 1
+literal-nint = -1
+literal-bignum = 111111111111111111111
+literal-half = 0.5
+literal-float = 0.55555
+literal-double = 0.55555555555555
+literal-text = "hi"
+literal-bytes = h'E12CEB49090C9647A6A2D33CB24D6C38877202457D91CD4C7CE75C434D72'
+literal-bool = true

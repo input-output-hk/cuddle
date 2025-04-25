@@ -134,6 +134,7 @@ test-suite cuddle-test
     Test.Codec.CBOR.Cuddle.CDDL.Examples
     Test.Codec.CBOR.Cuddle.CDDL.Gen
     Test.Codec.CBOR.Cuddle.CDDL.Parser
+    Test.Codec.CBOR.Cuddle.CDDL.Validator
     Test.Codec.CBOR.Cuddle.Huddle
 
   -- other-extensions:

@@ -1,0 +1,11 @@
+type-bool = bool
+type-uint = uint
+type-nint = nint
+type-int = int
+type-half = float16
+type-float = float32
+type-double = float64
+type-bytes = bytes
+type-text = text
+type-nil = nil
+type-undefined = undefined
