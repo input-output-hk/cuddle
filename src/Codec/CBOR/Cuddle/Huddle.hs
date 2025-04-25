@@ -20,7 +20,7 @@ module Codec.CBOR.Cuddle.Huddle (
   -- * Core Types
   Huddle,
   HuddleItem (..),
-  huddleJoin,
+  huddleAugment,
   Rule,
   Named,
   IsType0 (..),
@@ -144,8 +144,11 @@ data Huddle = Huddle
   }
   deriving (Generic, Show)
 
-huddleJoin :: Huddle -> Huddle -> Huddle
-huddleJoin (Huddle rootsL itemsL) (Huddle rootsR itemsR) =
+-- | Joins two `Huddle` values with a left-bias. This means that this function
+-- is not symmetric and that any rules that are present in both prefer the
+-- definition from the `Huddle` value on the left.
+huddleAugment :: Huddle -> Huddle -> Huddle
+huddleAugment (Huddle rootsL itemsL) (Huddle rootsR itemsR) =
   Huddle (L.nubBy ((==) `on` name) $ rootsL <> rootsR) (itemsL |<> itemsR)
 
 -- | This semigroup instance:
@@ -1057,7 +1060,7 @@ collectFrom topRs =
 collectFromInit :: [HuddleItem] -> Huddle
 collectFromInit rules =
   Huddle (concatMap hiRule rules) (OMap.fromList $ (\x -> (hiName x, x)) <$> rules)
-    `huddleJoin` collectFrom rules
+    `huddleAugment` collectFrom rules
 
 --------------------------------------------------------------------------------
 -- Conversion to CDDL

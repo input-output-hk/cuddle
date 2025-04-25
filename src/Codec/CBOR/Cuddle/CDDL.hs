@@ -53,6 +53,11 @@ import Optics.Core ((%), (.~))
 import Optics.Getter (view)
 import Optics.Lens (lens)
 
+-- | The CDDL constructor takes three arguments:
+--     1. Top level comments that precede the first definition
+--     2. The root definition
+--     3. All the other top level comments and definitions
+--   This ensures that `CDDL` is correct by construction.
 data CDDL = CDDL [Comment] Rule [TopLevel]
   deriving (Eq, Generic, Show, ToExpr)
 

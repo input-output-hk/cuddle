@@ -43,7 +43,7 @@ data CommentRender
   | PostComment
 
 prettyCommentNoBreak :: Comment -> Doc ann
-prettyCommentNoBreak = align . vsep . toList . fmap ((";" <>) . pretty) . unComment
+prettyCommentNoBreak = align . vsep . toList . fmap (pretty . ("; " <>)) . unComment
 
 prettyCommentNoBreakWS :: Comment -> Doc ann
 prettyCommentNoBreakWS cmt

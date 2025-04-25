@@ -48,3 +48,11 @@
 
   Note that it is not yet supported to use a group inside a map, where the 
   issue of merging keys arises.
+
+## 0.4.0.0 -- 2025-05-02
+* Rewrote the prettyprinter to make the output more human-readable.
+* Added `collectFromInit` to make it possible to specify the order of 
+  definitions manually. `collectFrom` and `collectFromInit` now expect 
+  `HuddleItem`s in their arguments
+* More Huddle terms now accept comments (e.g. `ArrayEntry`, `ArrayChoice`)
+* Parser now preserves most comments.
