@@ -4,8 +4,10 @@
 {-# OPTIONS_GHC -Wno-orphans -Wno-incomplete-patterns -Wno-unused-matches -Wno-unused-imports #-}
 -- |
 
+
 module Codec.CBOR.Cuddle.CBOR.Validator where
 
+import Debug.Trace
 import Data.Bifunctor
 import Data.ByteString.Base16 qualified as Base16
 import Control.Monad (guard)
@@ -38,6 +40,9 @@ import System.Exit
 import Control.Monad.ST
 import GHC.Float
 import Text.Regex.TDFA
+import Control.Applicative.Permutations
+import Data.Bits hiding (And)
+import Codec.CBOR.Magic
 
 type CDDL = CTreeRoot' Identity MonoRef
 type Rule = Node MonoRef
@@ -137,7 +142,7 @@ parseLiteral = \case
               (TStringI . TL.fromStrict <$> token' tst)
           )
     ) <?> ("a literal text " <> show i)
-  VBytes (either undefined id . Base16.decode -> i) ->
+  VBytes (either (error "Impossible!") id . Base16.decode -> i) ->
     let tst = \case
                 TkBytes i' -> if i == i' then Just i' else Nothing
                 _ -> Nothing
@@ -242,8 +247,6 @@ parseType = \case
 -- | a map expression, which matches a valid CBOR map the key/value pairs of
 -- which can be ordered in such a way that the resulting sequence matches the
 -- group expression
---
--- TODO: It is unclear to me how to do this "ordered in such a way that"
 parseMap :: CDDL
          -> [Rule]
          -> ParsecT Void [TermToken] Identity Term
@@ -251,6 +254,7 @@ parseMap cddl nodes =
   parseCollection
     cddl
     nodes
+    True
     TkMapBegin
     TMapI
     TMap
@@ -268,6 +272,7 @@ parseArray cddl nodes =
   parseCollection
     cddl
     nodes
+    False
     TkListBegin
     TListI
     TList
@@ -277,20 +282,28 @@ parseArray cddl nodes =
 
 parseCollection :: CDDL
                 -> [Rule]
+                -> Bool
                 -> TermToken
                 -> ([a] -> Term)
                 -> ([a] -> Term)
                 -> (TermToken -> Maybe Int)
                 -> (CDDL -> Rule -> Parsec Void [TermToken] [a])
                 -> Parsec Void [TermToken] Term
-parseCollection cddl nodes beginToken indefConstructor defConstructor parseLength groupParser =
+parseCollection cddl nodes allowPermutations beginToken indefConstructor defConstructor parseLength groupParser =
   (    between
            (satisfy ((==) beginToken))
            (satisfy ((==) TkBreak))
-           (indefConstructor . concat <$> traverse (groupParser cddl) (flattenGroup cddl nodes))
+           (indefConstructor . concat <$>
+              if allowPermutations
+              then runPermutation (traverse (toPermutation . groupParser cddl) (flattenGroup cddl nodes))
+              else traverse (groupParser cddl) (flattenGroup cddl nodes)
+           )
      <|> ( do
              llen <- token' parseLength
-             elems <- concat <$> traverse (groupParser cddl) (flattenGroup cddl nodes)
+             elems <- concat <$>
+               if allowPermutations
+               then runPermutation (traverse (toPermutation . groupParser cddl) (flattenGroup cddl nodes))
+               else traverse (groupParser cddl) (flattenGroup cddl nodes)
              if length elems == llen
                then pure $ defConstructor elems
                else fail "Different number of elements!"
@@ -434,6 +447,7 @@ flattenGroup cddl nodes =
         Tag _ n -> [n]
         _ -> error "Malformed cddl"
       Tag{} -> [rule]
+      Group g -> flattenGroup cddl g
   | rule <- nodes
   ]
 
@@ -463,14 +477,64 @@ mkOpParser cddl Size tgt ctrl
              ) <?> (name <> " of size " <> show sz)
   | otherwise = error $ "Malformed cddl: " <> show tgt
 mkOpParser cddl Bits tgt ctrl
-  | Just name <- supportsBits cddl tgt = undefined
+  | Just name <- supportsBits cddl tgt =
+      let rhs :: ByteString -> Bool
+          rhs = case resolveIfRef cddl ctrl of
+                  Literal (VUInt idxs) -> isBitEnabled bs n
+                  Choice nodes -> satisfyChoice nodes bs
+                  Range ff tt incl -> getIndicesOfRange ff tt incl
+                  Enum g -> getIndicesOfEnum g
+      in token' (\case
+                    TkBytes bs -> if rhs bs then Just (TBytes bs) else Nothing
+                    TkInt i -> if undefined then Just (TInt i) else Nothing
+                    TkInteger i -> if undefined then Just (TInteger i) else Nothing
+                ) <?> ("something that validates the .bits")
   | otherwise = error $ "Malformed cddl: " <> show tgt
+  where
+    isBitEnabled bs n =
+      let byteIdx = n `shiftR` 3
+          bitIndex = n .&. 7
+      in case indexMaybe bs byteIndex of
+        Just b -> testBit b bitIndex
+        Nothing -> False
+
+    satisfyChoice nodes bs =
+      NE.all $
+      NE.map
+      ( \x -> case resolveIfRef cddl x of
+          Literal (VUInt v) -> isBitEnabled bs v
+          KV _ v _ -> case resolveIfRef cddl v of
+            Literal (VUInt v') -> traceShowId $ isBitEnabled bs v'
+            somethingElse -> error $ "Malformed value in KV in choice in .bits: " <> show somethingElse
+          Range ff tt incl -> satisfiesRange ff tt incl bs
+          Enum g -> satisfiesEnum g bs
+          somethingElse -> error $ "Malformed alternative in choice in .bits: " <> show somethingElse
+      )
+      nodes
+    satisfiesRange ff tt incl bs =
+      case (resolveIfRef cddl ff, resolveIfRef cddl tt) of
+        (Literal (VUInt v), Literal (VUInt w)) ->
+          foldl' (.&.) (complement zeroBits) $
+          map
+          (complement . bit . fromIntegral)
+          [ v
+            .. case incl of
+              ClOpen -> w - 1
+              Closed -> w
+          ]
+        somethingElse -> error $ "Malformed range in .bits: " <> show somethingElse
+    satisfiesEnum g bs =
+      case resolveIfRef cddl g of
+        Group g' -> satisfiesChoice (fromJust $ NE.nonEmpty g') bs
+        somethingElse -> error $ "Malformed enum in .bits: " <> show somethingElse
 mkOpParser cddl Regexp tgt ctrl
   | Just name <- supportsRegexp cddl tgt =
       case resolveIfRef cddl ctrl of
        Literal (VText s') ->
         let tst = \case
-                      TkString s -> if s =~ s' then Just (TString s) else Nothing
+                      TkString s -> case s =~ s' :: (T.Text, T.Text, T.Text) of
+                        ("", s'', "") -> if s == s'' then Just (TString s) else Nothing
+                        _ -> Nothing
                       _ -> Nothing
         in (     token' tst
                <|> between
@@ -480,7 +544,7 @@ mkOpParser cddl Regexp tgt ctrl
                               ))
                      (satisfy ((==) TkBreak))
                      (token' tst)
-           ) <?> " a regex "
+           ) <?> (" something that completely matches the regex " <> show s')
   | otherwise = error $ "Malformed cddl: " <> show tgt
 mkOpParser cddl Cbor tgt ctrl
   | Just name <- supportsCbor cddl tgt =
