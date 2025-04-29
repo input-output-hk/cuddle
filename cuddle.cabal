@@ -150,4 +150,9 @@ test-suite cuddle-test
     , prettyprinter
     , QuickCheck
     , text
+    , temporary
     , tree-diff
+    , bytestring
+    , process
+    , filepath
+    , directory
