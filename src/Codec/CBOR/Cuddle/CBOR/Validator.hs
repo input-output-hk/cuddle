@@ -130,21 +130,24 @@ parseLiteral = \case
           TkFloat16 i' -> if i == i' then Just (THalf i') else Nothing
           _ -> Nothing
       )
-      <?> ("a literal float " <> show i)
+      <?> ("a literal float16 " <> show i)
   VFloat32 i ->
     token'
       ( \case
+          TkFloat16 i' -> if i == i' then Just (THalf i') else Nothing
           TkFloat32 i' -> if i == i' then Just (TFloat i') else Nothing
           _ -> Nothing
       )
-      <?> ("a literal float " <> show i)
+      <?> ("a literal float32 " <> show i)
   VFloat64 i ->
     token'
       ( \case
+          TkFloat16 i' -> if i == float2Double i' then Just (THalf i') else Nothing
+          TkFloat32 i' -> if i == float2Double i' then Just (TFloat i') else Nothing
           TkFloat64 i' -> if i == i' then Just (TDouble i') else Nothing
           _ -> Nothing
       )
-      <?> ("a literal float " <> show i)
+      <?> ("a literal float64 " <> show i)
   VText i ->
     let tst = \case
           TkString i' -> if i == i' then Just i else Nothing
