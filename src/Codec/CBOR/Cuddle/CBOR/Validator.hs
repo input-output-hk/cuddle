@@ -378,10 +378,8 @@ parseCollection cddl nodes allowPermutations beginToken indefConstructor defCons
                         <$> if allowPermutations
                             then runPermutation (traverse (toPermutation . try . groupParser cddl) (flattenGroup cddl nodes))
                             else traverse (groupParser cddl) (flattenGroup cddl nodes)
-              parse (foo $ runIdentity $ tree Map.! rule) "" (toFlatTerms terms)
-              if length elems == llen
-                then pure $ defConstructor terms
-                else fail $ "Different number of elements! " <> show (length elems) <> " " <> show llen <> " " <> show nodes <> " " <> show elems
+              parse foo "" (toFlatTerms terms)
+              pure $ defConstructor terms
           )
   )
 
@@ -473,11 +471,26 @@ inPairs :: [b] -> [(b, b)]
 inPairs (a:b:c) = (a, b) : inPairs c
 inPairs [] = []
 
+parseTermsTillBreak :: Parsec Void [TermToken] [Term]
+parseTermsTillBreak =
+  (token' (\case TkBreak -> Just (); _ -> Nothing) *> pure [])
+  <|> (do
+          t <- parseTerm <?> "foo"
+          (t:) <$> parseTermsTillBreak
+      )
+
+toFlatTerms (x:xs) =
+  (case x of
+     TInt i -> TkInt i
+     T
+  )
+  toFlatTerms xs
+
 parseNTerms :: Int -> Parsec Void [TermToken] [Term]
 parseNTerms 0 = pure []
 parseNTerms n = do
   t <- parseTerm <?> "foo"
-  (t:) <$> parseNTerms (traceShowId (n - 1))
+  (t:) <$> parseNTerms (n - 1)
 
 -- many' :: (Applicative f, Alternative f) => f a -> f [a]
 -- many' v = many_v
