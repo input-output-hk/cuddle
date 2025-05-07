@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ViewPatterns #-}
@@ -5,6 +6,7 @@
 
 module Codec.CBOR.Cuddle.CBOR.Validator where
 
+import Debug.Trace
 import Codec.CBOR.Cuddle.CDDL hiding (CDDL, Group, Rule)
 import Codec.CBOR.Cuddle.CDDL.CTree
 import Codec.CBOR.Cuddle.CDDL.CtlOp
@@ -35,7 +37,6 @@ import Data.Set qualified as Set
 import Data.Text qualified as T
 import Data.Text.Lazy qualified as TL
 import Data.Void
-import Debug.Trace
 import GHC.Float
 import Prettyprinter
 import Prettyprinter.Render.String
@@ -43,10 +44,32 @@ import Prettyprinter.Util (putDocW)
 import System.Exit
 import Text.Megaparsec
 import Text.Regex.TDFA
+import Control.Applicative (Alternative)
 
 type CDDL = CTreeRoot' Identity MonoRef
 type Rule = Node MonoRef
 type ResolvedRule = CTree MonoRef
+
+-- data Term
+--   = TInt     {-# UNPACK #-} !Int
+--   | TInteger                !Integer
+--   | TBytes                  !BS.ByteString
+--   | TBytesI                 !BSL.ByteString
+--   | TString                 !T.Text
+--   | TStringI                !TL.Text
+--   | TList                   ![Term]
+--   | TListI                  ![Term]
+--   | TMap                    ![(Term, Term)]
+--   | TMapI                   ![(Term, Term)]
+--   | TTagged  {-# UNPACK #-} !Word64 !Term
+--   | TBool                   !Bool
+--   | TNull
+--   | TSimple  {-# UNPACK #-} !Word8
+--   | THalf    {-# UNPACK #-} !Float
+--   | TFloat   {-# UNPACK #-} !Float
+--   | TDouble  {-# UNPACK #-} !Double
+--   | TAny
+--   deriving (Eq, Ord, Show, Read)
 
 instance VisualStream [TermToken] where
   showTokens _ = show
@@ -70,7 +93,7 @@ validateCBOR' ::
   CDDL ->
   Either (Either DeserialiseFailure (ParseErrorBundle [TermToken] Void)) Term
 validateCBOR' bs rule cddl@(CTreeRoot tree) =
-  case decodeFlatTerm bs of
+  case traceShowId $ decodeFlatTerm bs of
     Left e -> Left $ Left e
     Right fterm -> bimap Right id $ parse (mkParser cddl $ runIdentity $ tree Map.! rule) "" fterm
 
@@ -105,7 +128,7 @@ parseLiteral = \case
   VUInt (fromIntegral -> i) ->
     token'
       ( \case
-          TkInt i' -> if i == i' then Just (TInt i') else Nothing
+          TkInt i' -> if i == (traceShowId i') then Just (TInt i') else Nothing
           _ -> Nothing
       )
       <?> ("a literal int " <> show i)
@@ -271,6 +294,25 @@ parseType = \case
           _ -> Nothing
       )
       <?> "an undefined"
+  PTAny ->
+    ((token' (\case
+               TkListBegin -> Just ()
+               _ -> Nothing
+           )
+      *> token' (\case
+               TkBreak -> Just ()
+               _ -> Nothing
+           )) *> pure (TSimple 1)
+    <|>
+    (token' (\case
+               TkListLen _ -> Just ()
+               _ -> Nothing
+           )
+      *> token' (\case
+               TkMapLen _ -> Just ()
+               _ -> Nothing
+           )) *> pure (TSimple 2))
+
 
 -- | a map expression, which matches a valid CBOR map the key/value pairs of
 -- which can be ordered in such a way that the resulting sequence matches the
@@ -307,11 +349,11 @@ parseArray cddl nodes =
     TListI
     TList
     (\case TkListLen w -> Just (fromIntegral w); _ -> Nothing)
-    (mkGroupParser mkParser)
+    (mkGroupParser parseArrayValue)
     <?> "a proper list"
 
 parseCollection ::
-  CDDL ->
+  Show a => CDDL ->
   [Rule] ->
   Bool ->
   TermToken ->
@@ -326,21 +368,122 @@ parseCollection cddl nodes allowPermutations beginToken indefConstructor defCons
       (satisfy ((==) TkBreak))
       ( indefConstructor . concat
           <$> if allowPermutations
-            then runPermutation (traverse (toPermutation . groupParser cddl) (flattenGroup cddl nodes))
+            then runPermutation (traverse (toPermutation . try . groupParser cddl) (flattenGroup cddl nodes))
             else traverse (groupParser cddl) (flattenGroup cddl nodes)
       )
       <|> ( do
               llen <- token' parseLength
-              elems <-
-                concat
-                  <$> if allowPermutations
-                    then runPermutation (traverse (toPermutation . groupParser cddl) (flattenGroup cddl nodes))
-                    else traverse (groupParser cddl) (flattenGroup cddl nodes)
+              terms <- parseNTerms llen
+              let foo = concat
+                        <$> if allowPermutations
+                            then runPermutation (traverse (toPermutation . try . groupParser cddl) (flattenGroup cddl nodes))
+                            else traverse (groupParser cddl) (flattenGroup cddl nodes)
+              parse (foo $ runIdentity $ tree Map.! rule) "" (toFlatTerms terms)
               if length elems == llen
-                then pure $ defConstructor elems
-                else fail "Different number of elements!"
+                then pure $ defConstructor terms
+                else fail $ "Different number of elements! " <> show (length elems) <> " " <> show llen <> " " <> show nodes <> " " <> show elems
           )
   )
+
+parseTerm :: Parsec Void [TermToken] Term
+parseTerm = (token' (\case
+                       TkInt i -> Just $  TInt i
+                       TkInteger i -> Just $  TInteger i
+                       TkBool b -> Just $  TBool b
+                       TkNull -> Just $  TNull
+                       TkSimple s -> Just $  TSimple s
+                       TkFloat16 f -> Just $  THalf f
+                       TkFloat32 f -> Just $  TFloat f
+                       TkFloat64 f -> Just $  TDouble f
+                       TkBytes f -> Just $ TBytes f
+                       TkString s -> Just $ TString s
+                       _ -> Nothing
+                   ))
+            <|>
+             (do
+                 token' (\case
+                            TkBytesBegin -> Just ()
+                            _ -> Nothing
+                        )
+                 *> token' (\case
+                               TkBytes b -> Just $ TBytes b
+                               _ -> Nothing
+                           )
+             )
+             <|>
+             (do
+                 token' (\case
+                            TkStringBegin -> Just ()
+                            _ -> Nothing
+                        )
+                 *> token' (\case
+                               TkString b -> Just $ TString b
+                               _ -> Nothing
+                           )
+             )
+             <|>
+             (do
+                 llen <- token' (\case
+                                    TkListLen i -> Just i
+                                    _ -> Nothing
+                                )
+                 TList <$> parseNTerms (fromIntegral llen)
+             )
+             <|>
+             (do
+                 llen <- token' (\case
+                                    TkMapLen i -> Just i
+                                    _ -> Nothing
+                                )
+                 TMap . inPairs <$> parseNTerms (fromIntegral llen * 2)
+             )
+             <|>
+             (do
+                 token' (\case
+                                    TkListBegin -> Just ()
+                                    _ -> Nothing
+                                )
+                 let go =
+                       token' (\case TkBreak -> Just []; _ -> Nothing)
+                       <|> (do
+                               t <- parseTerm
+                               (t:) <$> go
+                           )
+                 terms <- go
+                 pure $ TList terms
+             )
+             <|>
+             (do
+                 token' (\case
+                                    TkMapBegin -> Just ()
+                                    _ -> Nothing
+                                )
+                 let go =
+                       token' (\case TkBreak -> Just []; _ -> Nothing)
+                       <|> (do
+                               t1 <- parseTerm
+                               t2 <- parseTerm
+                               ((t1, t2):) <$> go
+                           )
+                 terms <- go
+                 pure $ TMap terms
+             )
+
+inPairs :: [b] -> [(b, b)]
+inPairs (a:b:c) = (a, b) : inPairs c
+inPairs [] = []
+
+parseNTerms :: Int -> Parsec Void [TermToken] [Term]
+parseNTerms 0 = pure []
+parseNTerms n = do
+  t <- parseTerm <?> "foo"
+  (t:) <$> parseNTerms (traceShowId (n - 1))
+
+-- many' :: (Applicative f, Alternative f) => f a -> f [a]
+-- many' v = many_v
+--       where
+--         many_v = some_v <|> pure []
+--         some_v = liftA2 (:) v many_v
 
 -- | A range operator can be used to join two type expressions that stand for
 -- either two integer values or two floating-point values; it matches any value
@@ -453,11 +596,12 @@ mkParser cddl rule = case resolveIfRef cddl rule of
   Array nodes ->
     parseArray cddl nodes
   Choice nodes ->
-    L.foldl1' (<|>) [mkParser cddl n | n <- NE.toList nodes]
+    L.foldl1' (<|>) [traceShow n $ try $ mkParser cddl n | n <- NE.toList nodes]
       <?> ("something in the choice " <> show (NE.toList nodes))
   Range low high inc ->
     parseRange cddl low high inc
   Group {} -> fail "Found lone group!"
+  other -> error $ "No case for " <> show other
 
 mkGroupParser ::
   (CDDL -> Node MonoRef -> Parsec Void [TermToken] a) ->
@@ -484,6 +628,11 @@ mkGroupParser p cddl rule = case resolveIfRef cddl rule of
 parseKeyValue :: CDDL -> Rule -> ParsecT Void [TermToken] Identity (Term, Term)
 parseKeyValue cddl rule = case resolveIfRef cddl rule of
   KV k v _ -> (,) <$> mkParser cddl k <*> mkParser cddl v
+
+parseArrayValue :: CDDL -> Rule -> ParsecT Void [TermToken] Identity Term
+parseArrayValue cddl rule = case resolveIfRef cddl rule of
+  KV _ v _ -> mkParser cddl v
+  _ -> mkParser cddl rule
 
 flattenGroup :: CDDL -> [Rule] -> [Rule]
 flattenGroup cddl nodes =
