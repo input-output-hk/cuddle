@@ -1,0 +1,58 @@
+a_sized_bytes = bytes .size 3
+a_sized_string = text .size 3
+a_sized_int = int .size 3           ; broken parse, Cannot apply size operator to target
+
+; uint
+
+a_uint_over_3 = uint .gt 3
+a_uint_over_or_eq_3 = uint .ge 3
+a_uint_under_3 = uint .lt 3
+a_uint_under_or_eq_3 = uint .le 3
+a_fixed_uint = uint .eq 5           ; broken gen, generates 771248363
+a_distinct_uint = uint .ne 5        ; broken? cant really see
+
+; nint
+
+a_nint_over_m3 = nint .gt -3        ; broken gen, generates -1271005084572829577
+a_nint_over_or_eq_m3 = nint .ge -3  ; same
+a_nint_under_m3 = nint .lt -3       ; broken parse Invalid controller for .lt operator: MIt (Literal (VNInt 3))
+a_nint_under_or_eq_m3 = nint .le -3 ; broken parse Invalid controller for .le operator: MIt (Literal (VNInt 3))
+a_fixed_nint = nint .eq -5          ; broken gen, generates -4358670274069422837
+a_distinct_nint = nint .ne -5       ; broken? cant really see
+
+; int
+
+a_int_over_3 = int .gt 5            ; broken gen, generates -7524105020434506520
+a_int_over_or_eq_3 = int .ge 5      ; same
+a_int_under_3 = int .lt 5           ; broken parse Cannot apply lt operator to target
+a_int_under_or_eq_3 = int .le 5     ; broken parse Cannot apply le operator to target
+a_fixed_int = int .eq 5             ; broken gen, generates -4358670274069422837
+a_distinct_int = int .ne 5          ; broken? cant really see
+
+; half
+
+a_half_over_3 = float16 .gt 0.5            ; broken gen, generates TkFloat16 (-31040.0)
+a_half_over_or_eq_3 = float16 .ge 0.5      ; same
+a_half_under_3 = float16 .lt 0.5           ; broken parse Invalid controller for .lt operator: MIt (Literal (VFloat64 0.5))
+a_half_under_or_eq_3 = float16 .le 0.5     ; broken parse Invalid controller for .le operator: MIt (Literal (VFloat64 0.5))
+a_fixed_half = float16 .eq 0.5             ; broken gen, generates TkFloat16 14920.0
+a_distinct_half = float16 .ne 0.5          ; broken? cant really see
+
+; float
+
+a_float_over_3 = float32 .gt 0.5            ; broken gen, generates TkFloat32 0.10463107
+a_float_over_or_eq_3 = float32 .ge 0.5      ; same
+a_float_under_3 = float32 .lt 0.5           ; broken parse Invalid controller for .lt operator: MIt (Literal (VFloat64 0.5))
+a_float_under_or_eq_3 = float32 .le 0.5     ; broken parse Invalid controller for .le operator: MIt (Literal (VFloat64 0.5))
+a_fixed_float = float32 .eq 0.5             ; broken gen, generates TkFloat32 1.2100399e-2
+a_distinct_float = float32 .ne 0.5          ; broken? cant really see
+
+; double
+
+a_double_over_3 = float64 .gt 0.5            ; broken gen, generates TkFloat64 0.14235774064564544
+a_double_over_or_eq_3 = float64 .ge 0.5      ; same
+a_double_under_3 = float64 .lt 0.5           ; broken parse Invalid controller for .lt operator: MIt (Literal (VFloat64 0.5))
+a_double_under_or_eq_3 = float64 .le 0.5     ; broken parse Invalid controller for .le operator: MIt (Literal (VFloat64 0.5))
+a_fixed_double = float64 .eq 0.5             ; broken gen, generates TkFloat64 0.4673207723805902
+a_distinct_double = float64 .ne 0.5          ; broken? cant really see
+
