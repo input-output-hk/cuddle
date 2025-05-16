@@ -174,9 +174,9 @@ validateInt ii@(fromIntegral @Int @Integer -> i) rule = do
     -- a = nint
     Postlude PTNInt -> check (ValLeaf rule) $ i <= 0
     -- a = x
-    Literal (VUInt i') -> check (ValLeaf rule) $ i == fromIntegral i'
+    Literal (Value (VUInt i') _) -> check (ValLeaf rule) $ i == fromIntegral i'
     -- a = -x
-    Literal (VNInt i') -> check (ValLeaf rule) $ -i == fromIntegral i'
+    Literal (Value (VNInt i') _) -> check (ValLeaf rule) $ -i == fromIntegral i'
     -- a = foo .and bar
     Control And tgt ctrl ->
       validateInt ii tgt >> void (withError (fmap (const $ ControlFail ctrl)) $ validateInt ii ctrl)
@@ -194,9 +194,9 @@ validateInt ii@(fromIntegral @Int @Integer -> i) rule = do
     Range low high bound -> do
       ((,) <$> getRule low <*> getRule high)
         >>= check (ValLeaf rule) . \case
-          (Literal (VUInt (fromIntegral -> n)), Literal (VUInt (fromIntegral -> m))) -> n <= i && range bound i m
-          (Literal (VNInt (fromIntegral -> n)), Literal (VUInt (fromIntegral -> m))) -> -n <= i && range bound i m
-          (Literal (VNInt (fromIntegral -> n)), Literal (VNInt (fromIntegral -> m))) -> -n <= i && range bound i (-m)
+          (Literal (Value (VUInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _)) -> n <= i && range bound i m
+          (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _)) -> -n <= i && range bound i m
+          (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VNInt (fromIntegral -> m)) _)) -> -n <= i && range bound i (-m)
     -- a = &(x, y, z)
     Enum g ->
       getRule g >>= \case
@@ -241,11 +241,11 @@ validateChoice f rule = go . toList
 controlInt :: forall m. MonadReader CDDL m => Int -> CtlOp -> Rule -> m Bool
 controlInt (fromIntegral @Int @Integer -> i) Size ctrl =
   getRule ctrl <&> \case
-    Literal (VUInt sz) -> 0 <= i && i < 256 ^ sz
+    Literal (Value (VUInt sz) _) -> 0 <= i && i < 256 ^ sz
 controlInt i Bits ctrl = do
   indices <-
     getRule ctrl >>= \case
-      Literal (VUInt i') -> pure [i']
+      Literal (Value (VUInt i') _) -> pure [i']
       Choice nodes -> getIndicesOfChoice nodes
       Range ff tt incl -> getIndicesOfRange ff tt incl
       Enum g -> getIndicesOfEnum g
@@ -261,28 +261,28 @@ controlInt i Bits ctrl = do
             else pure False
 controlInt (fromIntegral @Int @Integer -> i) Lt ctrl =
   getRule ctrl <&> \case
-    Literal (VUInt i') -> i < fromIntegral i'
-    Literal (VNInt i') -> i < -fromIntegral i'
+    Literal (Value (VUInt i') _) -> i < fromIntegral i'
+    Literal (Value (VNInt i') _) -> i < -fromIntegral i'
 controlInt (fromIntegral @Int @Integer -> i) Gt ctrl =
   getRule ctrl <&> \case
-    Literal (VUInt i') -> i > fromIntegral i'
-    Literal (VNInt i') -> i > -fromIntegral i'
+    Literal (Value (VUInt i') _) -> i > fromIntegral i'
+    Literal (Value (VNInt i') _) -> i > -fromIntegral i'
 controlInt (fromIntegral @Int @Integer -> i) Le ctrl =
   getRule ctrl <&> \case
-    Literal (VUInt i') -> i <= fromIntegral i'
-    Literal (VNInt i') -> i <= -fromIntegral i'
+    Literal (Value (VUInt i') _) -> i <= fromIntegral i'
+    Literal (Value (VNInt i') _) -> i <= -fromIntegral i'
 controlInt (fromIntegral @Int @Integer -> i) Ge ctrl =
   getRule ctrl <&> \case
-    Literal (VUInt i') -> i >= fromIntegral i'
-    Literal (VNInt i') -> i >= -fromIntegral i'
+    Literal (Value (VUInt i') _) -> i >= fromIntegral i'
+    Literal (Value (VNInt i') _) -> i >= -fromIntegral i'
 controlInt (fromIntegral @Int @Integer -> i) Eq ctrl =
   getRule ctrl <&> \case
-    Literal (VUInt i') -> i == fromIntegral i'
-    Literal (VNInt i') -> i == -fromIntegral i'
+    Literal (Value (VUInt i') _) -> i == fromIntegral i'
+    Literal (Value (VNInt i') _) -> i == -fromIntegral i'
 controlInt (fromIntegral @Int @Integer -> i) Ne ctrl =
   getRule ctrl <&> \case
-    Literal (VUInt i') -> i /= fromIntegral i'
-    Literal (VNInt i') -> i /= -fromIntegral i'
+    Literal (Value (VUInt i') _) -> i /= fromIntegral i'
+    Literal (Value (VNInt i') _) -> i /= -fromIntegral i'
 
 -- | Validating an Integer
 validateInteger ::
@@ -311,11 +311,11 @@ validateInteger i rule = do
     -- a = nint
     Postlude PTNInt -> check (ValLeaf rule) (i <= 0)
     -- a = x
-    Literal (VUInt i') -> check (ValLeaf rule) $ i == fromIntegral i'
+    Literal (Value (VUInt i') _) -> check (ValLeaf rule) $ i == fromIntegral i'
     -- a = -x
-    Literal (VNInt i') -> check (ValLeaf rule) $ -i == fromIntegral i'
+    Literal (Value (VNInt i') _) -> check (ValLeaf rule) $ -i == fromIntegral i'
     -- a = <big number>
-    Literal (VBignum i') -> check (ValLeaf rule) $ i == i'
+    Literal (Value (VBignum i') _) -> check (ValLeaf rule) $ i == i'
     -- a = foo .and bar
     Control And tgt ctrl ->
       validateInteger i tgt >> void (withError (fmap (const $ ControlFail ctrl)) $ validateInteger i ctrl)
@@ -333,13 +333,13 @@ validateInteger i rule = do
     Range low high bound ->
       ((,) <$> getRule low <*> getRule high)
         >>= check (ValLeaf rule) . \case
-          (Literal (VUInt (fromIntegral -> n)), Literal (VUInt (fromIntegral -> m))) -> n <= i && range bound i m
-          (Literal (VNInt (fromIntegral -> n)), Literal (VUInt (fromIntegral -> m))) -> -n <= i && range bound i m
-          (Literal (VNInt (fromIntegral -> n)), Literal (VNInt (fromIntegral -> m))) -> -n <= i && range bound i (-m)
-          (Literal (VBignum n), Literal (VUInt (fromIntegral -> m))) -> n <= i && range bound i m
-          (Literal (VBignum n), Literal (VNInt (fromIntegral -> m))) -> n <= i && range bound i (-m)
-          (Literal (VUInt (fromIntegral -> n)), Literal (VBignum m)) -> n <= i && range bound i m
-          (Literal (VNInt (fromIntegral -> n)), Literal (VBignum m)) -> (-n) <= i && range bound i m
+          (Literal (Value (VUInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _)) -> n <= i && range bound i m
+          (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _)) -> -n <= i && range bound i m
+          (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VNInt (fromIntegral -> m)) _)) -> -n <= i && range bound i (-m)
+          (Literal (Value (VBignum n) _), Literal (Value (VUInt (fromIntegral -> m)) _)) -> n <= i && range bound i m
+          (Literal (Value (VBignum n) _), Literal (Value (VNInt (fromIntegral -> m)) _)) -> n <= i && range bound i (-m)
+          (Literal (Value (VUInt (fromIntegral -> n)) _), Literal (Value (VBignum m) _)) -> n <= i && range bound i m
+          (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VBignum m) _)) -> (-n) <= i && range bound i m
     _ -> throwError (ValLeaf rule UnapplicableRule)
   pure (ValLeaf rule ())
 
@@ -347,11 +347,11 @@ validateInteger i rule = do
 controlInteger :: MonadReader CDDL m => Integer -> CtlOp -> Rule -> m Bool
 controlInteger i Size ctrl =
   getRule ctrl <&> \case
-    Literal (VUInt sz) -> 0 <= i && i < 256 ^ sz
+    Literal (Value (VUInt sz) _) -> 0 <= i && i < 256 ^ sz
 controlInteger i Bits ctrl = do
   indices <-
     getRule ctrl >>= \case
-      Literal (VUInt i') -> pure [i']
+      Literal (Value (VUInt i') _) -> pure [i']
       Choice nodes -> getIndicesOfChoice nodes
       Range ff tt incl -> getIndicesOfRange ff tt incl
       Enum g -> getIndicesOfEnum g
@@ -366,34 +366,34 @@ controlInteger i Bits ctrl = do
             else pure False
 controlInteger i Lt ctrl =
   getRule ctrl <&> \case
-    Literal (VUInt i') -> i < fromIntegral i'
-    Literal (VNInt i') -> i < -fromIntegral i'
-    Literal (VBignum i') -> i < i'
+    Literal (Value (VUInt i') _) -> i < fromIntegral i'
+    Literal (Value (VNInt i') _) -> i < -fromIntegral i'
+    Literal (Value (VBignum i') _) -> i < i'
 controlInteger i Gt ctrl =
   getRule ctrl <&> \case
-    Literal (VUInt i') -> i > fromIntegral i'
-    Literal (VNInt i') -> i > -fromIntegral i'
-    Literal (VBignum i') -> i > i'
+    Literal (Value (VUInt i') _) -> i > fromIntegral i'
+    Literal (Value (VNInt i') _) -> i > -fromIntegral i'
+    Literal (Value (VBignum i') _) -> i > i'
 controlInteger i Le ctrl =
   getRule ctrl <&> \case
-    Literal (VUInt i') -> i <= fromIntegral i'
-    Literal (VNInt i') -> i <= -fromIntegral i'
-    Literal (VBignum i') -> i <= i'
+    Literal (Value (VUInt i') _) -> i <= fromIntegral i'
+    Literal (Value (VNInt i') _) -> i <= -fromIntegral i'
+    Literal (Value (VBignum i') _) -> i <= i'
 controlInteger i Ge ctrl =
   getRule ctrl <&> \case
-    Literal (VUInt i') -> i >= fromIntegral i'
-    Literal (VNInt i') -> i >= -fromIntegral i'
-    Literal (VBignum i') -> i >= i'
+    Literal (Value (VUInt i') _) -> i >= fromIntegral i'
+    Literal (Value (VNInt i') _) -> i >= -fromIntegral i'
+    Literal (Value (VBignum i') _) -> i >= i'
 controlInteger i Eq ctrl =
   getRule ctrl <&> \case
-    Literal (VUInt i') -> i == fromIntegral i'
-    Literal (VNInt i') -> i == -fromIntegral i'
-    Literal (VBignum i') -> i == i'
+    Literal (Value (VUInt i') _) -> i == fromIntegral i'
+    Literal (Value (VNInt i') _) -> i == -fromIntegral i'
+    Literal (Value (VBignum i') _) -> i == i'
 controlInteger i Ne ctrl =
   getRule ctrl <&> \case
-    Literal (VUInt i') -> i /= fromIntegral i'
-    Literal (VNInt i') -> i /= -fromIntegral i'
-    Literal (VBignum i') -> i /= i'
+    Literal (Value (VUInt i') _) -> i /= fromIntegral i'
+    Literal (Value (VNInt i') _) -> i /= -fromIntegral i'
+    Literal (Value (VBignum i') _) -> i /= i'
 
 --------------------------------------------------------------------------------
 -- Floating point (Float16, Float32, Float64)
@@ -412,7 +412,7 @@ validateHalf f rule = do
     -- a = float16
     Postlude PTHalf -> pure ()
     -- a = 0.5
-    Literal (VFloat16 f') -> check (ValLeaf rule) $ f == f'
+    Literal (Value (VFloat16 f') _) -> check (ValLeaf rule) $ f == f'
     -- a = foo / bar
     Choice opts ->
       void $ validateChoice (validateHalf f) rule opts
@@ -430,7 +430,7 @@ validateHalf f rule = do
     Range low high bound ->
       ((,) <$> getRule low <*> getRule high)
         >>= check (ValLeaf rule) . \case
-          (Literal (VFloat16 n), Literal (VFloat16 m)) -> n <= f && range bound f m
+          (Literal (Value (VFloat16 n) _), Literal (Value (VFloat16 m) _)) -> n <= f && range bound f m
     _ -> throwError (ValLeaf rule UnapplicableRule)
   pure (ValLeaf rule ())
 
@@ -438,10 +438,10 @@ validateHalf f rule = do
 controlHalf :: MonadReader CDDL m => Float -> CtlOp -> Rule -> m Bool
 controlHalf f Eq ctrl =
   getRule ctrl <&> \case
-    Literal (VFloat16 f') -> f == f'
+    Literal (Value (VFloat16 f') _) -> f == f'
 controlHalf f Ne ctrl =
   getRule ctrl <&> \case
-    Literal (VFloat16 f') -> f /= f'
+    Literal (Value (VFloat16 f') _) -> f /= f'
 
 -- | Validating a `Float32`
 validateFloat ::
@@ -455,7 +455,7 @@ validateFloat f rule = do
     Postlude PTFloat -> pure ()
     -- a = 0.000000005
     -- TODO: it is unclear if smaller floats should also validate
-    Literal (VFloat32 f') -> check (ValLeaf rule) $ f == f'
+    Literal (Value (VFloat32 f') _) -> check (ValLeaf rule) $ f == f'
     -- a = foo / bar
     Choice opts ->
       void $ validateChoice (validateFloat f) rule opts
@@ -474,8 +474,8 @@ validateFloat f rule = do
     Range low high bound ->
       ((,) <$> getRule low <*> getRule high)
         >>= check (ValLeaf rule) . \case
-          (Literal (VFloat16 n), Literal (VFloat16 m)) -> n <= f && range bound f m
-          (Literal (VFloat32 n), Literal (VFloat32 m)) -> n <= f && range bound f m
+          (Literal (Value (VFloat16 n) _), Literal (Value (VFloat16 m) _)) -> n <= f && range bound f m
+          (Literal (Value (VFloat32 n) _), Literal (Value (VFloat32 m) _)) -> n <= f && range bound f m
     _ -> throwError (ValLeaf rule UnapplicableRule)
   pure (ValLeaf rule ())
 
@@ -483,12 +483,12 @@ validateFloat f rule = do
 controlFloat :: MonadReader CDDL m => Float -> CtlOp -> Rule -> m Bool
 controlFloat f Eq ctrl =
   getRule ctrl <&> \case
-    Literal (VFloat16 f') -> f == f'
-    Literal (VFloat32 f') -> f == f'
+    Literal (Value (VFloat16 f') _) -> f == f'
+    Literal (Value (VFloat32 f') _) -> f == f'
 controlFloat f Ne ctrl =
   getRule ctrl <&> \case
-    Literal (VFloat16 f') -> f /= f'
-    Literal (VFloat32 f') -> f /= f'
+    Literal (Value (VFloat16 f') _) -> f /= f'
+    Literal (Value (VFloat32 f') _) -> f /= f'
 
 -- | Validating a `Float64`
 validateDouble ::
@@ -502,7 +502,7 @@ validateDouble f rule = do
     Postlude PTDouble -> pure ()
     -- a = 0.0000000000000000000000000000000000000000000005
     -- TODO: it is unclear if smaller floats should also validate
-    Literal (VFloat64 f') -> check (ValLeaf rule) $ f == f'
+    Literal (Value (VFloat64 f') _) -> check (ValLeaf rule) $ f == f'
     -- a = foo / bar
     Choice opts -> void $ validateChoice (validateDouble f) rule opts
     -- a = foo .and bar
@@ -520,9 +520,9 @@ validateDouble f rule = do
     Range low high bound ->
       ((,) <$> getRule low <*> getRule high)
         >>= check (ValLeaf rule) . \case
-          (Literal (VFloat16 (float2Double -> n)), Literal (VFloat16 (float2Double -> m))) -> n <= f && range bound f m
-          (Literal (VFloat32 (float2Double -> n)), Literal (VFloat32 (float2Double -> m))) -> n <= f && range bound f m
-          (Literal (VFloat64 n), Literal (VFloat64 m)) -> n <= f && range bound f m
+          (Literal (Value (VFloat16 (float2Double -> n)) _), Literal (Value (VFloat16 (float2Double -> m)) _)) -> n <= f && range bound f m
+          (Literal (Value (VFloat32 (float2Double -> n)) _), Literal (Value (VFloat32 (float2Double -> m)) _)) -> n <= f && range bound f m
+          (Literal (Value (VFloat64 n) _), Literal (Value (VFloat64 m) _)) -> n <= f && range bound f m
     _ -> throwError (ValLeaf rule UnapplicableRule)
   pure (ValLeaf rule ())
 
@@ -530,14 +530,14 @@ validateDouble f rule = do
 controlDouble :: MonadReader CDDL m => Double -> CtlOp -> Rule -> m Bool
 controlDouble f Eq ctrl =
   getRule ctrl <&> \case
-    Literal (VFloat16 f') -> f == float2Double f'
-    Literal (VFloat32 f') -> f == float2Double f'
-    Literal (VFloat64 f') -> f == f'
+    Literal (Value (VFloat16 f') _) -> f == float2Double f'
+    Literal (Value (VFloat32 f') _) -> f == float2Double f'
+    Literal (Value (VFloat64 f') _) -> f == f'
 controlDouble f Ne ctrl =
   getRule ctrl <&> \case
-    Literal (VFloat16 f') -> f /= float2Double f'
-    Literal (VFloat32 f') -> f /= float2Double f'
-    Literal (VFloat64 f') -> f /= f'
+    Literal (Value (VFloat16 f') _) -> f /= float2Double f'
+    Literal (Value (VFloat32 f') _) -> f /= float2Double f'
+    Literal (Value (VFloat64 f') _) -> f /= f'
 
 --------------------------------------------------------------------------------
 -- Bool
@@ -553,7 +553,7 @@ validateBool b rule = do
     -- a = bool
     Postlude PTBool -> pure ()
     -- a = true
-    Literal (VBool b') -> check (ValLeaf rule) $ b == b'
+    Literal (Value (VBool b') _) -> check (ValLeaf rule) $ b == b'
     -- a = foo .and bar
     Control And tgt ctrl ->
       validateBool b tgt >> void (withError (fmap (const $ ControlFail ctrl)) $ validateBool b ctrl)
@@ -573,10 +573,10 @@ validateBool b rule = do
 controlBool :: MonadReader CDDL m => Bool -> CtlOp -> Rule -> m Bool
 controlBool b Eq ctrl =
   getRule ctrl <&> \case
-    Literal (VBool b') -> b == b'
+    Literal (Value (VBool b') _) -> b == b'
 controlBool b Ne ctrl =
   getRule ctrl <&> \case
-    Literal (VBool b') -> b /= b'
+    Literal (Value (VBool b') _) -> b /= b'
 
 --------------------------------------------------------------------------------
 -- Simple
@@ -626,7 +626,7 @@ validateBytes bs rule = do
     -- a = bytes
     Postlude PTBytes -> pure ()
     -- a = h'123456'
-    Literal (VBytes bs') -> check (ValLeaf rule) $ bs == bs'
+    Literal (Value (VBytes bs') _) -> check (ValLeaf rule) $ bs == bs'
     -- a = foo .and bar
     Control And tgt ctrl ->
       validateBytes bs tgt >> void (withError (fmap (const $ ControlFail ctrl)) $ validateBytes bs ctrl)
@@ -646,17 +646,17 @@ validateBytes bs rule = do
 controlBytes :: forall m. MonadReader CDDL m => BS.ByteString -> CtlOp -> Rule -> m Bool
 controlBytes bs Size ctrl =
   getRule ctrl >>= \case
-    Literal (VUInt (fromIntegral -> sz)) -> pure $ BS.length bs == sz
+    Literal (Value (VUInt (fromIntegral -> sz)) _) -> pure $ BS.length bs == sz
     Range low high bound ->
       let i = BS.length bs
        in ((,) <$> getRule low <*> getRule high) <&> \case
-            (Literal (VUInt (fromIntegral -> n)), Literal (VUInt (fromIntegral -> m))) -> n <= i && range bound i m
-            (Literal (VNInt (fromIntegral -> n)), Literal (VUInt (fromIntegral -> m))) -> -n <= i && range bound i m
-            (Literal (VNInt (fromIntegral -> n)), Literal (VNInt (fromIntegral -> m))) -> -n <= i && range bound i (-m)
+            (Literal (Value (VUInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _)) -> n <= i && range bound i m
+            (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _)) -> -n <= i && range bound i m
+            (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VNInt (fromIntegral -> m)) _)) -> -n <= i && range bound i (-m)
 controlBytes bs Bits ctrl = do
   indices <-
     getRule ctrl >>= \case
-      Literal (VUInt i') -> pure [i']
+      Literal (Value (VUInt i') _) -> pure [i']
       Choice nodes -> getIndicesOfChoice nodes
       Range ff tt incl -> getIndicesOfRange ff tt incl
       Enum g -> getIndicesOfEnum g
@@ -695,7 +695,7 @@ validateText txt rule = do
     -- a = text
     Postlude PTText -> pure ()
     -- a = "foo"
-    Literal (VText txt') -> check (ValLeaf rule) $ txt == txt'
+    Literal (Value (VText txt') _) -> check (ValLeaf rule) $ txt == txt'
     -- a = foo .and bar
     Control And tgt ctrl ->
       validateText txt tgt >> void (withError (fmap (const $ ControlFail ctrl)) $ validateText txt ctrl)
@@ -715,15 +715,15 @@ validateText txt rule = do
 controlText :: MonadReader CDDL m => T.Text -> CtlOp -> Rule -> m Bool
 controlText bs Size ctrl =
   getRule ctrl >>= \case
-    Literal (VUInt (fromIntegral -> sz)) -> pure $ T.length bs == sz
+    Literal (Value (VUInt (fromIntegral -> sz)) _) -> pure $ T.length bs == sz
     Range ff tt bound ->
       ((,) <$> getRule ff <*> getRule tt) <&> \case
-        (Literal (VUInt (fromIntegral -> n)), Literal (VUInt (fromIntegral -> m))) -> n <= T.length bs && range bound (T.length bs) m
-        (Literal (VNInt (fromIntegral -> n)), Literal (VUInt (fromIntegral -> m))) -> -n <= T.length bs && range bound (T.length bs) m
-        (Literal (VNInt (fromIntegral -> n)), Literal (VNInt (fromIntegral -> m))) -> -n <= T.length bs && range bound (T.length bs) (-m)
+        (Literal (Value (VUInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _)) -> n <= T.length bs && range bound (T.length bs) m
+        (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _)) -> -n <= T.length bs && range bound (T.length bs) m
+        (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VNInt (fromIntegral -> m)) _)) -> -n <= T.length bs && range bound (T.length bs) (-m)
 controlText s Regexp ctrl =
   getRule ctrl <&> \case
-    Literal (VText rxp) -> case s =~ rxp :: (T.Text, T.Text, T.Text) of
+    Literal (Value (VText rxp) _) -> case s =~ rxp :: (T.Text, T.Text, T.Text) of
       ("", s', "") -> s == s'
 
 --------------------------------------------------------------------------------
@@ -757,7 +757,7 @@ flattenGroup :: CDDL -> [Rule] -> [Rule]
 flattenGroup cddl nodes =
   mconcat
     [ case resolveIfRef cddl rule of
-        Literal {} -> [rule]
+        Literal{} -> [rule]
         Postlude {} -> [rule]
         Map {} -> [rule]
         Array {} -> [rule]
@@ -952,10 +952,10 @@ getIndicesOfChoice nodes =
     <$> mapM
       ( \x ->
           getRule x >>= \case
-            Literal (VUInt v) -> pure [fromIntegral v]
+            Literal (Value (VUInt v) _) -> pure [fromIntegral v]
             KV _ v _ ->
               getRule v >>= \case
-                Literal (VUInt v') -> pure [fromIntegral v']
+                Literal (Value (VUInt v') _) -> pure [fromIntegral v']
                 somethingElse -> error $ "Malformed value in KV in choice in .bits: " <> show somethingElse
             Range ff tt incl -> getIndicesOfRange ff tt incl
             Enum g -> getIndicesOfEnum g
@@ -966,7 +966,7 @@ getIndicesOfChoice nodes =
 getIndicesOfRange :: MonadReader CDDL m => Rule -> Rule -> RangeBound -> m [Word64]
 getIndicesOfRange ff tt incl =
   ((,) <$> getRule ff <*> getRule tt) >>= \case
-    (Literal (VUInt ff'), Literal (VUInt tt')) ->
+    (Literal (Value (VUInt ff') _), Literal (Value (VUInt tt') _)) ->
       pure $
         [ff' .. tt'] & case incl of
           ClOpen -> init

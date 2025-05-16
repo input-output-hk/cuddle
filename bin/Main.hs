@@ -226,7 +226,7 @@ run (Opts cmd cddlFile) = do
               Left err -> putStrLnErr (show err) >> exitFailure
               Right mt -> do
                 cbor <- BSC.readFile (vcInput vcOpts)
-                validateCBOR cbor (Name $ vcItemName vcOpts) mt
+                validateCBOR cbor (Name (vcItemName vcOpts) mempty) mt
 
 putStrLnErr :: String -> IO ()
 putStrLnErr = hPutStrLn stderr
