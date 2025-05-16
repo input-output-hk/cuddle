@@ -39,6 +39,7 @@ import GHC.Float
 import Text.Regex.TDFA
 import System.IO
 import System.Exit
+import Control.Exception
 
 type CDDL = CTreeRoot' Identity MonoRef
 type Rule = Node MonoRef
@@ -110,11 +111,12 @@ getRule rule = flip resolveIfRef rule <$> ask
 
 validateCBOR :: BS.ByteString -> Name -> CDDL -> IO ()
 validateCBOR bs rule cddl =
-  case validateCBOR' bs rule cddl of
+  (case validateCBOR' bs rule cddl of
     Right {} -> putStrLn "Valid"
     Left err -> do
       hPutStrLn stderr $ "Invalid " ++ show err
       exitFailure
+  ) `catch` (\(e :: PatternMatchFail) -> putStrLn $ "You uncovered a path we thought was impossible! Please submit your CDDL and CBOR to `https://github.com/input-output-hk/cuddle/issues` for us to investigate\n" <> displayException e)
 
 validateCBOR' ::
   BS.ByteString -> Name -> CDDL -> Either (ValidationTree (Term, CDDLFail)) (ValidationTree Term)
