@@ -37,6 +37,8 @@ import Data.Text.Lazy qualified as TL
 import Data.Word
 import GHC.Float
 import Text.Regex.TDFA
+import System.IO
+import System.Exit
 
 type CDDL = CTreeRoot' Identity MonoRef
 type Rule = Node MonoRef
@@ -110,7 +112,9 @@ validateCBOR :: BS.ByteString -> Name -> CDDL -> IO ()
 validateCBOR bs rule cddl =
   case validateCBOR' bs rule cddl of
     Right {} -> putStrLn "Valid"
-    Left err -> putStrLn $ "Invalid " ++ show err
+    Left err -> do
+      hPutStrLn stderr $ "Invalid " ++ show err
+      exitFailure
 
 validateCBOR' ::
   BS.ByteString -> Name -> CDDL -> Either (ValidationTree (Term, CDDLFail)) (ValidationTree Term)
