@@ -1,3 +1,5 @@
+{-# LANGUAGE DataKinds #-}
+
 -- | Optics for mutating Huddle rules
 module Codec.CBOR.Cuddle.Huddle.Optics (commentL, nameL) where
 

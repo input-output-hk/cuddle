@@ -1,8 +1,7 @@
 {-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
-{-# HLINT ignore "Redundant bracket" #-}
+{- HLINT ignore "Redundant bracket" -}
 
 module Test.Codec.CBOR.Cuddle.Huddle where
 

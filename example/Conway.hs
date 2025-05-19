@@ -1,10 +1,9 @@
 {-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE NoImplicitPrelude #-}
-{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
-{-# HLINT ignore "Use camelCase" #-}
-{-# HLINT ignore "Evaluate" #-}
+{- HLINT ignore "Use camelCase" -}
+{- HLINT ignore "Evaluate" -}
 
 module Conway where
 
