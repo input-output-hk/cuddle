@@ -1,5 +1,3 @@
-{-# LANGUAGE ScopedTypeVariables #-}
-
 -- | This module provides some utility functions to help with aligning pretty
 -- printed values by column.
 module Codec.CBOR.Cuddle.Pretty.Columnar (

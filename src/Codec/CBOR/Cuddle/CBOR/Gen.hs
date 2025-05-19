@@ -5,10 +5,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternSynonyms #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE ViewPatterns #-}
-{-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
 
 -- | Generate example CBOR given a CDDL specification
 module Codec.CBOR.Cuddle.CBOR.Gen (generateCBORTerm, generateCBORTerm') where

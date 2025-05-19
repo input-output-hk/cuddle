@@ -17,7 +17,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ghc: ["8.10.7", "9.2.8", "9.6.4", "9.8.1", "9.10.1"]
+        ghc: ["9.6.7", "9.8.4", "9.10.2", "9.12.2"]
         os: [ubuntu-latest]
     steps:
     - uses: actions/checkout@v3
@@ -31,7 +31,7 @@ jobs:
       run: cabal update
 
     - name: Cabal Configure
-      run: cabal configure --enable-tests --enable-benchmarks --write-ghc-environment-files=always
+      run: cabal configure --enable-tests --write-ghc-environment-files=always
 
     - uses: actions/cache@v3
       if: matrix.os != 'macos-latest'
@@ -72,7 +72,7 @@ jobs:
 
     - name: Install fourmolu
       run: |
-        FOURMOLU_VERSION="0.14.0.0"
+        FOURMOLU_VERSION="0.18.0.0"
         mkdir -p "$HOME/.local/bin"
         curl -sL "https://github.com/fourmolu/fourmolu/releases/download/v${FOURMOLU_VERSION}/fourmolu-${FOURMOLU_VERSION}-linux-x86_64" -o "$HOME/.local/bin/fourmolu"
         chmod a+x "$HOME/.local/bin/fourmolu"
@@ -80,4 +80,3 @@ jobs:
 
     - name: Run fourmolu
       run: ./scripts/fourmolize.sh
-

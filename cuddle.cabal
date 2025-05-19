@@ -19,29 +19,8 @@ extra-doc-files: CHANGELOG.md
 common warnings
   ghc-options: -Wall -Werror
 
-common ghc2021
-  -- These options are all on by default in GHC2021, so once we drop GHC8 we
-  -- can remove this section.
-  default-extensions:
-    DataKinds
-    DeriveGeneric
-    DeriveTraversable
-    FlexibleContexts
-    FlexibleInstances
-    GeneralizedNewtypeDeriving
-    ImportQualifiedPost
-    InstanceSigs
-    MultiParamTypeClasses
-    NamedFieldPuns
-    PolyKinds
-    RankNTypes
-    ScopedTypeVariables
-    StandaloneDeriving
-    TypeApplications
-    TypeSynonymInstances
-
 library
-  import:           warnings, ghc2021
+  import:           warnings
   exposed-modules:
     Codec.CBOR.Cuddle.CBOR.Gen
     Codec.CBOR.Cuddle.CDDL
@@ -64,7 +43,7 @@ library
 
   -- other-extensions:
   build-depends:
-    , base                >=4.14.0.0
+    , base                >=4.18.3.0
     , base16-bytestring
     , boxes
     , bytestring
@@ -88,11 +67,11 @@ library
     , tree-diff
 
   hs-source-dirs:   src
-  default-language: Haskell2010
+  default-language: GHC2021
 
 executable example
-  import:           warnings, ghc2021
-  default-language: Haskell2010
+  import:           warnings
+  default-language: GHC2021
   other-modules:
     Conway
     Monad
@@ -109,8 +88,8 @@ executable example
     , text
 
 executable cuddle
-  import:           warnings, ghc2021
-  default-language: Haskell2010
+  import:           warnings
+  default-language: GHC2021
   hs-source-dirs:   ./bin/
   main-is:          Main.hs
   build-depends:
@@ -126,8 +105,8 @@ executable cuddle
     , text
 
 test-suite cuddle-test
-  import:           warnings, ghc2021
-  default-language: Haskell2010
+  import:           warnings
+  default-language: GHC2021
   other-modules:
     Test.Codec.CBOR.Cuddle.CDDL.Examples
     Test.Codec.CBOR.Cuddle.CDDL.Gen

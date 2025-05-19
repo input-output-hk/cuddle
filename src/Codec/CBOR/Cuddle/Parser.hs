@@ -1,6 +1,5 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# OPTIONS_GHC -Wno-unused-imports #-}
 
 module Codec.CBOR.Cuddle.Parser where
 
@@ -11,27 +10,18 @@ import Codec.CBOR.Cuddle.Comments (Comment, WithComment (..), withComment, (!*>)
 import Codec.CBOR.Cuddle.Parser.Lexer (
   Parser,
   charInRange,
-  pComment,
   pCommentBlock,
-  sameLineComment,
   space,
-  (|||),
  )
-import Control.Applicative (liftA2)
 import Control.Applicative.Combinators.NonEmpty qualified as NE
-import Data.ByteString qualified as B
 import Data.Foldable (Foldable (..))
-import Data.Foldable1 (Foldable1 (..))
 import Data.Functor (void, ($>))
 import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NE
-import Data.Maybe (fromMaybe, isJust, isNothing)
-import Data.Scientific qualified as Sci
-import Data.String (IsString (..))
+import Data.Maybe (isJust)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Encoding (encodeUtf8)
-import Data.Void (Void)
 import GHC.Word (Word64, Word8)
 import Text.Megaparsec
 import Text.Megaparsec.Char hiding (space)
@@ -203,7 +193,7 @@ pGrpEntry = do
           t0 <- pType0
           pure $ GEType <$> sequence mKey <*> pure t0
       , try $ withComment <$> (GERef <$> pName <*> optional pGenericArg)
-      , withComment <$> (GEGroup <$> ("(" *> space !*> pGroup <*! space <* ")"))
+      , withComment . GEGroup <$> ("(" *> space !*> pGroup <*! space <* ")")
       ]
   pure $ GroupEntry occur (cmt <> cmt') variant
 

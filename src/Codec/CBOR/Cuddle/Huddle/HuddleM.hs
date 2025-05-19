@@ -1,3 +1,5 @@
+{-# LANGUAGE DataKinds #-}
+
 -- | Monad for declaring Huddle constructs
 module Codec.CBOR.Cuddle.Huddle.HuddleM (
   module Huddle,
