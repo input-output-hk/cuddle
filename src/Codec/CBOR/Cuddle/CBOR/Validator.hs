@@ -800,6 +800,8 @@ expandRules :: Int -> [Rule] -> Reader CDDL [[Rule]]
 expandRules remainingLen []
   | remainingLen /= 0 = pure []
 expandRules _ [] = pure [[]]
+expandRules remainingLen _
+  | remainingLen <= 0 = pure []
 expandRules remainingLen (x : xs) = do
   y <- expandRule remainingLen x
   concat
@@ -811,6 +813,8 @@ expandRules remainingLen (x : xs) = do
       y
 
 expandRule :: Int -> Rule -> Reader CDDL [[Rule]]
+expandRule maxLen _
+  | maxLen <= 0 = pure []
 expandRule maxLen rule =
   getRule rule >>= \case
     Occur o OIOptional -> pure $ ([] :) $ if maxLen > 0 then [[o]] else []
