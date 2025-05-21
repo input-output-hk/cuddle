@@ -1,8 +1,5 @@
-{-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 
@@ -15,16 +12,12 @@ import Codec.CBOR.Cuddle.CDDL.Postlude
 import Codec.CBOR.Cuddle.CDDL.Resolve
 import Codec.CBOR.Read
 import Codec.CBOR.Term
-import Control.Monad (void)
-import Control.Monad.Error.Class
-import Control.Monad.Except
+import Control.Exception
 import Control.Monad.Reader
 import Data.Bifunctor
 import Data.Bits hiding (And)
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as BSL
-import Data.Either
-import Data.Foldable (toList)
 import Data.Function ((&))
 import Data.Functor ((<&>))
 import Data.Functor.Identity
@@ -36,58 +29,61 @@ import Data.Text qualified as T
 import Data.Text.Lazy qualified as TL
 import Data.Word
 import GHC.Float
-import Text.Regex.TDFA
-import System.IO
 import System.Exit
-import Control.Exception
+import System.IO
+import Text.Regex.TDFA
 
 type CDDL = CTreeRoot' Identity MonoRef
 type Rule = Node MonoRef
 type ResolvedRule = CTree MonoRef
 
--- | The result of validation. `leaf` will be instantiated to either `Term` on
--- success or something that contains `CDDLFail` on failure.
-data ValidationTree leaf
-  = -- | The beginning of the validation
-    ValTop Rule (ValidationTree leaf)
-  | -- | A leaf of the validation
-    ValLeaf Rule leaf
-  | -- | Validation of subitems in a container
-    ValContainer Rule [ValidationTree Term] [ValidationTree leaf]
-  deriving (Show, Functor)
-
-data CDDLFail
-  = -- | The rule directly does not validate
-    DirectFail
-  | -- | The rule validated on the target but not on the control
-    ControlFail Rule
-  | -- | Each of the rules in a choice failed
-    ChoiceFail [(Rule, CDDLFail)]
-  | -- | Each of the rules in a choice failed, but for each rule, either it
-    -- directly fails or it is able to validate some items and then fail.
-    ChoiceFail' [(Rule, Either ([ValidationTree Term], [ValidationTree CDDLFail]) CDDLFail)]
-  | -- | The rule cannot be applied to the type of the item
-    UnapplicableRule
-  | -- | There are remaining rules to be applied and no values to validate
-    RemainingRules
-  | -- | There are remaining items to be validated and no rules left
-    RemainingItems
-  | -- | A KV in a map didn't find a rule to validate
-    NoApplicableRuleFound (Term, Term)
-                          [( Rule
-                           , Either
-                               (ValidationTree (Term, CDDLFail))
-                               (ValidationTree Term, ValidationTree (Term, CDDLFail))
-                           )
-                          ]
+data CBORResult
+  = ValTerm Term CDDLResult
+  | ValPair (Term, CDDLResult) (Term, CDDLResult)
   deriving (Show)
+
+data CDDLResult
+  = ChoiceFail Rule (NE.NonEmpty Rule) (NE.NonEmpty (Rule, CDDLResult))
+  | ListExpansionFail Rule [[Rule]] [[(Rule, CBORResult)]]
+  | MapExpansionFail Rule [[Rule]] [([AMatchedItem], ANonMatchedItem)]
+  | InvalidRule Rule
+  | InvalidControl Rule (Maybe CBORResult)
+  | InvalidTagged Rule (Either Word64 CBORResult)
+  | UnapplicableRule Rule
+  | Valid Rule
+  | NoApplicableRuleFound Rule [Rule] (Term, Term)
+  deriving (Show)
+
+data ANonMatchedItem = ANonMatchedItem
+  { anmiKey :: Term
+  , anmiValue :: Term
+  , anmiResults :: [Either (Rule, CDDLResult) (Rule, CDDLResult, CDDLResult)]
+  }
+  deriving (Show)
+
+data AMatchedItem = AMatchedItem
+  { amiKey :: Term
+  , amiValue :: Term
+  , amiRule :: Rule
+  }
+  deriving (Show)
+
+replaceRule :: CDDLResult -> Rule -> CDDLResult
+replaceRule (ChoiceFail _ a b) r = ChoiceFail r a b
+replaceRule (ListExpansionFail _ a b) r = ListExpansionFail r a b
+replaceRule (MapExpansionFail _ a b) r = MapExpansionFail r a b
+replaceRule (InvalidTagged _ a) r = InvalidTagged r a
+replaceRule InvalidRule {} r = InvalidRule r
+replaceRule (InvalidControl _ a) r = InvalidControl r a
+replaceRule UnapplicableRule {} r = UnapplicableRule r
+replaceRule Valid {} r = Valid r
+replaceRule (NoApplicableRuleFound _ a b) r = NoApplicableRuleFound r a b
 
 ifM :: Monad m => m Bool -> m a -> m a -> m a
 ifM b t f = do b' <- b; if b' then t else f
 
-check ::
-  MonadError (ValidationTree CDDLFail) m => (CDDLFail -> ValidationTree CDDLFail) -> Bool -> m ()
-check f c = if c then pure () else throwError $ f DirectFail
+check :: Bool -> Rule -> CDDLResult
+check c = if c then Valid else InvalidRule
 
 range :: Ord a => RangeBound -> a -> a -> Bool
 range Closed = (<=)
@@ -111,19 +107,26 @@ getRule rule = flip resolveIfRef rule <$> ask
 
 validateCBOR :: BS.ByteString -> Name -> CDDL -> IO ()
 validateCBOR bs rule cddl =
-  (case validateCBOR' bs rule cddl of
-    Right {} -> putStrLn "Valid"
-    Left err -> do
-      hPutStrLn stderr $ "Invalid " ++ show err
-      exitFailure
-  ) `catch` (\(e :: PatternMatchFail) -> putStrLn $ "You uncovered a path we thought was impossible! Please submit your CDDL and CBOR to `https://github.com/input-output-hk/cuddle/issues` for us to investigate\n" <> displayException e)
+  ( case validateCBOR' bs rule cddl of
+      ok@(ValTerm _ (Valid _)) -> do
+        putStrLn $ "Valid " ++ show ok
+        exitSuccess
+      err -> do
+        hPutStrLn stderr $ "Invalid " ++ show err
+        exitFailure
+  )
+    `catch` ( \(e :: PatternMatchFail) ->
+                putStrLn $
+                  "You uncovered a path we thought was impossible! Please submit your CDDL and CBOR to `https://github.com/input-output-hk/cuddle/issues` for us to investigate\n"
+                    <> displayException e
+            )
 
 validateCBOR' ::
-  BS.ByteString -> Name -> CDDL -> Either (ValidationTree (Term, CDDLFail)) (ValidationTree Term)
+  BS.ByteString -> Name -> CDDL -> CBORResult
 validateCBOR' bs rule cddl@(CTreeRoot tree) =
   case deserialiseFromBytes decodeTerm (BSL.fromStrict bs) of
     Left e -> error $ show e
-    Right (_, term) -> runReader (runExceptT (validateTerm term (runIdentity $ tree Map.! rule))) cddl
+    Right (_, term) -> runReader (validateTerm term (runIdentity $ tree Map.! rule)) cddl
 
 --------------------------------------------------------------------------------
 -- Terms
@@ -131,32 +134,60 @@ validateCBOR' bs rule cddl@(CTreeRoot tree) =
 -- | Core function that validates a CBOR term to a particular rule of the CDDL
 -- spec
 validateTerm ::
-  (MonadError (ValidationTree (Term, CDDLFail)) m, MonadReader CDDL m) =>
-  Term -> Rule -> m (ValidationTree Term)
-validateTerm term =
-  let f = modifyError (fmap (term,)) . fmap (fmap (const term))
-      g = modifyError (fmap (term,))
-   in case term of
-        TInt i -> f . validateInt i
-        TInteger i -> f . validateInteger i
-        TBytes b -> f . validateBytes b
-        TBytesI b -> f . validateBytes (BSL.toStrict b)
-        TString s -> f . validateText s
-        TStringI s -> f . validateText (TL.toStrict s)
-        TList ts -> g . fmap ($ term) . validateList ts
-        TListI ts -> g . fmap ($ term) . validateList ts
-        TMap ts -> g . fmap ($ term) . validateMap ts
-        TMapI ts -> g . fmap ($ term) . validateMap ts
-        TTagged w t -> g . fmap ($ term) . validateTagged w t
-        TBool b -> f . validateBool b
-        TNull -> f . validateNull
-        TSimple s -> f . validateSimple s
-        THalf h -> f . validateHalf h
-        TFloat h -> f . validateFloat h
-        TDouble d -> f . validateDouble d
+  MonadReader CDDL m =>
+  Term -> Rule -> m CBORResult
+validateTerm term rule =
+  let f = case term of
+        TInt i -> validateInt i
+        TInteger i -> validateInteger i
+        TBytes b -> validateBytes b
+        TBytesI b -> validateBytes (BSL.toStrict b)
+        TString s -> validateText s
+        TStringI s -> validateText (TL.toStrict s)
+        TList ts -> validateList ts
+        TListI ts -> validateList ts
+        TMap ts -> validateMap ts
+        TMapI ts -> validateMap ts
+        TTagged w t -> validateTagged w t
+        TBool b -> validateBool b
+        TNull -> validateNull
+        TSimple s -> validateSimple s
+        THalf h -> validateHalf h
+        TFloat h -> validateFloat h
+        TDouble d -> validateDouble d
+   in ValTerm term <$> f rule
 
 --------------------------------------------------------------------------------
 -- Ints and integers
+
+ctrlAnd ::
+  Monad m =>
+  (Rule -> m CDDLResult) -> Rule -> Rule -> m (Rule -> CDDLResult)
+ctrlAnd v tgt ctrl =
+  v tgt >>= \case
+    Valid _ ->
+      v ctrl <&> \case
+        Valid _ -> Valid
+        _ -> flip InvalidControl Nothing
+    _ -> pure InvalidRule
+
+ctrlOp ::
+  Monad m =>
+  (Rule -> m CDDLResult) ->
+  CtlOp ->
+  Rule ->
+  Rule ->
+  (CtlOp -> Rule -> m (Either (Maybe CBORResult) ())) ->
+  m (Rule -> CDDLResult)
+ctrlOp v And tgt ctrl _ = ctrlAnd v tgt ctrl
+ctrlOp v Within tgt ctrl _ = ctrlAnd v tgt ctrl
+ctrlOp v op tgt ctrl vctrl =
+  v tgt >>= \case
+    Valid _ ->
+      vctrl op ctrl <&> \case
+        Left err -> flip InvalidControl err
+        Right () -> Valid
+    _ -> pure InvalidRule
 
 -- | Validation of an Int. CBOR categorizes every integral in `TInt` or `TInteger` but it can be the case that we are decoding something that is expected to be a `Word64` even if we get a `TInt`.
 --
@@ -168,86 +199,76 @@ validateTerm term =
 -- For this reason, we cannot assume that bounds or literals are going to be
 -- Ints, so we convert everything to Integer.
 validateInt ::
-  (MonadError (ValidationTree CDDLFail) m, MonadReader CDDL m) => Int -> Rule -> m (ValidationTree ())
-validateInt ii@(fromIntegral @Int @Integer -> i) rule = do
-  getRule rule >>= \case
-    -- a = any
-    Postlude PTAny -> pure ()
-    -- a = int
-    Postlude PTInt -> pure ()
-    -- a = uint
-    Postlude PTUInt -> check (ValLeaf rule) $ i >= 0
-    -- a = nint
-    Postlude PTNInt -> check (ValLeaf rule) $ i <= 0
-    -- a = x
-    Literal (Value (VUInt i') _) -> check (ValLeaf rule) $ i == fromIntegral i'
-    -- a = -x
-    Literal (Value (VNInt i') _) -> check (ValLeaf rule) $ -i == fromIntegral i'
-    -- a = foo .and bar
-    Control And tgt ctrl ->
-      validateInt ii tgt >> void (withError (fmap (const $ ControlFail ctrl)) $ validateInt ii ctrl)
-    -- a = foo .within bar
-    Control Within tgt ctrl ->
-      validateInt ii tgt >> void (withError (fmap (const $ ControlFail ctrl)) $ validateInt ii ctrl)
-    -- a = foo .ctrl bar
-    Control op tgt ctrl ->
-      validateInt ii tgt
-        >> ifM (controlInt ii op ctrl) (pure ()) (throwError (ValLeaf rule (ControlFail ctrl)))
-    -- a = foo / bar
-    Choice opts ->
-      void $ validateChoice (validateInt ii) rule opts
-    -- a = x..y
-    Range low high bound -> do
-      ((,) <$> getRule low <*> getRule high)
-        >>= check (ValLeaf rule) . \case
-          (Literal (Value (VUInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _)) -> n <= i && range bound i m
-          (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _)) -> -n <= i && range bound i m
-          (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VNInt (fromIntegral -> m)) _)) -> -n <= i && range bound i (-m)
-    -- a = &(x, y, z)
-    Enum g ->
-      getRule g >>= \case
-        Group g' -> void $ validateInt ii (MIt (Choice (NE.fromList g')))
-    -- a = x: y
-    -- Note KV cannot appear on its own, but we will use this when validating
-    -- lists.
-    KV _ v _ -> void $ validateInt ii v
-    -- No other rule can be applied to ints
-    _ -> throwError (ValLeaf rule UnapplicableRule)
-  pure (ValLeaf rule ())
+  MonadReader CDDL m => Int -> Rule -> m CDDLResult
+validateInt ii@(fromIntegral @Int @Integer -> i) rule =
+  ($ rule) <$> do
+    getRule rule >>= \case
+      -- a = any
+      Postlude PTAny -> pure Valid
+      -- a = int
+      Postlude PTInt -> pure Valid
+      -- a = uint
+      Postlude PTUInt -> pure $ check $ i >= 0
+      -- a = nint
+      Postlude PTNInt -> pure $ check $ i <= 0
+      -- a = x
+      Literal (Value (VUInt i') _) -> pure $ check $ i == fromIntegral i'
+      -- a = -x
+      Literal (Value (VNInt i') _) -> pure $ check $ -i == fromIntegral i'
+      -- a = foo .ctrl bar
+      Control op tgt ctrl -> ctrlOp (validateInt ii) op tgt ctrl (controlInt ii)
+      -- a = foo / bar
+      Choice opts -> validateChoice (validateInt ii) opts
+      -- a = x..y
+      Range low high bound -> do
+        ((,) <$> getRule low <*> getRule high)
+          <&> check . \case
+            (Literal (Value (VUInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _)) ->
+              n <= i && range bound i m
+            (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _)) ->
+              -n <= i && range bound i m
+            (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VNInt (fromIntegral -> m)) _)) ->
+              -n <= i && range bound i (-m)
+            (Literal (Value (VUInt {}) _), Literal (Value (VNInt {}) _)) -> False
+      -- a = &(x, y, z)
+      Enum g ->
+        getRule g >>= \case
+          Group g' -> validateInt ii (MIt (Choice (NE.fromList g'))) <&> replaceRule
+      -- a = x: y
+      -- Note KV cannot appear on its own, but we will use this when validating
+      -- lists.
+      KV _ v _ -> validateInt ii v <&> replaceRule
+      -- No other rule can be applied to ints
+      _ -> pure UnapplicableRule
 
--- | Validating a `Choice` either succeeds or throws an error with a
--- `ValidationTree` that contains `ChoiceFail` or `ChoiceFail'`.
 validateChoice ::
-  forall m t a.
-  (MonadError (ValidationTree CDDLFail) m, Foldable t) => (Rule -> m a) -> Rule -> t Rule -> m a
-validateChoice f rule = go . toList
+  forall m. Monad m => (Rule -> m CDDLResult) -> NE.NonEmpty Rule -> m (Rule -> CDDLResult)
+validateChoice v rules = go rules
   where
-    go :: [Rule] -> m a
-    go [] = throwError (ValLeaf rule (ChoiceFail []))
-    go (x : xs) = do
-      tryError (f x) >>= \case
-        -- if x succeeds then we are done
-        Right a -> pure a
-        -- if x fails, we try the rest. Should they succeed we are done, but if
-        -- they throw an error we append our error to the one they return.
-        Left (ValLeaf r e) ->
-          tryError (go xs) >>= \case
-            Right a -> pure a
-            Left (ValLeaf _ (ChoiceFail es)) -> throwError $ ValLeaf rule (ChoiceFail ((x, e) : es))
-            Left (ValLeaf _ (ChoiceFail' es)) -> throwError $ ValLeaf rule (ChoiceFail' ((x, Left ([], [ValLeaf r e])) : es))
-        -- if x fails, we try the rest. Should they succeed we are done, but if
-        -- they throw an error we append our error to the one they return.
-        Left (ValContainer _ v e) ->
-          tryError (go xs) >>= \case
-            Right a -> pure a
-            Left (ValLeaf _ (ChoiceFail' es)) -> throwError $ ValLeaf rule (ChoiceFail' ((x, Left (v, e)) : es))
-            Left (ValLeaf _ (ChoiceFail es)) -> throwError $ ValLeaf rule (ChoiceFail' ((x, Left (v, e)) : map (second Right) es))
+    go :: NE.NonEmpty Rule -> m (Rule -> CDDLResult)
+    go (choice NE.:| xs) = do
+      v choice >>= \case
+        Valid _ -> pure Valid
+        err -> case NE.nonEmpty xs of
+          Nothing -> pure $ \r -> ChoiceFail r rules ((choice, err) NE.:| [])
+          Just choices ->
+            ($ dummyRule) <$> go choices >>= \case
+              Valid _ -> pure Valid
+              ChoiceFail _ _ errors -> pure $ \r -> ChoiceFail r rules ((choice, err) NE.<| errors)
+
+dummyRule :: Rule
+dummyRule = MRuleRef (Name "dummy" mempty)
+
+simpleCtrl :: Bool -> Either (Maybe CBORResult) ()
+simpleCtrl c = if c then Right () else Left Nothing
 
 -- | The control operators for ints
-controlInt :: forall m. MonadReader CDDL m => Int -> CtlOp -> Rule -> m Bool
+controlInt ::
+  forall m. MonadReader CDDL m => Int -> CtlOp -> Rule -> m (Either (Maybe CBORResult) ())
 controlInt (fromIntegral @Int @Integer -> i) Size ctrl =
   getRule ctrl <&> \case
-    Literal (Value (VUInt sz) _) -> 0 <= i && i < 256 ^ sz
+    Literal (Value (VUInt sz) _) ->
+      simpleCtrl $ 0 <= i && i < 256 ^ sz
 controlInt i Bits ctrl = do
   indices <-
     getRule ctrl >>= \case
@@ -255,105 +276,112 @@ controlInt i Bits ctrl = do
       Choice nodes -> getIndicesOfChoice nodes
       Range ff tt incl -> getIndicesOfRange ff tt incl
       Enum g -> getIndicesOfEnum g
-  go (IS.fromList (map fromIntegral indices)) i 0
+  pure $ simpleCtrl (go (IS.fromList (map fromIntegral indices)) i 0)
   where
-    go :: IS.IntSet -> Int -> IS.Key -> m Bool
-    go _ 0 _ = pure True
+    go :: IS.IntSet -> Int -> IS.Key -> Bool
+    go _ 0 _ = True
     go indices n idx =
       let bitSet = testBit n 0
           allowed = not bitSet || IS.member idx indices
        in if allowed
             then go indices (shiftR n 1) (idx + 1)
-            else pure False
+            else False
 controlInt (fromIntegral @Int @Integer -> i) Lt ctrl =
-  getRule ctrl <&> \case
-    Literal (Value (VUInt i') _) -> i < fromIntegral i'
-    Literal (Value (VNInt i') _) -> i < -fromIntegral i'
+  getRule ctrl
+    <&> simpleCtrl . \case
+      Literal (Value (VUInt i') _) -> i < fromIntegral i'
+      Literal (Value (VNInt i') _) -> i < -fromIntegral i'
 controlInt (fromIntegral @Int @Integer -> i) Gt ctrl =
-  getRule ctrl <&> \case
-    Literal (Value (VUInt i') _) -> i > fromIntegral i'
-    Literal (Value (VNInt i') _) -> i > -fromIntegral i'
+  getRule ctrl
+    <&> simpleCtrl . \case
+      Literal (Value (VUInt i') _) -> i > fromIntegral i'
+      Literal (Value (VNInt i') _) -> i > -fromIntegral i'
 controlInt (fromIntegral @Int @Integer -> i) Le ctrl =
-  getRule ctrl <&> \case
-    Literal (Value (VUInt i') _) -> i <= fromIntegral i'
-    Literal (Value (VNInt i') _) -> i <= -fromIntegral i'
+  getRule ctrl
+    <&> simpleCtrl . \case
+      Literal (Value (VUInt i') _) -> i <= fromIntegral i'
+      Literal (Value (VNInt i') _) -> i <= -fromIntegral i'
 controlInt (fromIntegral @Int @Integer -> i) Ge ctrl =
-  getRule ctrl <&> \case
-    Literal (Value (VUInt i') _) -> i >= fromIntegral i'
-    Literal (Value (VNInt i') _) -> i >= -fromIntegral i'
+  getRule ctrl
+    <&> simpleCtrl . \case
+      Literal (Value (VUInt i') _) -> i >= fromIntegral i'
+      Literal (Value (VNInt i') _) -> i >= -fromIntegral i'
 controlInt (fromIntegral @Int @Integer -> i) Eq ctrl =
-  getRule ctrl <&> \case
-    Literal (Value (VUInt i') _) -> i == fromIntegral i'
-    Literal (Value (VNInt i') _) -> i == -fromIntegral i'
+  getRule ctrl
+    <&> simpleCtrl . \case
+      Literal (Value (VUInt i') _) -> i == fromIntegral i'
+      Literal (Value (VNInt i') _) -> i == -fromIntegral i'
 controlInt (fromIntegral @Int @Integer -> i) Ne ctrl =
-  getRule ctrl <&> \case
-    Literal (Value (VUInt i') _) -> i /= fromIntegral i'
-    Literal (Value (VNInt i') _) -> i /= -fromIntegral i'
+  getRule ctrl
+    <&> simpleCtrl . \case
+      Literal (Value (VUInt i') _) -> i /= fromIntegral i'
+      Literal (Value (VNInt i') _) -> i /= -fromIntegral i'
 
 -- | Validating an Integer
 validateInteger ::
-  (MonadError (ValidationTree CDDLFail) m, MonadReader CDDL m) =>
-  Integer -> Rule -> m (ValidationTree ())
-validateInteger i rule = do
-  getRule rule >>= \case
-    -- echo "C24101" | xxd -r -p - example.cbor
-    -- echo "foo = int" > a.cddl
-    -- cddl a.cddl validate example.cbor
-    --
-    -- but
-    --
-    -- echo "C249010000000000000000"| xxd -r -p - example.cbor
-    -- echo "foo = int" > a.cddl
-    -- cddl a.cddl validate example.cbor
-    --
-    -- and they are both bigints?
+  MonadReader CDDL m =>
+  Integer -> Rule -> m CDDLResult
+validateInteger i rule =
+  ($ rule) <$> do
+    getRule rule >>= \case
+      -- echo "C24101" | xxd -r -p - example.cbor
+      -- echo "foo = int" > a.cddl
+      -- cddl a.cddl validate example.cbor
+      --
+      -- but
+      --
+      -- echo "C249010000000000000000"| xxd -r -p - example.cbor
+      -- echo "foo = int" > a.cddl
+      -- cddl a.cddl validate example.cbor
+      --
+      -- and they are both bigints?
 
-    -- a = any
-    Postlude PTAny -> pure ()
-    -- a = int
-    Postlude PTInt -> pure ()
-    -- a = uint
-    Postlude PTUInt -> check (ValLeaf rule) (i >= 0)
-    -- a = nint
-    Postlude PTNInt -> check (ValLeaf rule) (i <= 0)
-    -- a = x
-    Literal (Value (VUInt i') _) -> check (ValLeaf rule) $ i == fromIntegral i'
-    -- a = -x
-    Literal (Value (VNInt i') _) -> check (ValLeaf rule) $ -i == fromIntegral i'
-    -- a = <big number>
-    Literal (Value (VBignum i') _) -> check (ValLeaf rule) $ i == i'
-    -- a = foo .and bar
-    Control And tgt ctrl ->
-      validateInteger i tgt >> void (withError (fmap (const $ ControlFail ctrl)) $ validateInteger i ctrl)
-    -- a = foo .within bar
-    Control Within tgt ctrl ->
-      validateInteger i tgt >> void (withError (fmap (const $ ControlFail ctrl)) $ validateInteger i ctrl)
-    -- a = foo .ctrl bar
-    Control op tgt ctrl ->
-      validateInteger i tgt
-        >> ifM (controlInteger i op ctrl) (pure ()) (throwError (ValLeaf rule (ControlFail ctrl)))
-    -- a = foo / bar
-    Choice opts ->
-      void $ validateChoice (validateInteger i) rule opts
-    -- a = x..y
-    Range low high bound ->
-      ((,) <$> getRule low <*> getRule high)
-        >>= check (ValLeaf rule) . \case
-          (Literal (Value (VUInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _)) -> n <= i && range bound i m
-          (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _)) -> -n <= i && range bound i m
-          (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VNInt (fromIntegral -> m)) _)) -> -n <= i && range bound i (-m)
-          (Literal (Value (VBignum n) _), Literal (Value (VUInt (fromIntegral -> m)) _)) -> n <= i && range bound i m
-          (Literal (Value (VBignum n) _), Literal (Value (VNInt (fromIntegral -> m)) _)) -> n <= i && range bound i (-m)
-          (Literal (Value (VUInt (fromIntegral -> n)) _), Literal (Value (VBignum m) _)) -> n <= i && range bound i m
-          (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VBignum m) _)) -> (-n) <= i && range bound i m
-    _ -> throwError (ValLeaf rule UnapplicableRule)
-  pure (ValLeaf rule ())
+      -- a = any
+      Postlude PTAny -> pure Valid
+      -- a = int
+      Postlude PTInt -> pure Valid
+      -- a = uint
+      Postlude PTUInt -> pure $ check (i >= 0)
+      -- a = nint
+      Postlude PTNInt -> pure $ check (i <= 0)
+      -- a = x
+      Literal (Value (VUInt i') _) -> pure $ check $ i == fromIntegral i'
+      -- a = -x
+      Literal (Value (VNInt i') _) -> pure $ check $ -i == fromIntegral i'
+      -- a = <big number>
+      Literal (Value (VBignum i') _) -> pure $ check $ i == i'
+      -- a = foo .ctrl bar
+      Control op tgt ctrl -> ctrlOp (validateInteger i) op tgt ctrl (controlInteger i)
+      -- a = foo / bar
+      Choice opts -> validateChoice (validateInteger i) opts
+      -- a = x..y
+      Range low high bound ->
+        ((,) <$> getRule low <*> getRule high)
+          <&> check . \case
+            (Literal (Value (VUInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _)) -> n <= i && range bound i m
+            (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _)) -> -n <= i && range bound i m
+            (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VNInt (fromIntegral -> m)) _)) -> -n <= i && range bound i (-m)
+            (Literal (Value (VBignum n) _), Literal (Value (VUInt (fromIntegral -> m)) _)) -> n <= i && range bound i m
+            (Literal (Value (VBignum n) _), Literal (Value (VNInt (fromIntegral -> m)) _)) -> n <= i && range bound i (-m)
+            (Literal (Value (VUInt (fromIntegral -> n)) _), Literal (Value (VBignum m) _)) -> n <= i && range bound i m
+            (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VBignum m) _)) -> (-n) <= i && range bound i m
+      -- a = &(x, y, z)
+      Enum g ->
+        getRule g >>= \case
+          Group g' -> validateInteger i (MIt (Choice (NE.fromList g'))) <&> replaceRule
+      -- a = x: y
+      -- Note KV cannot appear on its own, but we will use this when validating
+      -- lists.
+      KV _ v _ -> validateInteger i v <&> replaceRule
+      _ -> pure UnapplicableRule
 
 -- | Controls for an Integer
-controlInteger :: MonadReader CDDL m => Integer -> CtlOp -> Rule -> m Bool
+controlInteger ::
+  forall m. MonadReader CDDL m => Integer -> CtlOp -> Rule -> m (Either (Maybe CBORResult) ())
 controlInteger i Size ctrl =
   getRule ctrl <&> \case
-    Literal (Value (VUInt sz) _) -> 0 <= i && i < 256 ^ sz
+    Literal (Value (VUInt sz) _) ->
+      simpleCtrl $ 0 <= i && i < 256 ^ sz
 controlInteger i Bits ctrl = do
   indices <-
     getRule ctrl >>= \case
@@ -361,45 +389,51 @@ controlInteger i Bits ctrl = do
       Choice nodes -> getIndicesOfChoice nodes
       Range ff tt incl -> getIndicesOfRange ff tt incl
       Enum g -> getIndicesOfEnum g
-  go (IS.fromList (map fromIntegral indices)) i 0
+  pure $ simpleCtrl $ go (IS.fromList (map fromIntegral indices)) i 0
   where
-    go _ 0 _ = pure True
+    go _ 0 _ = True
     go indices n idx =
       let bitSet = testBit n 0
           allowed = not bitSet || IS.member idx indices
        in if allowed
             then go indices (shiftR n 1) (idx + 1)
-            else pure False
+            else False
 controlInteger i Lt ctrl =
-  getRule ctrl <&> \case
-    Literal (Value (VUInt i') _) -> i < fromIntegral i'
-    Literal (Value (VNInt i') _) -> i < -fromIntegral i'
-    Literal (Value (VBignum i') _) -> i < i'
+  getRule ctrl
+    <&> simpleCtrl . \case
+      Literal (Value (VUInt i') _) -> i < fromIntegral i'
+      Literal (Value (VNInt i') _) -> i < -fromIntegral i'
+      Literal (Value (VBignum i') _) -> i < i'
 controlInteger i Gt ctrl =
-  getRule ctrl <&> \case
-    Literal (Value (VUInt i') _) -> i > fromIntegral i'
-    Literal (Value (VNInt i') _) -> i > -fromIntegral i'
-    Literal (Value (VBignum i') _) -> i > i'
+  getRule ctrl
+    <&> simpleCtrl . \case
+      Literal (Value (VUInt i') _) -> i > fromIntegral i'
+      Literal (Value (VNInt i') _) -> i > -fromIntegral i'
+      Literal (Value (VBignum i') _) -> i > i'
 controlInteger i Le ctrl =
-  getRule ctrl <&> \case
-    Literal (Value (VUInt i') _) -> i <= fromIntegral i'
-    Literal (Value (VNInt i') _) -> i <= -fromIntegral i'
-    Literal (Value (VBignum i') _) -> i <= i'
+  getRule ctrl
+    <&> simpleCtrl . \case
+      Literal (Value (VUInt i') _) -> i <= fromIntegral i'
+      Literal (Value (VNInt i') _) -> i <= -fromIntegral i'
+      Literal (Value (VBignum i') _) -> i <= i'
 controlInteger i Ge ctrl =
-  getRule ctrl <&> \case
-    Literal (Value (VUInt i') _) -> i >= fromIntegral i'
-    Literal (Value (VNInt i') _) -> i >= -fromIntegral i'
-    Literal (Value (VBignum i') _) -> i >= i'
+  getRule ctrl
+    <&> simpleCtrl . \case
+      Literal (Value (VUInt i') _) -> i >= fromIntegral i'
+      Literal (Value (VNInt i') _) -> i >= -fromIntegral i'
+      Literal (Value (VBignum i') _) -> i >= i'
 controlInteger i Eq ctrl =
-  getRule ctrl <&> \case
-    Literal (Value (VUInt i') _) -> i == fromIntegral i'
-    Literal (Value (VNInt i') _) -> i == -fromIntegral i'
-    Literal (Value (VBignum i') _) -> i == i'
+  getRule ctrl
+    <&> simpleCtrl . \case
+      Literal (Value (VUInt i') _) -> i == fromIntegral i'
+      Literal (Value (VNInt i') _) -> i == -fromIntegral i'
+      Literal (Value (VBignum i') _) -> i == i'
 controlInteger i Ne ctrl =
-  getRule ctrl <&> \case
-    Literal (Value (VUInt i') _) -> i /= fromIntegral i'
-    Literal (Value (VNInt i') _) -> i /= -fromIntegral i'
-    Literal (Value (VBignum i') _) -> i /= i'
+  getRule ctrl
+    <&> simpleCtrl . \case
+      Literal (Value (VUInt i') _) -> i /= fromIntegral i'
+      Literal (Value (VNInt i') _) -> i /= -fromIntegral i'
+      Literal (Value (VBignum i') _) -> i /= i'
 
 --------------------------------------------------------------------------------
 -- Floating point (Float16, Float32, Float64)
@@ -409,198 +443,172 @@ controlInteger i Ne ctrl =
 
 -- | Validating a `Float16`
 validateHalf ::
-  (MonadError (ValidationTree CDDLFail) m, MonadReader CDDL m) =>
-  Float -> Rule -> m (ValidationTree ())
-validateHalf f rule = do
-  getRule rule >>= \case
-    -- a = any
-    Postlude PTAny -> pure ()
-    -- a = float16
-    Postlude PTHalf -> pure ()
-    -- a = 0.5
-    Literal (Value (VFloat16 f') _) -> check (ValLeaf rule) $ f == f'
-    -- a = foo / bar
-    Choice opts ->
-      void $ validateChoice (validateHalf f) rule opts
-    -- a = foo .and bar
-    Control And tgt ctrl -> do
-      validateHalf f tgt >> void (withError (fmap (const $ ControlFail ctrl)) $ validateHalf f ctrl)
-    -- a = foo .within bar
-    Control Within tgt ctrl ->
-      validateHalf f tgt >> void (withError (fmap (const $ ControlFail ctrl)) $ validateHalf f ctrl)
-    -- a = foo .ctrl bar
-    Control op tgt ctrl ->
-      validateHalf f tgt
-        >> ifM (controlHalf f op ctrl) (pure ()) (throwError (ValLeaf rule (ControlFail ctrl)))
-    -- a = x..y
-    Range low high bound ->
-      ((,) <$> getRule low <*> getRule high)
-        >>= check (ValLeaf rule) . \case
-          (Literal (Value (VFloat16 n) _), Literal (Value (VFloat16 m) _)) -> n <= f && range bound f m
-    _ -> throwError (ValLeaf rule UnapplicableRule)
-  pure (ValLeaf rule ())
+  MonadReader CDDL m =>
+  Float -> Rule -> m CDDLResult
+validateHalf f rule =
+  ($ rule) <$> do
+    getRule rule >>= \case
+      -- a = any
+      Postlude PTAny -> pure Valid
+      -- a = float16
+      Postlude PTHalf -> pure Valid
+      -- a = 0.5
+      Literal (Value (VFloat16 f') _) -> pure $ check $ f == f'
+      -- a = foo / bar
+      Choice opts -> validateChoice (validateHalf f) opts
+      -- a = foo .ctrl bar
+      Control op tgt ctrl -> ctrlOp (validateHalf f) op tgt ctrl (controlHalf f)
+      -- a = x..y
+      Range low high bound ->
+        ((,) <$> getRule low <*> getRule high)
+          <&> check . \case
+            (Literal (Value (VFloat16 n) _), Literal (Value (VFloat16 m) _)) -> n <= f && range bound f m
+      _ -> pure UnapplicableRule
 
 -- | Controls for `Float16`
-controlHalf :: MonadReader CDDL m => Float -> CtlOp -> Rule -> m Bool
+controlHalf :: MonadReader CDDL m => Float -> CtlOp -> Rule -> m (Either (Maybe CBORResult) ())
 controlHalf f Eq ctrl =
-  getRule ctrl <&> \case
-    Literal (Value (VFloat16 f') _) -> f == f'
+  getRule ctrl
+    <&> simpleCtrl . \case
+      Literal (Value (VFloat16 f') _) -> f == f'
 controlHalf f Ne ctrl =
-  getRule ctrl <&> \case
-    Literal (Value (VFloat16 f') _) -> f /= f'
+  getRule ctrl
+    <&> simpleCtrl . \case
+      Literal (Value (VFloat16 f') _) -> f /= f'
 
 -- | Validating a `Float32`
 validateFloat ::
-  (MonadError (ValidationTree CDDLFail) m, MonadReader CDDL m) =>
-  Float -> Rule -> m (ValidationTree ())
-validateFloat f rule = do
-  getRule rule >>= \case
-    -- a = any
-    Postlude PTAny -> pure ()
-    -- a = float32
-    Postlude PTFloat -> pure ()
-    -- a = 0.000000005
-    -- TODO: it is unclear if smaller floats should also validate
-    Literal (Value (VFloat32 f') _) -> check (ValLeaf rule) $ f == f'
-    -- a = foo / bar
-    Choice opts ->
-      void $ validateChoice (validateFloat f) rule opts
-    -- a = foo .and bar
-    Control And tgt ctrl ->
-      validateFloat f tgt >> void (withError (fmap (const $ ControlFail ctrl)) $ validateFloat f ctrl)
-    -- a = foo .within bar
-    Control Within tgt ctrl ->
-      validateFloat f tgt >> void (withError (fmap (const $ ControlFail ctrl)) $ validateFloat f ctrl)
-    -- a = foo .ctrl bar
-    Control op tgt ctrl ->
-      validateFloat f tgt
-        >> ifM (controlFloat f op ctrl) (pure ()) (throwError (ValLeaf rule (ControlFail ctrl)))
-    -- a = x..y
-    -- TODO it is unclear if this should mix floating point types too
-    Range low high bound ->
-      ((,) <$> getRule low <*> getRule high)
-        >>= check (ValLeaf rule) . \case
-          (Literal (Value (VFloat16 n) _), Literal (Value (VFloat16 m) _)) -> n <= f && range bound f m
-          (Literal (Value (VFloat32 n) _), Literal (Value (VFloat32 m) _)) -> n <= f && range bound f m
-    _ -> throwError (ValLeaf rule UnapplicableRule)
-  pure (ValLeaf rule ())
+  MonadReader CDDL m =>
+  Float -> Rule -> m CDDLResult
+validateFloat f rule =
+  ($ rule) <$> do
+    getRule rule >>= \case
+      -- a = any
+      Postlude PTAny -> pure Valid
+      -- a = float32
+      Postlude PTFloat -> pure Valid
+      -- a = 0.000000005
+      -- TODO: it is unclear if smaller floats should also validate
+      Literal (Value (VFloat32 f') _) -> pure $ check $ f == f'
+      -- a = foo / bar
+      Choice opts -> validateChoice (validateFloat f) opts
+      -- a = foo .ctrl bar
+      Control op tgt ctrl -> ctrlOp (validateFloat f) op tgt ctrl (controlFloat f)
+      -- a = x..y
+      -- TODO it is unclear if this should mix floating point types too
+      Range low high bound ->
+        ((,) <$> getRule low <*> getRule high)
+          <&> check . \case
+            (Literal (Value (VFloat16 n) _), Literal (Value (VFloat16 m) _)) -> n <= f && range bound f m
+            (Literal (Value (VFloat32 n) _), Literal (Value (VFloat32 m) _)) -> n <= f && range bound f m
+      _ -> pure UnapplicableRule
 
 -- | Controls for `Float32`
-controlFloat :: MonadReader CDDL m => Float -> CtlOp -> Rule -> m Bool
+controlFloat :: MonadReader CDDL m => Float -> CtlOp -> Rule -> m (Either (Maybe CBORResult) ())
 controlFloat f Eq ctrl =
-  getRule ctrl <&> \case
-    Literal (Value (VFloat16 f') _) -> f == f'
-    Literal (Value (VFloat32 f') _) -> f == f'
+  getRule ctrl
+    <&> simpleCtrl . \case
+      Literal (Value (VFloat16 f') _) -> f == f'
+      Literal (Value (VFloat32 f') _) -> f == f'
 controlFloat f Ne ctrl =
-  getRule ctrl <&> \case
-    Literal (Value (VFloat16 f') _) -> f /= f'
-    Literal (Value (VFloat32 f') _) -> f /= f'
+  getRule ctrl
+    <&> simpleCtrl . \case
+      Literal (Value (VFloat16 f') _) -> f /= f'
+      Literal (Value (VFloat32 f') _) -> f /= f'
 
 -- | Validating a `Float64`
 validateDouble ::
-  (MonadError (ValidationTree CDDLFail) m, MonadReader CDDL m) =>
-  Double -> Rule -> m (ValidationTree ())
-validateDouble f rule = do
-  getRule rule >>= \case
-    -- a = any
-    Postlude PTAny -> pure ()
-    -- a = float64
-    Postlude PTDouble -> pure ()
-    -- a = 0.0000000000000000000000000000000000000000000005
-    -- TODO: it is unclear if smaller floats should also validate
-    Literal (Value (VFloat64 f') _) -> check (ValLeaf rule) $ f == f'
-    -- a = foo / bar
-    Choice opts -> void $ validateChoice (validateDouble f) rule opts
-    -- a = foo .and bar
-    Control And tgt ctrl ->
-      validateDouble f tgt >> void (withError (fmap (const $ ControlFail ctrl)) $ validateDouble f ctrl)
-    -- a = foo .within bar
-    Control Within tgt ctrl ->
-      validateDouble f tgt >> void (withError (fmap (const $ ControlFail ctrl)) $ validateDouble f ctrl)
-    -- a = foo .ctrl bar
-    Control op tgt ctrl -> do
-      validateDouble f tgt
-        >> ifM (controlDouble f op ctrl) (pure ()) (throwError (ValLeaf rule (ControlFail ctrl)))
-    -- a = x..y
-    -- TODO it is unclear if this should mix floating point types too
-    Range low high bound ->
-      ((,) <$> getRule low <*> getRule high)
-        >>= check (ValLeaf rule) . \case
-          (Literal (Value (VFloat16 (float2Double -> n)) _), Literal (Value (VFloat16 (float2Double -> m)) _)) -> n <= f && range bound f m
-          (Literal (Value (VFloat32 (float2Double -> n)) _), Literal (Value (VFloat32 (float2Double -> m)) _)) -> n <= f && range bound f m
-          (Literal (Value (VFloat64 n) _), Literal (Value (VFloat64 m) _)) -> n <= f && range bound f m
-    _ -> throwError (ValLeaf rule UnapplicableRule)
-  pure (ValLeaf rule ())
+  MonadReader CDDL m =>
+  Double -> Rule -> m CDDLResult
+validateDouble f rule =
+  ($ rule) <$> do
+    getRule rule >>= \case
+      -- a = any
+      Postlude PTAny -> pure Valid
+      -- a = float64
+      Postlude PTDouble -> pure Valid
+      -- a = 0.0000000000000000000000000000000000000000000005
+      -- TODO: it is unclear if smaller floats should also validate
+      Literal (Value (VFloat64 f') _) -> pure $ check $ f == f'
+      -- a = foo / bar
+      Choice opts -> validateChoice (validateDouble f) opts
+      -- a = foo .ctrl bar
+      Control op tgt ctrl -> ctrlOp (validateDouble f) op tgt ctrl (controlDouble f)
+      -- a = x..y
+      -- TODO it is unclear if this should mix floating point types too
+      Range low high bound ->
+        ((,) <$> getRule low <*> getRule high)
+          <&> check . \case
+            (Literal (Value (VFloat16 (float2Double -> n)) _), Literal (Value (VFloat16 (float2Double -> m)) _)) -> n <= f && range bound f m
+            (Literal (Value (VFloat32 (float2Double -> n)) _), Literal (Value (VFloat32 (float2Double -> m)) _)) -> n <= f && range bound f m
+            (Literal (Value (VFloat64 n) _), Literal (Value (VFloat64 m) _)) -> n <= f && range bound f m
+      _ -> pure UnapplicableRule
 
 -- | Controls for `Float64`
-controlDouble :: MonadReader CDDL m => Double -> CtlOp -> Rule -> m Bool
+controlDouble :: MonadReader CDDL m => Double -> CtlOp -> Rule -> m (Either (Maybe CBORResult) ())
 controlDouble f Eq ctrl =
-  getRule ctrl <&> \case
-    Literal (Value (VFloat16 f') _) -> f == float2Double f'
-    Literal (Value (VFloat32 f') _) -> f == float2Double f'
-    Literal (Value (VFloat64 f') _) -> f == f'
+  getRule ctrl
+    <&> simpleCtrl . \case
+      Literal (Value (VFloat16 f') _) -> f == float2Double f'
+      Literal (Value (VFloat32 f') _) -> f == float2Double f'
+      Literal (Value (VFloat64 f') _) -> f == f'
 controlDouble f Ne ctrl =
-  getRule ctrl <&> \case
-    Literal (Value (VFloat16 f') _) -> f /= float2Double f'
-    Literal (Value (VFloat32 f') _) -> f /= float2Double f'
-    Literal (Value (VFloat64 f') _) -> f /= f'
+  getRule ctrl
+    <&> simpleCtrl . \case
+      Literal (Value (VFloat16 f') _) -> f /= float2Double f'
+      Literal (Value (VFloat32 f') _) -> f /= float2Double f'
+      Literal (Value (VFloat64 f') _) -> f /= f'
 
 --------------------------------------------------------------------------------
 -- Bool
 
 -- | Validating a boolean
 validateBool ::
-  (MonadError (ValidationTree CDDLFail) m, MonadReader CDDL m) =>
-  Bool -> Rule -> m (ValidationTree ())
-validateBool b rule = do
-  getRule rule >>= \case
-    -- a = any
-    Postlude PTAny -> pure ()
-    -- a = bool
-    Postlude PTBool -> pure ()
-    -- a = true
-    Literal (Value (VBool b') _) -> check (ValLeaf rule) $ b == b'
-    -- a = foo .and bar
-    Control And tgt ctrl ->
-      validateBool b tgt >> void (withError (fmap (const $ ControlFail ctrl)) $ validateBool b ctrl)
-    -- a = foo .within bar
-    Control Within tgt ctrl ->
-      validateBool b tgt >> void (withError (fmap (const $ ControlFail ctrl)) $ validateBool b ctrl)
-    -- a = foo .ctrl bar
-    Control op tgt ctrl ->
-      validateBool b tgt
-        >> ifM (controlBool b op ctrl) (pure ()) (throwError (ValLeaf rule (ControlFail ctrl)))
-    -- a = foo / bar
-    Choice opts -> void $ validateChoice (validateBool b) rule opts
-    _ -> throwError (ValLeaf rule UnapplicableRule)
-  pure (ValLeaf rule ())
+  MonadReader CDDL m =>
+  Bool -> Rule -> m CDDLResult
+validateBool b rule =
+  ($ rule) <$> do
+    getRule rule >>= \case
+      -- a = any
+      Postlude PTAny -> pure Valid
+      -- a = bool
+      Postlude PTBool -> pure Valid
+      -- a = true
+      Literal (Value (VBool b') _) -> pure $ check $ b == b'
+      -- a = foo .ctrl bar
+      Control op tgt ctrl -> ctrlOp (validateBool b) op tgt ctrl (controlBool b)
+      -- a = foo / bar
+      Choice opts -> validateChoice (validateBool b) opts
+      _ -> pure UnapplicableRule
 
 -- | Controls for `Bool`
-controlBool :: MonadReader CDDL m => Bool -> CtlOp -> Rule -> m Bool
+controlBool :: MonadReader CDDL m => Bool -> CtlOp -> Rule -> m (Either (Maybe CBORResult) ())
 controlBool b Eq ctrl =
-  getRule ctrl <&> \case
-    Literal (Value (VBool b') _) -> b == b'
+  getRule ctrl
+    <&> simpleCtrl . \case
+      Literal (Value (VBool b') _) -> b == b'
 controlBool b Ne ctrl =
-  getRule ctrl <&> \case
-    Literal (Value (VBool b') _) -> b /= b'
+  getRule ctrl
+    <&> simpleCtrl . \case
+      Literal (Value (VBool b') _) -> b /= b'
 
 --------------------------------------------------------------------------------
 -- Simple
 
 -- | Validating a `TSimple`. It is unclear if this is used for anything else than undefined.
 validateSimple ::
-  (MonadError (ValidationTree CDDLFail) m, MonadReader CDDL m) =>
-  Word8 -> Rule -> m (ValidationTree ())
-validateSimple 23 rule = do
-  getRule rule >>= \case
-    -- a = any
-    Postlude PTAny -> pure ()
-    -- a = undefined
-    Postlude PTUndefined -> pure ()
-    -- a = foo / bar
-    Choice opts -> void $ validateChoice (validateSimple 23) rule opts
-    _ -> throwError (ValLeaf rule UnapplicableRule)
-  pure (ValLeaf rule ())
+  MonadReader CDDL m =>
+  Word8 -> Rule -> m CDDLResult
+validateSimple 23 rule =
+  ($ rule) <$> do
+    getRule rule >>= \case
+      -- a = any
+      Postlude PTAny -> pure Valid
+      -- a = undefined
+      Postlude PTUndefined -> pure Valid
+      -- a = foo / bar
+      Choice opts -> validateChoice (validateSimple 23) opts
+      _ -> pure UnapplicableRule
 validateSimple n _ = error $ "Found simple different to 23! please report this somewhere! Found: " <> show n
 
 --------------------------------------------------------------------------------
@@ -608,57 +616,52 @@ validateSimple n _ = error $ "Found simple different to 23! please report this s
 
 -- | Validating nil
 validateNull ::
-  (MonadError (ValidationTree CDDLFail) m, MonadReader CDDL m) => Rule -> m (ValidationTree ())
-validateNull rule = do
-  getRule rule >>= \case
-    -- a = any
-    Postlude PTAny -> pure ()
-    -- a = nil
-    Postlude PTNil -> pure ()
-    _ -> throwError (ValLeaf rule UnapplicableRule)
-  pure (ValLeaf rule ())
+  MonadReader CDDL m => Rule -> m CDDLResult
+validateNull rule =
+  ($ rule) <$> do
+    getRule rule >>= \case
+      -- a = any
+      Postlude PTAny -> pure Valid
+      -- a = nil
+      Postlude PTNil -> pure Valid
+      Choice opts -> validateChoice validateNull opts
+      _ -> pure UnapplicableRule
 
 --------------------------------------------------------------------------------
 -- Bytes
 
 -- | Validating a byte sequence
 validateBytes ::
-  (MonadError (ValidationTree CDDLFail) m, MonadReader CDDL m) =>
-  BS.ByteString -> Rule -> m (ValidationTree ())
-validateBytes bs rule = do
-  getRule rule >>= \case
-    -- a = any
-    Postlude PTAny -> pure ()
-    -- a = bytes
-    Postlude PTBytes -> pure ()
-    -- a = h'123456'
-    Literal (Value (VBytes bs') _) -> check (ValLeaf rule) $ bs == bs'
-    -- a = foo .and bar
-    Control And tgt ctrl ->
-      validateBytes bs tgt >> void (withError (fmap (const $ ControlFail ctrl)) $ validateBytes bs ctrl)
-    -- a = foo .within bar
-    Control Within tgt ctrl ->
-      validateBytes bs tgt >> void (withError (fmap (const $ ControlFail ctrl)) $ validateBytes bs ctrl)
-    -- a = foo .ctrl bar
-    Control op tgt ctrl ->
-      validateBytes bs tgt
-        >> ifM (controlBytes bs op ctrl) (pure ()) (throwError (ValLeaf rule (ControlFail ctrl)))
-    -- a = foo / bar
-    Choice opts -> void $ validateChoice (validateBytes bs) rule opts
-    _ -> throwError (ValLeaf rule UnapplicableRule)
-  pure (ValLeaf rule ())
+  MonadReader CDDL m =>
+  BS.ByteString -> Rule -> m CDDLResult
+validateBytes bs rule =
+  ($ rule) <$> do
+    getRule rule >>= \case
+      -- a = any
+      Postlude PTAny -> pure Valid
+      -- a = bytes
+      Postlude PTBytes -> pure Valid
+      -- a = h'123456'
+      Literal (Value (VBytes bs') _) -> pure $ check $ bs == bs'
+      -- a = foo .ctrl bar
+      Control op tgt ctrl -> ctrlOp (validateBytes bs) op tgt ctrl (controlBytes bs)
+      -- a = foo / bar
+      Choice opts -> validateChoice (validateBytes bs) opts
+      _ -> pure UnapplicableRule
 
 -- | Controls for byte strings
-controlBytes :: forall m. MonadReader CDDL m => BS.ByteString -> CtlOp -> Rule -> m Bool
+controlBytes ::
+  forall m. MonadReader CDDL m => BS.ByteString -> CtlOp -> Rule -> m (Either (Maybe CBORResult) ())
 controlBytes bs Size ctrl =
   getRule ctrl >>= \case
-    Literal (Value (VUInt (fromIntegral -> sz)) _) -> pure $ BS.length bs == sz
+    Literal (Value (VUInt (fromIntegral -> sz)) _) -> pure $ simpleCtrl $ BS.length bs == sz
     Range low high bound ->
       let i = BS.length bs
-       in ((,) <$> getRule low <*> getRule high) <&> \case
-            (Literal (Value (VUInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _)) -> n <= i && range bound i m
-            (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _)) -> -n <= i && range bound i m
-            (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VNInt (fromIntegral -> m)) _)) -> -n <= i && range bound i (-m)
+       in ((,) <$> getRule low <*> getRule high)
+            <&> simpleCtrl . \case
+              (Literal (Value (VUInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _)) -> n <= i && range bound i m
+              (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _)) -> -n <= i && range bound i m
+              (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VNInt (fromIntegral -> m)) _)) -> -n <= i && range bound i (-m)
 controlBytes bs Bits ctrl = do
   indices <-
     getRule ctrl >>= \case
@@ -666,9 +669,9 @@ controlBytes bs Bits ctrl = do
       Choice nodes -> getIndicesOfChoice nodes
       Range ff tt incl -> getIndicesOfRange ff tt incl
       Enum g -> getIndicesOfEnum g
-  bitsControlCheck (map fromIntegral indices)
+  pure $ simpleCtrl $ bitsControlCheck (map fromIntegral indices)
   where
-    bitsControlCheck :: [Int] -> m Bool
+    bitsControlCheck :: [Int] -> Bool
     bitsControlCheck allowedBits =
       let allowedSet = IS.fromList allowedBits
           totalBits = BS.length bs * 8
@@ -676,83 +679,83 @@ controlBytes bs Bits ctrl = do
             let byteIndex = n `shiftR` 3
                 bitIndex = n .&. 7
              in case BS.indexMaybe bs byteIndex of
-                  Just byte -> if not (testBit byte bitIndex) || IS.member n allowedSet then pure True else pure False
-                  Nothing -> pure True
-       in and <$> mapM isAllowedBit [0 .. totalBits - 1]
+                  Just byte -> not (testBit byte bitIndex) || IS.member n allowedSet
+                  Nothing -> True
+       in all isAllowedBit [0 .. totalBits - 1]
 controlBytes bs Cbor ctrl =
   case deserialiseFromBytes decodeTerm (BSL.fromStrict bs) of
     Right (BSL.null -> True, term) ->
-      isRight <$> runExceptT (validateTerm term ctrl)
+      validateTerm term ctrl >>= \case
+        ValTerm _ (Valid _) -> pure $ Right ()
+        err -> pure $ Left $ Just err
 controlBytes bs Cborseq ctrl =
   case deserialiseFromBytes decodeTerm (BSL.fromStrict (BS.snoc (BS.cons 0x9f bs) 0xff)) of
-    Right (BSL.null -> True, TList terms) -> isRight <$> runExceptT (validateList terms ctrl)
+    Right (BSL.null -> True, TList terms) ->
+      validateTerm (TList terms) ctrl >>= \case
+        ValTerm _ (Valid _) -> pure $ Right ()
+        err -> pure $ Left $ Just err
 
 --------------------------------------------------------------------------------
 -- Text
 
 -- | Validating text strings
 validateText ::
-  (MonadError (ValidationTree CDDLFail) m, MonadReader CDDL m) =>
-  T.Text -> Rule -> m (ValidationTree ())
-validateText txt rule = do
-  getRule rule >>= \case
-    -- a = any
-    Postlude PTAny -> pure ()
-    -- a = text
-    Postlude PTText -> pure ()
-    -- a = "foo"
-    Literal (Value (VText txt') _) -> check (ValLeaf rule) $ txt == txt'
-    -- a = foo .and bar
-    Control And tgt ctrl ->
-      validateText txt tgt >> void (withError (fmap (const $ ControlFail ctrl)) $ validateText txt ctrl)
-    -- a = foo .within bar
-    Control Within tgt ctrl ->
-      validateText txt tgt >> void (withError (fmap (const $ ControlFail ctrl)) $ validateText txt ctrl)
-    -- a = foo .ctrl bar
-    Control op tgt ctrl ->
-      validateText txt tgt
-        >> ifM (controlText txt op ctrl) (pure ()) (throwError (ValLeaf rule (ControlFail ctrl)))
-    -- a = foo / bar
-    Choice opts -> void $ validateChoice (validateText txt) rule opts
-    _ -> throwError (ValLeaf rule UnapplicableRule)
-  pure (ValLeaf rule ())
+  MonadReader CDDL m =>
+  T.Text -> Rule -> m CDDLResult
+validateText txt rule =
+  ($ rule) <$> do
+    getRule rule >>= \case
+      -- a = any
+      Postlude PTAny -> pure Valid
+      -- a = text
+      Postlude PTText -> pure Valid
+      -- a = "foo"
+      Literal (Value (VText txt') _) -> pure $ check $ txt == txt'
+      -- a = foo .ctrl bar
+      Control op tgt ctrl -> ctrlOp (validateText txt) op tgt ctrl (controlText txt)
+      -- a = foo / bar
+      Choice opts -> validateChoice (validateText txt) opts
+      _ -> pure UnapplicableRule
 
 -- | Controls for text strings
-controlText :: MonadReader CDDL m => T.Text -> CtlOp -> Rule -> m Bool
+controlText :: MonadReader CDDL m => T.Text -> CtlOp -> Rule -> m (Either (Maybe CBORResult) ())
 controlText bs Size ctrl =
   getRule ctrl >>= \case
-    Literal (Value (VUInt (fromIntegral -> sz)) _) -> pure $ T.length bs == sz
+    Literal (Value (VUInt (fromIntegral -> sz)) _) -> pure $ simpleCtrl $ T.length bs == sz
     Range ff tt bound ->
-      ((,) <$> getRule ff <*> getRule tt) <&> \case
-        (Literal (Value (VUInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _)) -> n <= T.length bs && range bound (T.length bs) m
-        (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _)) -> -n <= T.length bs && range bound (T.length bs) m
-        (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VNInt (fromIntegral -> m)) _)) -> -n <= T.length bs && range bound (T.length bs) (-m)
+      ((,) <$> getRule ff <*> getRule tt)
+        <&> simpleCtrl . \case
+          (Literal (Value (VUInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _)) -> n <= T.length bs && range bound (T.length bs) m
+          (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _)) -> -n <= T.length bs && range bound (T.length bs) m
+          (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VNInt (fromIntegral -> m)) _)) -> -n <= T.length bs && range bound (T.length bs) (-m)
 controlText s Regexp ctrl =
-  getRule ctrl <&> \case
-    Literal (Value (VText rxp) _) -> case s =~ rxp :: (T.Text, T.Text, T.Text) of
-      ("", s', "") -> s == s'
+  getRule ctrl
+    <&> simpleCtrl . \case
+      Literal (Value (VText rxp) _) -> case s =~ rxp :: (T.Text, T.Text, T.Text) of
+        ("", s', "") -> s == s'
 
 --------------------------------------------------------------------------------
 -- Tagged values
 
 -- | Validating a `TTagged`
 validateTagged ::
-  (MonadError (ValidationTree CDDLFail) m, MonadReader CDDL m) =>
-  Word64 -> Term -> Rule -> m (Term -> ValidationTree Term)
-validateTagged tag term rule = do
-  getRule rule >>= \case
-    Postlude PTAny -> pure (ValLeaf rule)
-    Tag tag' rule' ->
-      -- If the tag does not match, this is a direct fail
-      if tag == tag'
-        then
-          ask >>= \cddl ->
-            case runReader (runExceptT (validateTerm term rule')) cddl of
-              Left vt -> throwError (ValContainer rule [] [fmap snd vt])
-              Right vt -> pure (const $ ValContainer rule [] [vt])
-        else throwError (ValLeaf rule DirectFail)
-    Choice opts -> validateChoice (validateTagged tag term) rule opts
-    _ -> throwError (ValLeaf rule UnapplicableRule)
+  MonadReader CDDL m =>
+  Word64 -> Term -> Rule -> m CDDLResult
+validateTagged tag term rule =
+  ($ rule) <$> do
+    getRule rule >>= \case
+      Postlude PTAny -> pure Valid
+      Tag tag' rule' ->
+        -- If the tag does not match, this is a direct fail
+        if tag == tag'
+          then
+            ask >>= \cddl ->
+              case runReader (validateTerm term rule') cddl of
+                ValTerm _ (Valid _) -> pure Valid
+                err -> pure $ \r -> InvalidTagged r (Right err)
+          else pure $ \r -> InvalidTagged r (Left tag)
+      Choice opts -> validateChoice (validateTagged tag term) opts
+      _ -> pure UnapplicableRule
 
 --------------------------------------------------------------------------------
 -- Collection helpers
@@ -763,7 +766,7 @@ flattenGroup :: CDDL -> [Rule] -> [Rule]
 flattenGroup cddl nodes =
   mconcat
     [ case resolveIfRef cddl rule of
-        Literal{} -> [rule]
+        Literal {} -> [rule]
         Postlude {} -> [rule]
         Map {} -> [rule]
         Array {} -> [rule]
@@ -801,7 +804,8 @@ expandRules remainingLen []
   | remainingLen /= 0 = pure []
 expandRules _ [] = pure [[]]
 expandRules remainingLen _
-  | remainingLen <= 0 = pure []
+  | remainingLen < 0 = pure []
+  | remainingLen == 0 = pure [[]]
 expandRules remainingLen (x : xs) = do
   y <- expandRule remainingLen x
   concat
@@ -814,7 +818,7 @@ expandRules remainingLen (x : xs) = do
 
 expandRule :: Int -> Rule -> Reader CDDL [[Rule]]
 expandRule maxLen _
-  | maxLen <= 0 = pure []
+  | maxLen < 0 = pure []
 expandRule maxLen rule =
   getRule rule >>= \case
     Occur o OIOptional -> pure $ ([] :) $ if maxLen > 0 then [[o]] else []
@@ -848,109 +852,149 @@ isOptional rule =
       Occur _ (OIBounded (Just 0) _) -> True
       _ -> False
 
---------------------------------------------------------------------------------
--- Lists
+-- --------------------------------------------------------------------------------
+-- -- Lists
 
 validateListWithExpandedRules ::
-  forall m. (MonadError (ValidationTree CDDLFail) m, MonadReader CDDL m) =>
-  [Term] -> Rule -> m (Term -> ValidationTree Term)
-validateListWithExpandedRules terms rule =
-  getRule rule >>= \case
-    Array rules -> go terms rules
+  forall m.
+  MonadReader CDDL m =>
+  [Term] -> [Rule] -> m [(Rule, CBORResult)]
+validateListWithExpandedRules terms rules =
+  go (zip terms rules)
   where
     go ::
-      [Term] -> [Rule] -> m (Term -> ValidationTree Term)
-    go [] rs =
-      -- This should never be called because we had as many rules as terms
-      ifM
-        (and <$> mapM isOptional rs)
-        (pure (ValLeaf rule))
-        (throwError (ValLeaf rule RemainingRules))
-    go _ [] = throwError (ValLeaf rule RemainingItems)
-    go (t : ts) (r : rs) =
+      [(Term, Rule)] -> m [(Rule, CBORResult)]
+    go [] = pure []
+    go ((t, r) : ts) =
       getRule r >>= \case
         -- Should the rule be a KV, then we validate the rule for the value
         KV _ v _ ->
           -- We need to do this juggling because validateTerm has a different
           -- error type
           ask >>= \cddl ->
-            case runReader (runExceptT (validateTerm t v)) cddl of
-              Left vt -> throwError (ValContainer rule [] [fmap snd vt])
-              Right vt -> withError (f vt) $ go ts rs
+            case runReader (validateTerm t v) cddl of
+              ok@(ValTerm _ (Valid _)) -> ((r, ok) :) <$> go ts
+              err -> pure [(r, err)]
         _ ->
           ask >>= \cddl ->
-            case runReader (runExceptT (validateTerm t r)) cddl of
-              Left vt -> throwError (ValContainer rule [] [fmap snd vt])
-              Right vt -> withError (f vt) $ go ts rs
-    f vt (ValLeaf r g) = ValContainer rule [vt] [ValLeaf r g]
-    f vt (ValContainer r vv ii) = ValContainer r (vv ++ [vt]) ii
+            case runReader (validateTerm t r) cddl of
+              ok@(ValTerm _ (Valid _)) -> ((r, ok) :) <$> go ts
+              err -> pure [(r, err)]
+
+validateExpandedContainer ::
+  forall m.
+  Monad m =>
+  ([Rule] -> m [(Rule, CBORResult)]) ->
+  [[Rule]] ->
+  m (Rule -> CDDLResult)
+validateExpandedContainer v rules = go rules
+  where
+    go :: [[Rule]] -> m (Rule -> CDDLResult)
+    go [] = pure $ \r -> ListExpansionFail r rules []
+    go (choice : choices) = do
+      res <- v choice
+      case res of
+        [] -> pure Valid
+        _ -> case last res of
+          (_, ValTerm _ (Valid _)) -> pure Valid
+          _ ->
+            ($ dummyRule) <$> go choices >>= \case
+              Valid _ -> pure Valid
+              ListExpansionFail _ _ errors -> pure $ \r -> ListExpansionFail r rules (res : errors)
 
 validateList ::
-  (MonadError (ValidationTree CDDLFail) m, MonadReader CDDL m) =>
-  [Term] -> Rule -> m (Term -> ValidationTree Term)
+  MonadReader CDDL m => [Term] -> Rule -> m CDDLResult
 validateList terms rule =
-  getRule rule >>= \case
-    Postlude PTAny -> pure (ValLeaf rule)
-    Array rules ->
-      ask >>= \cddl ->
-        let sequencesOfRules = map (MIt . Array)
-              $ runReader (expandRules (length terms) $ flattenGroup cddl rules) cddl
-         in validateChoice (validateListWithExpandedRules terms) rule sequencesOfRules
-    Choice opts -> validateChoice (validateList terms) rule opts
-    _ -> throwError (ValLeaf rule UnapplicableRule)
+  ($ rule) <$> do
+    getRule rule >>= \case
+      Postlude PTAny -> pure Valid
+      Array rules ->
+        case terms of
+          [] -> ifM (and <$> mapM isOptional rules) (pure Valid) (pure InvalidRule)
+          _ ->
+            ask >>= \cddl ->
+              let sequencesOfRules =
+                    runReader (expandRules (length terms) $ flattenGroup cddl rules) cddl
+               in validateExpandedContainer (validateListWithExpandedRules terms) sequencesOfRules
+      Choice opts -> validateChoice (validateList terms) opts
+      _ -> pure UnapplicableRule
 
 --------------------------------------------------------------------------------
 -- Maps
 
 validateMapWithExpandedRules ::
-  forall m. (MonadError (ValidationTree CDDLFail) m, MonadReader CDDL m) =>
-  [(Term, Term)] -> Rule -> m (Term -> ValidationTree Term)
-validateMapWithExpandedRules terms rule =
-  getRule rule >>= \case
-    Map rules -> go terms rules
+  forall m.
+  MonadReader CDDL m =>
+  [(Term, Term)] -> [Rule] -> m ([AMatchedItem], Maybe ANonMatchedItem)
+validateMapWithExpandedRules terms rules =
+  go terms rules
   where
     go ::
       [(Term, Term)] ->
       [Rule] ->
-      m (Term -> ValidationTree Term)
-    go [] rs =
-      -- This should never be called because we have as many rules as pairs
-      ifM
-        (and <$> mapM isOptional rs)
-        (pure (ValLeaf rule))
-        (throwError (ValLeaf rule DirectFail))
-    go _ [] = throwError (ValLeaf rule DirectFail)
+      m ([AMatchedItem], Maybe ANonMatchedItem)
+    go [] [] = pure ([], Nothing)
     go ((tk, tv) : ts) rs = do
-      rs' <- go' tk tv [] rs
-      go ts rs'
+      go' tk tv rs >>= \case
+        Left tt -> pure ([], Just tt)
+        Right (res, rs') ->
+          first (res :) <$> go ts rs'
 
     -- For each pair of terms, try to find some rule that can be applied here,
     -- and returns the others if there is a succesful match.
-    go' :: Term -> Term -> [(Rule, Either (ValidationTree (Term, CDDLFail)) (ValidationTree Term, ValidationTree (Term, CDDLFail)))] -> [Rule] -> m [Rule]
-    go' tk tv prevFail [] = throwError (ValLeaf rule $ NoApplicableRuleFound (tk, tv) prevFail)
-    go' tk tv prevFail (r:rs) =
+    go' :: Term -> Term -> [Rule] -> m (Either ANonMatchedItem (AMatchedItem, [Rule]))
+    go' tk tv [] = pure $ Left $ ANonMatchedItem tk tv []
+    go' tk tv (r : rs) =
       getRule r >>= \case
-        KV k v _ -> ask >>= \cddl ->
-          case runReader (runExceptT (validateTerm tk k)) cddl of
-            Left vt -> go' tk tv (prevFail ++ [(r, Left vt)]) rs
-            Right kvt -> case runReader (runExceptT (validateTerm tv v)) cddl of
-              Left vt -> go' tk tv (prevFail ++ [(r, Right (kvt, vt))]) rs
-              Right _ -> pure (map fst prevFail ++ rs)
+        KV k v _ ->
+          ask >>= \cddl ->
+            case runReader (validateTerm tk k) cddl of
+              ValTerm _ r1@(Valid _) -> case runReader (validateTerm tv v) cddl of
+                ValTerm _ (Valid _) -> pure (Right (AMatchedItem tk tv r, rs))
+                ValTerm _ r2 ->
+                  bimap (\anmi -> anmi {anmiResults = Right (r, r1, r2) : anmiResults anmi}) (second (r :))
+                    <$> go' tk tv rs
+              ValTerm _ r1 ->
+                bimap (\anmi -> anmi {anmiResults = Left (r, r1) : anmiResults anmi}) (second (r :))
+                  <$> go' tk tv rs
+
+validateExpandedContainer' ::
+  forall m.
+  Monad m =>
+  ([Rule] -> m ([AMatchedItem], Maybe ANonMatchedItem)) ->
+  [[Rule]] ->
+  m (Rule -> CDDLResult)
+validateExpandedContainer' v rules = go rules
+  where
+    go :: [[Rule]] -> m (Rule -> CDDLResult)
+    go [] = pure $ \r -> MapExpansionFail r rules []
+    go (choice : choices) = do
+      res <- v choice
+      case res of
+        (_, Nothing) -> pure Valid
+        (matches, Just notMatched) ->
+          ($ dummyRule) <$> go choices >>= \case
+            Valid _ -> pure Valid
+            MapExpansionFail _ _ errors ->
+              pure $ \r -> MapExpansionFail r rules ((matches, notMatched) : errors)
 
 validateMap ::
-  (MonadError (ValidationTree CDDLFail) m, MonadReader CDDL m) =>
-  [(Term, Term)] -> Rule -> m (Term -> ValidationTree Term)
+  MonadReader CDDL m =>
+  [(Term, Term)] -> Rule -> m CDDLResult
 validateMap terms rule =
-  getRule rule >>= \case
-    Postlude PTAny -> pure (ValLeaf rule)
-    Map rules ->
-      ask >>= \cddl ->
-        let sequencesOfRules = map (MIt . Map)
-              $ runReader (expandRules (length terms) $ flattenGroup cddl rules) cddl
-         in validateChoice (validateMapWithExpandedRules terms) rule sequencesOfRules
-    Choice opts -> validateChoice (validateMap terms) rule opts
-    _ -> throwError (ValLeaf rule UnapplicableRule)
-
+  ($ rule) <$> do
+    getRule rule >>= \case
+      Postlude PTAny -> pure Valid
+      Map rules ->
+        case terms of
+          [] -> ifM (and <$> mapM isOptional rules) (pure Valid) (pure InvalidRule)
+          _ ->
+            ask >>= \cddl ->
+              let sequencesOfRules =
+                    runReader (expandRules (length terms) $ flattenGroup cddl rules) cddl
+               in validateExpandedContainer' (validateMapWithExpandedRules terms) sequencesOfRules
+      Choice opts -> validateChoice (validateMap terms) opts
+      _ -> pure UnapplicableRule
 
 --------------------------------------------------------------------------------
 -- Bits control
