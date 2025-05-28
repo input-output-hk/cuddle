@@ -23,6 +23,7 @@ library
   import:           warnings
   exposed-modules:
     Codec.CBOR.Cuddle.CBOR.Gen
+    Codec.CBOR.Cuddle.CBOR.Validator
     Codec.CBOR.Cuddle.CDDL
     Codec.CBOR.Cuddle.CDDL.CtlOp
     Codec.CBOR.Cuddle.CDDL.CTree
@@ -53,6 +54,7 @@ library
     , data-default-class
     , foldable1-classes-compat
     , generic-optics
+    , regex-tdfa
     , hashable
     , megaparsec
     , mtl
@@ -102,6 +104,7 @@ executable cuddle
     , optparse-applicative
     , prettyprinter
     , random
+    , mtl
     , text
 
 test-suite cuddle-test
