@@ -25,7 +25,6 @@
 --    generic arguments bound.
 module Codec.CBOR.Cuddle.CDDL.Resolve (
   buildResolvedCTree,
-  monoCTree,
   buildRefCTree,
   asMap,
   buildMonoCTree,
@@ -323,10 +322,10 @@ postludeBinding =
     , (Name "null" mempty, PTNil)
     ]
 
-data BindingEnv poly f = BindingEnv
+data BindingEnv poly f g = BindingEnv
   { global :: Map.Map Name (poly (CTree.Node f))
   -- ^ Global name bindings via 'RuleDef'
-  , local :: Map.Map Name (CTree.Node f)
+  , local :: Map.Map Name (CTree.Node g)
   -- ^ Local bindings for generic parameters
   }
   deriving (Generic)
@@ -354,7 +353,7 @@ deriving instance Eq (CTreeRoot DistRef)
 instance Hashable (CTreeRoot DistRef)
 
 resolveRef ::
-  BindingEnv (ParametrisedWith [Name]) OrRef ->
+  BindingEnv (ParametrisedWith [Name]) OrRef OrRef ->
   CTree.Node OrRef ->
   Either NameResolutionFailure (DistRef (CTree DistRef))
 resolveRef env (It a) = DIt <$> resolveCTree env a
@@ -375,7 +374,7 @@ resolveRef env (Ref n args) = case Map.lookup n postludeBinding of
       Nothing -> Left $ UnboundReference n
 
 resolveCTree ::
-  BindingEnv (ParametrisedWith [Name]) OrRef ->
+  BindingEnv (ParametrisedWith [Name]) OrRef OrRef ->
   CTree OrRef ->
   Either NameResolutionFailure (CTree DistRef)
 resolveCTree e = CTree.traverseCTree (resolveRef e)
@@ -407,7 +406,7 @@ deriving instance
   Show (poly (CTree.Node MonoRef)) =>
   Show (CTreeRoot' poly MonoRef)
 
-type MonoEnv = BindingEnv (ParametrisedWith [Name]) DistRef
+type MonoEnv = BindingEnv (ParametrisedWith [Name]) DistRef MonoRef
 
 -- | We introduce additional bindings in the state
 type MonoState = Map.Map Name (CTree.Node MonoRef)
@@ -432,10 +431,10 @@ newtype MonoM a = MonoM
   deriving
     ( HasSource
         "local"
-        (Map.Map Name (CTree.Node DistRef))
+        (Map.Map Name (CTree.Node MonoRef))
     , HasReader
         "local"
-        (Map.Map Name (CTree.Node DistRef))
+        (Map.Map Name (CTree.Node MonoRef))
     )
     via Field
           "local"
@@ -490,11 +489,12 @@ synthMono n@(Name origName _) args =
           Just (Unparametrised _) -> throwNR $ MismatchingArgs n []
           Just (Parametrised r params') ->
             if length params' == length args
-              then
-                let localBinds = Map.fromList $ zip params' args
-                 in Reader.local @"local" (Map.union localBinds) $ do
-                      foo <- resolveGenericRef r
-                      modify @"synth" $ Map.insert fresh foo
+              then do
+                rargs <- traverse resolveGenericRef args
+                let localBinds = Map.fromList $ zip params' rargs
+                Reader.local @"local" (Map.union localBinds) $ do
+                  foo <- resolveGenericRef r
+                  modify @"synth" $ Map.insert fresh foo
               else throwNR $ MismatchingArgs n params'
           Nothing -> throwNR $ UnboundReference n
         pure fresh
@@ -512,7 +512,7 @@ resolveGenericRef (RuleRef n margs) =
 resolveGenericRef (GenericRef n) = do
   localBinds <- ask @"local"
   case Map.lookup n localBinds of
-    Just node -> resolveGenericRef node
+    Just node -> pure node
     Nothing -> throwNR $ UnboundReference n
 
 resolveGenericCTree ::
