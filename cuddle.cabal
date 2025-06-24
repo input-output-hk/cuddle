@@ -40,7 +40,6 @@ flag example
 common warnings
   ghc-options:
     -Wall
-    -Werror
 
 library
   import: warnings
