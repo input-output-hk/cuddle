@@ -126,7 +126,7 @@ executable cuddle
     cuddle,
     megaparsec,
     mtl,
-    optparse-applicative,
+    optparse-applicative ^>=0.19,
     prettyprinter,
     random,
     text,
