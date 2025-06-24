@@ -40,7 +40,6 @@ flag example
 common warnings
   ghc-options:
     -Wall
-    -Werror
 
 library
   import: warnings
@@ -127,7 +126,7 @@ executable cuddle
     cuddle,
     megaparsec,
     mtl,
-    optparse-applicative,
+    optparse-applicative ^>=0.19,
     prettyprinter,
     random,
     text,
