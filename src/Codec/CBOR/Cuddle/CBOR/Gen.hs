@@ -9,10 +9,12 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE ViewPatterns #-}
 
+#if MIN_VERSION_random(1,3,0)
+{-# OPTIONS_GHC -Wno-deprecations #-} -- Due to usage of `split`
+#endif
 -- | Generate example CBOR given a CDDL specification
 module Codec.CBOR.Cuddle.CBOR.Gen (generateCBORTerm, generateCBORTerm') where
 
-import qualified Control.Monad.State.Strict as MTL
 import Capability.Reader
 import Capability.Sink (HasSink)
 import Capability.Source (HasSource, MonadState (..))
@@ -34,6 +36,7 @@ import Codec.CBOR.Write qualified as CBOR
 import Control.Monad (join, replicateM, (<=<))
 import Control.Monad.Reader (Reader, runReader)
 import Control.Monad.State.Strict (StateT, runStateT)
+import Control.Monad.State.Strict qualified as MTL
 import Data.Bifunctor (second)
 import Data.ByteString (ByteString)
 import Data.ByteString.Base16 qualified as Base16
@@ -54,6 +57,11 @@ import System.Random.Stateful (
   randomM,
   uniformByteStringM,
  )
+#if MIN_VERSION_random(1,3,0)
+import System.Random.Stateful (
+  SplitGen (..)
+  )
+#endif
 
 --------------------------------------------------------------------------------
 -- Generator infrastructure
@@ -81,9 +89,17 @@ instance RandomGen g => RandomGen (GenState g) where
   genWord16 = withRandomSeed genWord16
   genWord32 = withRandomSeed genWord32
   genWord64 = withRandomSeed genWord64
-  split s =
-    case split (randomSeed s) of
-      (gen', gen) -> (s {randomSeed = gen'}, s {randomSeed = gen})
+  split = splitGenStateWith split
+
+#if MIN_VERSION_random(1,3,0)
+instance SplitGen g => SplitGen (GenState g) where
+  splitGen = splitGenStateWith splitGen
+#endif
+
+splitGenStateWith :: (g -> (g, g)) -> GenState g -> (GenState g, GenState g)
+splitGenStateWith f s =
+  case f (randomSeed s) of
+    (gen', gen) -> (s {randomSeed = gen'}, s {randomSeed = gen})
 
 withRandomSeed :: (t -> (a, g)) -> GenState t -> (a, GenState g)
 withRandomSeed f s =
