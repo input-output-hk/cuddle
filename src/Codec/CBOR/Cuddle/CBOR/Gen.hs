@@ -1,10 +1,12 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ViewPatterns #-}
 
 -- | Generate example CBOR given a CDDL specification
@@ -45,15 +47,24 @@ import Data.Word (Word32, Word64)
 import GHC.Generics (Generic)
 import System.Random.Stateful (
   Random,
-  RandomGen (genShortByteString, genWord32, genWord64),
-  RandomGenM,
+  RandomGen (..),
   StatefulGen (..),
   UniformRange (uniformRM),
-  applyRandomGenM,
   randomM,
   uniformByteStringM,
  )
-
+#if MIN_VERSION_random(1,3,0)
+import Data.Coerce
+import System.Random.Stateful (
+  FrozenGen (..),
+  uniformByteArray,
+ )
+#else
+import System.Random.Stateful (
+  RandomGenM,
+  applyRandomGenM,
+ )
+#endif
 --------------------------------------------------------------------------------
 -- Generator infrastructure
 --------------------------------------------------------------------------------
@@ -110,14 +121,27 @@ newtype M g a = M {runM :: StateT (GenState g) (Reader (GenEnv g)) a}
 -- state monad.
 data CapGenM g = CapGenM
 
+newtype CapGen g = CapGen g
+  deriving (RandomGen, Eq)
+
 instance RandomGen g => StatefulGen (CapGenM g) (M g) where
   uniformWord64 _ = state @"randomSeed" genWord64
   uniformWord32 _ = state @"randomSeed" genWord32
 
+#if MIN_VERSION_random(1,3,0)
+  uniformByteArrayM isPinned n _ = state @"randomSeed" (uniformByteArray isPinned n)
+#else
   uniformShortByteString n _ = state @"randomSeed" (genShortByteString n)
+#endif
 
+#if MIN_VERSION_random(1,3,0)
+instance RandomGen r => FrozenGen (CapGen r) (M r) where
+  type MutableGen (CapGen r) (M r) = CapGenM r
+  modifyGen CapGenM f = state @"randomSeed" (coerce f)
+#else
 instance RandomGen r => RandomGenM (CapGenM r) r (M r) where
   applyRandomGenM f _ = state @"randomSeed" f
+#endif
 
 runGen :: M g a -> GenEnv g -> GenState g -> (a, GenState g)
 runGen m env st = runReader (runStateT (runM m) st) env
