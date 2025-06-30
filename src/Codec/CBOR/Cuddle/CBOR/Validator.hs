@@ -19,8 +19,9 @@ import Data.Bifunctor
 import Data.Bits hiding (And)
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as BSL
+import Data.Either (lefts, rights)
 import Data.Function ((&))
-import Data.Functor ((<&>), ($>))
+import Data.Functor ((<&>))
 import Data.Functor.Identity
 import Data.IntSet qualified as IS
 import Data.List.NonEmpty qualified as NE
@@ -662,7 +663,7 @@ flattenGroup cddl nodes =
 data Filter
   = NoFilter
   | Filter {mapFilter :: Rule, arrayFilter :: Rule}
-  deriving Show
+  deriving (Show)
 
 -- | A tree of possible expansions of a rule matching the size of a container to
 -- validate. This tree contains filters at each node, such that we can
@@ -693,6 +694,14 @@ mergeTrees (a : as) = foldl' go a as
     go (Leaf xs) b = prependRules xs b
     go (Branch xs) b = Branch $ fmap (flip go b) xs
     go (FilterBranch f x) b = FilterBranch f $ go x b
+
+-- | Merge two trees by adding them as choices at the top-level using the
+--  `Branch` constructor.
+mergeTopBranch :: ExpansionTree' a -> ExpansionTree' a -> ExpansionTree' a
+mergeTopBranch (Branch t1) (Branch t2) = Branch $ t1 <> t2
+mergeTopBranch (Branch t1) t2 = Branch (t1 <> [t2])
+mergeTopBranch t1 (Branch t2) = Branch (t1 : t2)
+mergeTopBranch t1 t2 = Branch [t1, t2]
 
 -- | Clamp a tree to contain only expressions with a fixed number of elements.
 clampTree :: Int -> ExpansionTree -> ExpansionTree
@@ -831,31 +840,31 @@ validateExpandedList ::
 validateExpandedList terms rules = go rules
   where
     go :: ExpansionTree -> m (Rule -> CDDLResult)
-    go (Leaf choice) =  do
+    go (Leaf choice) = do
       res <- validateListWithExpandedRules terms choice
       case res of
         [] -> pure Valid
         _ -> case last res of
           (_, CBORTermResult _ (Valid _)) -> pure Valid
           _ -> pure $ \r -> ListExpansionFail r rules (Leaf res)
-    go (FilterBranch f x) = validateTerm (NE.head terms) (arrayFilter f) >>= \case
-      (CBORTermResult _ (Valid _)) -> go x
-      -- In this case we insert a leaf since we haven't actually validated the
-      -- subnodes.
-      err -> pure $ \r -> ListExpansionFail r rules $ FilterBranch f $ Leaf [(r, err)]
+    go (FilterBranch f x) =
+      validateTerm (NE.head terms) (arrayFilter f) >>= \case
+        (CBORTermResult _ (Valid _)) -> go x
+        -- In this case we insert a leaf since we haven't actually validated the
+        -- subnodes.
+        err -> pure $ \r -> ListExpansionFail r rules $ FilterBranch f $ Leaf [(r, err)]
     go (Branch xs) = goBranch xs
 
     goBranch [] = pure $ \r -> ListExpansionFail r rules $ Branch []
-    goBranch (x:xs) = go x <&> ($ dummyRule) >>= \case
-      Valid _ -> pure Valid
-      ListExpansionFail _ _ errors -> prependBranchErrors errors <$> goBranch xs
+    goBranch (x : xs) =
+      go x <&> ($ dummyRule) >>= \case
+        Valid _ -> pure Valid
+        ListExpansionFail _ _ errors -> prependBranchErrors errors <$> goBranch xs
 
     prependBranchErrors errors res = case res dummyRule of
-      Valid _ ->  Valid
+      Valid _ -> Valid
       ListExpansionFail _ _ errors2 -> \r ->
-        ListExpansionFail r rules $ errors <> errors2
-
-
+        ListExpansionFail r rules $ mergeTopBranch errors errors2
 
 validateList ::
   MonadReader CDDL m => [Term] -> Rule -> m CDDLResult
@@ -866,7 +875,7 @@ validateList terms rule =
       Array rules ->
         case terms of
           [] -> ifM (and <$> mapM isOptional rules) (pure Valid) (pure InvalidRule)
-          t:ts ->
+          t : ts ->
             ask >>= \cddl ->
               let sequencesOfRules =
                     runReader (expandRules (length terms) $ flattenGroup cddl rules) cddl
@@ -876,6 +885,29 @@ validateList terms rule =
 
 --------------------------------------------------------------------------------
 -- Maps
+
+-- | Does the map comtain a key matching this rule?
+--
+-- If so, return the matching term. Otherwise, return the list of all the terms
+-- that failed to match
+containsMatchingKey ::
+  forall m.
+  MonadReader CDDL m =>
+  NE.NonEmpty (Term, Term) ->
+  Rule ->
+  m (Either [ANonMatchedItem] AMatchedItem)
+containsMatchingKey terms rule = do
+    let tryKey (k, v) = do
+          result <- validateTerm k rule
+          case result of
+            CBORTermResult _ (Valid _) -> pure $ Right (AMatchedItem k v rule)
+            CBORTermResult _ res -> pure $ Left (ANonMatchedItem k v [Left (rule, res)])
+
+    results <- traverse tryKey (NE.toList terms)
+    case rights results of
+      (m:_) -> pure $ Right m
+      [] -> pure $ Left $ lefts results
+
 
 validateMapWithExpandedRules ::
   forall m.
@@ -916,25 +948,34 @@ validateMapWithExpandedRules =
 validateExpandedMap ::
   forall m.
   MonadReader CDDL m =>
-  [(Term, Term)] ->
-  [[Rule]] ->
+  NE.NonEmpty (Term, Term) ->
+  ExpansionTree ->
   m (Rule -> CDDLResult)
 validateExpandedMap terms rules = go rules
   where
-    go :: [[Rule]] -> m (Rule -> CDDLResult)
-    go [] = pure $ \r -> MapExpansionFail r rules []
-    go (choice : choices) = do
-      res <- validateMapWithExpandedRules terms choice
+    go :: ExpansionTree -> m (Rule -> CDDLResult)
+    go (Leaf choice) = do
+      res <- validateMapWithExpandedRules (NE.toList terms) choice
       case res of
         (_, Nothing) -> pure Valid
-        (matches, Just notMatched) ->
-          go choices
-            >>= ( \case
-                    Valid _ -> pure Valid
-                    MapExpansionFail _ _ errors ->
-                      pure $ \r -> MapExpansionFail r rules ((matches, notMatched) : errors)
-                )
-              . ($ dummyRule)
+        (matches, Just notMatched) -> pure $ \r ->
+          MapExpansionFail r rules [(matches, notMatched)]
+    go (FilterBranch f x) =
+      containsMatchingKey terms (mapFilter f) >>= \case
+        Right _  -> go x
+        Left errs -> pure $ \r -> MapExpansionFail r rules $ ([], ) <$> errs
+    go (Branch xs) = goBranch xs
+
+    goBranch [] = pure $ \r -> MapExpansionFail r rules []
+    goBranch (x : xs) =
+      go x <&> ($ dummyRule) >>= \case
+        Valid _ -> pure Valid
+        MapExpansionFail _ _ errors -> prependBranchErrors errors <$> goBranch xs
+
+    prependBranchErrors errors res = case res dummyRule of
+      Valid _ -> Valid
+      MapExpansionFail _ _ errors2 -> \r ->
+        MapExpansionFail r rules $ errors <> errors2
 
 validateMap ::
   MonadReader CDDL m =>
@@ -946,11 +987,11 @@ validateMap terms rule =
       Map rules ->
         case terms of
           [] -> ifM (and <$> mapM isOptional rules) (pure Valid) (pure InvalidRule)
-          _ ->
+          x:xs ->
             ask >>= \cddl ->
               let sequencesOfRules =
                     runReader (expandRules (length terms) $ flattenGroup cddl rules) cddl
-               in validateExpandedMap terms sequencesOfRules
+               in validateExpandedMap (x NE.:| xs) sequencesOfRules
       Choice opts -> validateChoice (validateMap terms) opts
       _ -> pure UnapplicableRule
 
