@@ -20,7 +20,7 @@ import Data.Bits hiding (And)
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as BSL
 import Data.Function ((&))
-import Data.Functor ((<&>))
+import Data.Functor ((<&>), ($>))
 import Data.Functor.Identity
 import Data.IntSet qualified as IS
 import Data.List.NonEmpty qualified as NE
@@ -60,9 +60,9 @@ data CDDLResult
       -- | Rule we are trying
       Rule
       -- | List of expansions of rules
-      [[Rule]]
+      ExpansionTree
       -- | For each expansion, for each of the rules in the expansion, the result
-      [[(Rule, CBORTermResult)]]
+      (ExpansionTree' [(Rule, CBORTermResult)])
   | -- | All expansions failed
     --
     -- An expansion is: Given a CBOR @TMap@ of @N@ elements, we will expand the
@@ -71,7 +71,7 @@ data CDDLResult
       -- | Rule we are trying
       Rule
       -- | List of expansions
-      [[Rule]]
+      ExpansionTree
       -- | A list of matched items @(key, value, rule)@ and the unmatched item
       [([AMatchedItem], ANonMatchedItem)]
   | -- | The rule was valid but the control failed
@@ -655,58 +655,132 @@ flattenGroup cddl nodes =
     | rule <- nodes
     ]
 
+-- | A filter on a subtree in an expansion. How this is used will depend on the
+-- contenxt in which this expansion is used. For maps, we filter based on the
+-- key, which can be in any position. For arrays, we filter based on the first
+-- value.
+data Filter
+  = NoFilter
+  | Filter {mapFilter :: Rule, arrayFilter :: Rule}
+  deriving Show
+
+-- | A tree of possible expansions of a rule matching the size of a container to
+-- validate. This tree contains filters at each node, such that we can
+-- short-circuit the branch.
+--
+-- Note that, for simplicity's sake, the gates do not actually consume tokens,
+-- so once we reach a leaf we must match it entire against the input.
+--
+-- The leaves of an expansion tree may be of different lengths until we merge
+-- them.
+data ExpansionTree' r
+  = -- | A leaf represents the full sequence of rules which must be matched
+    Leaf r
+  | -- | Multiple possibilities for matching
+    Branch [ExpansionTree' r]
+  | -- | Set of possibilities guarded by a filter
+    FilterBranch Filter (ExpansionTree' r)
+  deriving (Functor, Show)
+
+-- | Merge trees
+--
+-- We merge from the left, folding a copy of the second tree into each interior
+-- node in the first.
+mergeTrees :: [ExpansionTree] -> ExpansionTree
+mergeTrees [] = Branch []
+mergeTrees (a : as) = foldl' go a as
+  where
+    go (Leaf xs) b = prependRules xs b
+    go (Branch xs) b = Branch $ fmap (flip go b) xs
+    go (FilterBranch f x) b = FilterBranch f $ go x b
+
+-- | Clamp a tree to contain only expressions with a fixed number of elements.
+clampTree :: Int -> ExpansionTree -> ExpansionTree
+clampTree sz a = maybe (Branch []) id (go a)
+  where
+    go l@(Leaf x) = if length x == sz then Just l else Nothing
+    go (Branch xs) = case catMaybes (go <$> xs) of
+      [] -> Nothing
+      ys -> Just $ Branch ys
+    go (FilterBranch f x) = FilterBranch f <$> go x
+
+type ExpansionTree = ExpansionTree' [Rule]
+
+prependRule :: Rule -> ExpansionTree -> ExpansionTree
+prependRule r t = (r :) <$> t
+
+-- | Prepend the given rules atop each leaf node in the tree
+prependRules :: [Rule] -> ExpansionTree -> ExpansionTree
+prependRules rs t = (rs <>) <$> t
+
+filterOn :: Rule -> Reader CDDL Filter
+filterOn rule =
+  getRule rule >>= \case
+    KV k v _ -> pure $ Filter k v
+    _ -> pure NoFilter
+
 -- | Expand rules to reach exactly the wanted length, which must be the number
 -- of items in the container. For example, if we want to validate 3 elements,
 -- and we have the following CDDL:
 --
 -- > a = [* int, * bool]
 --
--- this will be expanded to `[int, int, int], [int, int, bool], [int, bool,
--- bool], [bool, bool, bool]`.
+-- this will be expanded to
+-- ```
+--                [int, int, bool]
+--          int
+--                [int, int, int]
+--    int
+--          bool
+--                [int, bool, bool]
+-- *
+--    bool
+--          [bool, bool, bool]
+--
+-- ```
 --
 -- Essentially the rules we will parse is the choice among the expansions of the
 -- original rules.
-expandRules :: Int -> [Rule] -> Reader CDDL [[Rule]]
+expandRules :: Int -> [Rule] -> Reader CDDL ExpansionTree
 expandRules remainingLen []
-  | remainingLen /= 0 = pure []
-expandRules _ [] = pure [[]]
+  | remainingLen /= 0 = pure $ Branch []
+expandRules _ [] = pure $ Branch []
 expandRules remainingLen _
-  | remainingLen < 0 = pure []
-  | remainingLen == 0 = pure [[]]
-expandRules remainingLen (x : xs) = do
-  y <- expandRule remainingLen x
-  concat
-    <$> mapM
-      ( \y' -> do
-          suffixes <- expandRules (remainingLen - length y') xs
-          pure [y' ++ ys' | ys' <- suffixes]
-      )
-      y
+  | remainingLen < 0 = pure $ Branch []
+  | remainingLen == 0 = pure $ Branch []
+expandRules remainingLen xs = do
+  ys <- traverse (expandRule remainingLen) xs
+  pure . clampTree remainingLen $ mergeTrees ys
 
-expandRule :: Int -> Rule -> Reader CDDL [[Rule]]
+expandRule :: Int -> Rule -> Reader CDDL ExpansionTree
 expandRule maxLen _
-  | maxLen < 0 = pure []
+  | maxLen < 0 = pure $ Branch []
 expandRule maxLen rule =
   getRule rule >>= \case
-    Occur o OIOptional -> pure $ [] : [[o] | maxLen > 0]
-    Occur o OIZeroOrMore -> ([] :) <$> expandRule maxLen (MIt (Occur o OIOneOrMore))
+    -- For an optional branch, there is no point including a separate filter
+    Occur o OIOptional -> pure $ Branch [Leaf [o] | maxLen > 0]
+    Occur o OIZeroOrMore -> do
+      f <- filterOn o
+      FilterBranch f <$> expandRule maxLen (MIt (Occur o OIOneOrMore))
     Occur o OIOneOrMore ->
       if maxLen > 0
-        then ([o] :) . map (o :) <$> expandRule (maxLen - 1) (MIt (Occur o OIOneOrMore))
-        else pure []
+        then do
+          f <- filterOn o
+          FilterBranch f . prependRule o <$> expandRule (maxLen - 1) (MIt (Occur o OIOneOrMore))
+        else pure $ Branch []
     Occur o (OIBounded low high) -> case (low, high) of
       (Nothing, Nothing) -> expandRule maxLen (MIt (Occur o OIZeroOrMore))
       (Just (fromIntegral -> low'), Nothing) ->
         if maxLen >= low'
-          then map (replicate low' o ++) <$> expandRule (maxLen - low') (MIt (Occur o OIZeroOrMore))
-          else pure []
+          then (prependRules $ replicate low' o) <$> expandRule (maxLen - low') (MIt (Occur o OIZeroOrMore))
+          else pure $ Branch []
       (Nothing, Just (fromIntegral -> high')) ->
-        pure [replicate n o | n <- [0 .. min maxLen high']]
+        pure $ Branch [Leaf $ replicate n o | n <- [0 .. min maxLen high']]
       (Just (fromIntegral -> low'), Just (fromIntegral -> high')) ->
         if maxLen >= low'
-          then pure [replicate n o | n <- [low' .. min maxLen high']]
-          else pure []
-    _ -> pure [[rule | maxLen > 0]]
+          then pure $ Branch [Leaf $ replicate n o | n <- [low' .. min maxLen high']]
+          else pure $ Branch []
+    _ -> pure $ Branch [Leaf [rule] | maxLen > 0]
 
 -- | Which rules are optional?
 isOptional :: MonadReader CDDL m => Rule -> m Bool
@@ -725,9 +799,9 @@ isOptional rule =
 validateListWithExpandedRules ::
   forall m.
   MonadReader CDDL m =>
-  [Term] -> [Rule] -> m [(Rule, CBORTermResult)]
+  NE.NonEmpty Term -> [Rule] -> m [(Rule, CBORTermResult)]
 validateListWithExpandedRules terms rules =
-  go (zip terms rules)
+  go (zip (NE.toList terms) rules)
   where
     go ::
       [(Term, Rule)] -> m [(Rule, CBORTermResult)]
@@ -751,26 +825,37 @@ validateListWithExpandedRules terms rules =
 validateExpandedList ::
   forall m.
   MonadReader CDDL m =>
-  [Term] ->
-  [[Rule]] ->
+  NE.NonEmpty Term ->
+  ExpansionTree ->
   m (Rule -> CDDLResult)
 validateExpandedList terms rules = go rules
   where
-    go :: [[Rule]] -> m (Rule -> CDDLResult)
-    go [] = pure $ \r -> ListExpansionFail r rules []
-    go (choice : choices) = do
+    go :: ExpansionTree -> m (Rule -> CDDLResult)
+    go (Leaf choice) =  do
       res <- validateListWithExpandedRules terms choice
       case res of
         [] -> pure Valid
         _ -> case last res of
           (_, CBORTermResult _ (Valid _)) -> pure Valid
-          _ ->
-            go choices
-              >>= ( \case
-                      Valid _ -> pure Valid
-                      ListExpansionFail _ _ errors -> pure $ \r -> ListExpansionFail r rules (res : errors)
-                  )
-                . ($ dummyRule)
+          _ -> pure $ \r -> ListExpansionFail r rules (Leaf res)
+    go (FilterBranch f x) = validateTerm (NE.head terms) (arrayFilter f) >>= \case
+      (CBORTermResult _ (Valid _)) -> go x
+      -- In this case we insert a leaf since we haven't actually validated the
+      -- subnodes.
+      err -> pure $ \r -> ListExpansionFail r rules $ FilterBranch f $ Leaf [(r, err)]
+    go (Branch xs) = goBranch xs
+
+    goBranch [] = pure $ \r -> ListExpansionFail r rules $ Branch []
+    goBranch (x:xs) = go x <&> ($ dummyRule) >>= \case
+      Valid _ -> pure Valid
+      ListExpansionFail _ _ errors -> prependBranchErrors errors <$> goBranch xs
+
+    prependBranchErrors errors res = case res dummyRule of
+      Valid _ ->  Valid
+      ListExpansionFail _ _ errors2 -> \r ->
+        ListExpansionFail r rules $ errors <> errors2
+
+
 
 validateList ::
   MonadReader CDDL m => [Term] -> Rule -> m CDDLResult
@@ -781,11 +866,11 @@ validateList terms rule =
       Array rules ->
         case terms of
           [] -> ifM (and <$> mapM isOptional rules) (pure Valid) (pure InvalidRule)
-          _ ->
+          t:ts ->
             ask >>= \cddl ->
               let sequencesOfRules =
                     runReader (expandRules (length terms) $ flattenGroup cddl rules) cddl
-               in validateExpandedList terms sequencesOfRules
+               in validateExpandedList (t NE.:| ts) sequencesOfRules
       Choice opts -> validateChoice (validateList terms) opts
       _ -> pure UnapplicableRule
 
