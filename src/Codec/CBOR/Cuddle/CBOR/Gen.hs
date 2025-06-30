@@ -1,19 +1,24 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE ViewPatterns #-}
 
+#if MIN_VERSION_random(1,3,0)
+{-# OPTIONS_GHC -Wno-deprecations #-} -- Due to usage of `split`
+#endif
 -- | Generate example CBOR given a CDDL specification
 module Codec.CBOR.Cuddle.CBOR.Gen (generateCBORTerm, generateCBORTerm') where
 
 import Capability.Reader
 import Capability.Sink (HasSink)
 import Capability.Source (HasSource, MonadState (..))
-import Capability.State (HasState, get, modify, state)
+import Capability.State (HasState, get, modify)
 import Codec.CBOR.Cuddle.CDDL (
   Name (..),
   OccurrenceIndicator (..),
@@ -31,6 +36,7 @@ import Codec.CBOR.Write qualified as CBOR
 import Control.Monad (join, replicateM, (<=<))
 import Control.Monad.Reader (Reader, runReader)
 import Control.Monad.State.Strict (StateT, runStateT)
+import Control.Monad.State.Strict qualified as MTL
 import Data.Bifunctor (second)
 import Data.ByteString (ByteString)
 import Data.ByteString.Base16 qualified as Base16
@@ -45,24 +51,25 @@ import Data.Word (Word32, Word64)
 import GHC.Generics (Generic)
 import System.Random.Stateful (
   Random,
-  RandomGen (genShortByteString, genWord32, genWord64),
-  RandomGenM,
-  StatefulGen (..),
+  RandomGen (..),
+  StateGenM (..),
   UniformRange (uniformRM),
-  applyRandomGenM,
   randomM,
   uniformByteStringM,
  )
+#if MIN_VERSION_random(1,3,0)
+import System.Random.Stateful (
+  SplitGen (..)
+  )
+#endif
 
 --------------------------------------------------------------------------------
 -- Generator infrastructure
 --------------------------------------------------------------------------------
 
 -- | Generator context, parametrised over the type of the random seed
-data GenEnv g = GenEnv
+newtype GenEnv = GenEnv
   { cddl :: CTreeRoot' Identity MonoRef
-  , fakeSeed :: CapGenM g
-  -- ^ Access the "fake" seed, necessary to recursively call generators
   }
   deriving (Generic)
 
@@ -77,20 +84,42 @@ data GenState g = GenState
   }
   deriving (Generic)
 
-newtype M g a = M {runM :: StateT (GenState g) (Reader (GenEnv g)) a}
-  deriving (Functor, Applicative, Monad)
+instance RandomGen g => RandomGen (GenState g) where
+  genWord8 = withRandomSeed genWord8
+  genWord16 = withRandomSeed genWord16
+  genWord32 = withRandomSeed genWord32
+  genWord64 = withRandomSeed genWord64
+  split = splitGenStateWith split
+
+#if MIN_VERSION_random(1,3,0)
+instance SplitGen g => SplitGen (GenState g) where
+  splitGen = splitGenStateWith splitGen
+#endif
+
+splitGenStateWith :: (g -> (g, g)) -> GenState g -> (GenState g, GenState g)
+splitGenStateWith f s =
+  case f (randomSeed s) of
+    (gen', gen) -> (s {randomSeed = gen'}, s {randomSeed = gen})
+
+withRandomSeed :: (t -> (a, g)) -> GenState t -> (a, GenState g)
+withRandomSeed f s =
+  case f (randomSeed s) of
+    (r, gen) -> (r, s {randomSeed = gen})
+
+newtype M g a = M {runM :: StateT (GenState g) (Reader GenEnv) a}
+  deriving (Functor, Applicative, Monad, MTL.MonadState (GenState g))
   deriving
     (HasSource "randomSeed" g, HasSink "randomSeed" g, HasState "randomSeed" g)
     via Field
           "randomSeed"
           ()
-          (MonadState (StateT (GenState g) (Reader (GenEnv g))))
+          (MonadState (StateT (GenState g) (Reader GenEnv)))
   deriving
     (HasSource "depth" Int, HasSink "depth" Int, HasState "depth" Int)
     via Field
           "depth"
           ()
-          (MonadState (StateT (GenState g) (Reader (GenEnv g))))
+          (MonadState (StateT (GenState g) (Reader GenEnv)))
   deriving
     ( HasSource "cddl" (CTreeRoot' Identity MonoRef)
     , HasReader "cddl" (CTreeRoot' Identity MonoRef)
@@ -98,42 +127,20 @@ newtype M g a = M {runM :: StateT (GenState g) (Reader (GenEnv g)) a}
     via Field
           "cddl"
           ()
-          (Lift (StateT (GenState g) (MonadReader (Reader (GenEnv g)))))
-  deriving
-    (HasSource "fakeSeed" (CapGenM g), HasReader "fakeSeed" (CapGenM g))
-    via Field
-          "fakeSeed"
-          ()
-          (Lift (StateT (GenState g) (MonadReader (Reader (GenEnv g)))))
+          (Lift (StateT (GenState g) (MonadReader (Reader GenEnv))))
 
--- | Opaque type carrying the type of a pure PRNG inside a capability-style
--- state monad.
-data CapGenM g = CapGenM
-
-instance RandomGen g => StatefulGen (CapGenM g) (M g) where
-  uniformWord64 _ = state @"randomSeed" genWord64
-  uniformWord32 _ = state @"randomSeed" genWord32
-
-  uniformShortByteString n _ = state @"randomSeed" (genShortByteString n)
-
-instance RandomGen r => RandomGenM (CapGenM r) r (M r) where
-  applyRandomGenM f _ = state @"randomSeed" f
-
-runGen :: M g a -> GenEnv g -> GenState g -> (a, GenState g)
+runGen :: M g a -> GenEnv -> GenState g -> (a, GenState g)
 runGen m env st = runReader (runStateT (runM m) st) env
 
-evalGen :: M g a -> GenEnv g -> GenState g -> a
+evalGen :: M g a -> GenEnv -> GenState g -> a
 evalGen m env = fst . runGen m env
-
-asksM :: forall tag r m a. HasReader tag r m => (r -> m a) -> m a
-asksM f = f =<< ask @tag
 
 --------------------------------------------------------------------------------
 -- Wrappers around some Random function in Gen
 --------------------------------------------------------------------------------
 
 genUniformRM :: forall a g. (UniformRange a, RandomGen g) => (a, a) -> M g a
-genUniformRM = asksM @"fakeSeed" . uniformRM
+genUniformRM r = uniformRM r (StateGenM @(GenState g))
 
 -- | Generate a random number in a given range, biased increasingly towards the
 -- lower end as the depth parameter increases.
@@ -143,9 +150,8 @@ genDepthBiasedRM ::
   (a, a) ->
   M g a
 genDepthBiasedRM bounds = do
-  fs <- ask @"fakeSeed"
   d <- get @"depth"
-  samples <- replicateM d (uniformRM bounds fs)
+  samples <- replicateM d (genUniformRM bounds)
   pure $ minimum samples
 
 -- | Generates a bool, increasingly likely to be 'False' as the depth increases.
@@ -155,10 +161,10 @@ genDepthBiasedBool = do
   and <$> replicateM d genRandomM
 
 genRandomM :: forall g a. (Random a, RandomGen g) => M g a
-genRandomM = asksM @"fakeSeed" randomM
+genRandomM = randomM (StateGenM @(GenState g))
 
 genBytes :: forall g. RandomGen g => Int -> M g ByteString
-genBytes n = asksM @"fakeSeed" $ uniformByteStringM n
+genBytes n = uniformByteStringM n (StateGenM @(GenState g))
 
 genText :: forall g. RandomGen g => Int -> M g Text
 genText n = pure $ T.pack . take n . join $ repeat ['a' .. 'z']
@@ -436,12 +442,12 @@ genValueVariant (VBool b) = pure $ TBool b
 
 generateCBORTerm :: RandomGen g => CTreeRoot' Identity MonoRef -> Name -> g -> Term
 generateCBORTerm cddl n stdGen =
-  let genEnv = GenEnv {cddl, fakeSeed = CapGenM}
+  let genEnv = GenEnv {cddl}
       genState = GenState {randomSeed = stdGen, depth = 1}
    in evalGen (genForName n) genEnv genState
 
 generateCBORTerm' :: RandomGen g => CTreeRoot' Identity MonoRef -> Name -> g -> (Term, g)
 generateCBORTerm' cddl n stdGen =
-  let genEnv = GenEnv {cddl, fakeSeed = CapGenM}
+  let genEnv = GenEnv {cddl}
       genState = GenState {randomSeed = stdGen, depth = 1}
    in second randomSeed $ runGen (genForName n) genEnv genState
