@@ -897,17 +897,16 @@ containsMatchingKey ::
   Rule ->
   m (Either [ANonMatchedItem] AMatchedItem)
 containsMatchingKey terms rule = do
-    let tryKey (k, v) = do
-          result <- validateTerm k rule
-          case result of
-            CBORTermResult _ (Valid _) -> pure $ Right (AMatchedItem k v rule)
-            CBORTermResult _ res -> pure $ Left (ANonMatchedItem k v [Left (rule, res)])
+  let tryKey (k, v) = do
+        result <- validateTerm k rule
+        case result of
+          CBORTermResult _ (Valid _) -> pure $ Right (AMatchedItem k v rule)
+          CBORTermResult _ res -> pure $ Left (ANonMatchedItem k v [Left (rule, res)])
 
-    results <- traverse tryKey (NE.toList terms)
-    case rights results of
-      (m:_) -> pure $ Right m
-      [] -> pure $ Left $ lefts results
-
+  results <- traverse tryKey (NE.toList terms)
+  case rights results of
+    (m : _) -> pure $ Right m
+    [] -> pure $ Left $ lefts results
 
 validateMapWithExpandedRules ::
   forall m.
@@ -962,8 +961,8 @@ validateExpandedMap terms rules = go rules
           MapExpansionFail r rules [(matches, notMatched)]
     go (FilterBranch f x) =
       containsMatchingKey terms (mapFilter f) >>= \case
-        Right _  -> go x
-        Left errs -> pure $ \r -> MapExpansionFail r rules $ ([], ) <$> errs
+        Right _ -> go x
+        Left errs -> pure $ \r -> MapExpansionFail r rules $ ([],) <$> errs
     go (Branch xs) = goBranch xs
 
     goBranch [] = pure $ \r -> MapExpansionFail r rules []
@@ -987,7 +986,7 @@ validateMap terms rule =
       Map rules ->
         case terms of
           [] -> ifM (and <$> mapM isOptional rules) (pure Valid) (pure InvalidRule)
-          x:xs ->
+          x : xs ->
             ask >>= \cddl ->
               let sequencesOfRules =
                     runReader (expandRules (length terms) $ flattenGroup cddl rules) cddl

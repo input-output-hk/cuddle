@@ -10,8 +10,8 @@ let shellFor = fun ghcver =>
       haskell-language-server = hspkg "haskell-language-server",
       fourmolu = hspkg "fourmolu",
       ghc = organist.import_nix "nixpkgs#haskell.compiler.%{ghcver}",
-      cabal-install = hspkg "cabal-install",
-      cabal-fmt = hspkg "cabal-fmt",
+      # cabal-install = hspkg "cabal-install",
+      # cabal-fmt = hspkg "cabal-fmt",
       cddl = organist.import_nix "nixpkgs#cddl",
     },
   } in
@@ -24,7 +24,7 @@ let shellFor = fun ghcver =>
       packages = {},
     },
 
-    shells.dev = shellFor "ghc964",
+    shells.dev = shellFor "ghc912",
   }
 }
   | organist.OrganistExpression
