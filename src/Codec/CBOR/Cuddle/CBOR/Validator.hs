@@ -35,6 +35,7 @@ import System.Exit
 import System.IO
 import Text.Regex.TDFA
 
+import Debug.Trace (traceShow, traceShowM )
 type CDDL = CTreeRoot' Identity MonoRef
 type Rule = Node MonoRef
 type ResolvedRule = CTree MonoRef
@@ -661,8 +662,8 @@ flattenGroup cddl nodes =
 -- key, which can be in any position. For arrays, we filter based on the first
 -- value.
 data Filter
-  = NoFilter
-  | Filter {mapFilter :: Rule, arrayFilter :: Rule}
+  = ArrayFilter { arrayFilter :: Rule }
+  | MapFilter {mapFilter :: Rule, arrayFilter :: Rule}
   deriving (Show)
 
 -- | A tree of possible expansions of a rule matching the size of a container to
@@ -725,8 +726,8 @@ prependRules rs t = (rs <>) <$> t
 filterOn :: Rule -> Reader CDDL Filter
 filterOn rule =
   getRule rule >>= \case
-    KV k v _ -> pure $ Filter k v
-    _ -> pure NoFilter
+    KV k v _ -> pure $ MapFilter k v
+    _ -> pure $ ArrayFilter rule
 
 -- | Expand rules to reach exactly the wanted length, which must be the number
 -- of items in the container. For example, if we want to validate 3 elements,
@@ -750,6 +751,9 @@ filterOn rule =
 --
 -- Essentially the rules we will parse is the choice among the expansions of the
 -- original rules.
+--
+-- Important: the "rules" here are the various elements of a list,
+-- not true top-level rules.
 expandRules :: Int -> [Rule] -> Reader CDDL ExpansionTree
 expandRules remainingLen []
   | remainingLen /= 0 = pure $ Branch []
@@ -758,14 +762,14 @@ expandRules remainingLen _
   | remainingLen < 0 = pure $ Branch []
   | remainingLen == 0 = pure $ Branch []
 expandRules remainingLen xs = do
-  ys <- traverse (expandRule remainingLen) xs
-  pure . clampTree remainingLen $ mergeTrees ys
+  ys <- traceShow ("xs", xs) $ traverse (expandRule remainingLen) xs
+  traceShow ("ys:", ys) $ pure . clampTree remainingLen $ mergeTrees ys
 
 expandRule :: Int -> Rule -> Reader CDDL ExpansionTree
 expandRule maxLen _
   | maxLen < 0 = pure $ Branch []
 expandRule maxLen rule =
-  getRule rule >>= \case
+  traceShow (maxLen, rule) $ getRule rule >>= \case
     -- For an optional branch, there is no point including a separate filter
     Occur o OIOptional -> pure $ Branch [Leaf [o] | maxLen > 0]
     Occur o OIZeroOrMore -> do
@@ -960,9 +964,15 @@ validateExpandedMap terms rules = go rules
         (matches, Just notMatched) -> pure $ \r ->
           MapExpansionFail r rules [(matches, notMatched)]
     go (FilterBranch f x) =
-      containsMatchingKey terms (mapFilter f) >>= \case
-        Right _ -> go x
-        Left errs -> pure $ \r -> MapExpansionFail r rules $ ([],) <$> errs
+      case f of
+        MapFilter kf _ ->
+          containsMatchingKey terms kf >>= \case
+            Right _ -> go x
+            Left errs -> pure $ \r -> MapExpansionFail r rules $ ([],) <$> errs
+        ArrayFilter _ ->
+          -- We cannot really work with this. Ignore the filter and let the code
+          -- below blow up when it tries to match a map with an array
+          go x
     go (Branch xs) = goBranch xs
 
     goBranch [] = pure $ \r -> MapExpansionFail r rules []
