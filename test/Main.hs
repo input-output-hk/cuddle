@@ -1,8 +1,8 @@
 module Main (main) where
 
 import System.IO (BufferMode (..), hSetBuffering, hSetEncoding, stdout, utf8)
-import Test.Codec.CBOR.Cuddle.CDDL.Examples qualified as Examples
 import Test.Codec.CBOR.Cuddle.CBOR.Validator (cborValidatorSpec)
+import Test.Codec.CBOR.Cuddle.CDDL.Examples qualified as Examples
 import Test.Codec.CBOR.Cuddle.CDDL.Parser (parserSpec)
 import Test.Codec.CBOR.Cuddle.Huddle (huddleSpec)
 import Test.Hspec

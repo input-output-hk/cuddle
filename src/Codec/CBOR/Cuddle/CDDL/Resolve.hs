@@ -342,8 +342,6 @@ instance Hashable a => Hashable (DistRef a)
 
 deriving instance Show (CTree DistRef)
 
-deriving instance Eq (CTree DistRef)
-
 instance Hashable (CTree DistRef)
 
 deriving instance Show (CTreeRoot DistRef)
@@ -398,7 +396,7 @@ buildResolvedCTree (CTreeRoot ct) = CTreeRoot <$> traverse go ct
 data MonoRef a
   = MIt a
   | MRuleRef Name
-  deriving (Functor, Show)
+  deriving (Eq, Functor, Show)
 
 deriving instance Show (CTree MonoRef)
 

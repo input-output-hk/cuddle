@@ -35,7 +35,8 @@ import System.Exit
 import System.IO
 import Text.Regex.TDFA
 
-import Debug.Trace (traceShow, traceShowM )
+import Debug.Trace (traceShow, traceShowId)
+
 type CDDL = CTreeRoot' Identity MonoRef
 type Rule = Node MonoRef
 type ResolvedRule = CTree MonoRef
@@ -64,7 +65,7 @@ data CDDLResult
       -- | List of expansions of rules
       ExpansionTree
       -- | For each expansion, for each of the rules in the expansion, the result
-      (ExpansionTree' [(Rule, CBORTermResult)])
+      (ExpansionTree' (Rule, CBORTermResult))
   | -- | All expansions failed
     --
     -- An expansion is: Given a CBOR @TMap@ of @N@ elements, we will expand the
@@ -661,10 +662,10 @@ flattenGroup cddl nodes =
 -- contenxt in which this expansion is used. For maps, we filter based on the
 -- key, which can be in any position. For arrays, we filter based on the first
 -- value.
-data Filter
-  = ArrayFilter { arrayFilter :: Rule }
-  | MapFilter {mapFilter :: Rule, arrayFilter :: Rule}
-  deriving (Show)
+data Filter r
+  = ArrayFilter {arrayFilter :: r}
+  | MapFilter {mapFilter :: r, arrayFilter :: r}
+  deriving (Eq, Functor, Show)
 
 -- | A tree of possible expansions of a rule matching the size of a container to
 -- validate. This tree contains filters at each node, such that we can
@@ -677,20 +678,20 @@ data Filter
 -- them.
 data ExpansionTree' r
   = -- | A leaf represents the full sequence of rules which must be matched
-    Leaf r
+    Leaf [r]
   | -- | Multiple possibilities for matching
     Branch [ExpansionTree' r]
   | -- | Set of possibilities guarded by a filter
-    FilterBranch Filter (ExpansionTree' r)
-  deriving (Functor, Show)
+    FilterBranch (Filter r) (ExpansionTree' r)
+  deriving (Eq, Show)
 
 -- | Merge trees
 --
 -- We merge from the left, folding a copy of the second tree into each interior
 -- node in the first.
-mergeTrees :: [ExpansionTree] -> ExpansionTree
+mergeTrees :: [ExpansionTree' a] -> ExpansionTree' a
 mergeTrees [] = Branch []
-mergeTrees (a : as) = foldl' go a as
+mergeTrees (a : as) = Branch [a, foldl' go a as]
   where
     go (Leaf xs) b = prependRules xs b
     go (Branch xs) b = Branch $ fmap (flip go b) xs
@@ -714,16 +715,20 @@ clampTree sz a = maybe (Branch []) id (go a)
       ys -> Just $ Branch ys
     go (FilterBranch f x) = FilterBranch f <$> go x
 
-type ExpansionTree = ExpansionTree' [Rule]
+type ExpansionTree = ExpansionTree' Rule
 
-prependRule :: Rule -> ExpansionTree -> ExpansionTree
-prependRule r t = (r :) <$> t
+-- | Prepend a rule at all leaf nodes
+prependRule :: a -> ExpansionTree' a -> ExpansionTree' a
+prependRule r = prependRules [r]
 
 -- | Prepend the given rules atop each leaf node in the tree
-prependRules :: [Rule] -> ExpansionTree -> ExpansionTree
-prependRules rs t = (rs <>) <$> t
+prependRules :: [r] -> ExpansionTree' r -> ExpansionTree' r
+prependRules rs t = case t of
+  Leaf a -> Leaf $ rs <> a
+  Branch xs -> Branch $ fmap (prependRules rs) xs
+  FilterBranch f x -> FilterBranch f $ prependRules rs x
 
-filterOn :: Rule -> Reader CDDL Filter
+filterOn :: Rule -> Reader CDDL (Filter Rule)
 filterOn rule =
   getRule rule >>= \case
     KV k v _ -> pure $ MapFilter k v
@@ -762,38 +767,42 @@ expandRules remainingLen _
   | remainingLen < 0 = pure $ Branch []
   | remainingLen == 0 = pure $ Branch []
 expandRules remainingLen xs = do
-  ys <- traceShow ("xs", xs) $ traverse (expandRule remainingLen) xs
-  traceShow ("ys:", ys) $ pure . clampTree remainingLen $ mergeTrees ys
+  ys <- traceShow ("xs", xs) $ traverse (\a -> expandRule remainingLen a []) xs
+  let ms = traceShowId $ mergeTrees ys
+  traceShow ("ys:", ys) $ pure . clampTree remainingLen $ ms
 
-expandRule :: Int -> Rule -> Reader CDDL ExpansionTree
-expandRule maxLen _
-  | maxLen < 0 = pure $ Branch []
-expandRule maxLen rule =
-  traceShow (maxLen, rule) $ getRule rule >>= \case
-    -- For an optional branch, there is no point including a separate filter
-    Occur o OIOptional -> pure $ Branch [Leaf [o] | maxLen > 0]
-    Occur o OIZeroOrMore -> do
-      f <- filterOn o
-      FilterBranch f <$> expandRule maxLen (MIt (Occur o OIOneOrMore))
-    Occur o OIOneOrMore ->
-      if maxLen > 0
-        then do
-          f <- filterOn o
-          FilterBranch f . prependRule o <$> expandRule (maxLen - 1) (MIt (Occur o OIOneOrMore))
-        else pure $ Branch []
-    Occur o (OIBounded low high) -> case (low, high) of
-      (Nothing, Nothing) -> expandRule maxLen (MIt (Occur o OIZeroOrMore))
-      (Just (fromIntegral -> low'), Nothing) ->
-        if maxLen >= low'
-          then (prependRules $ replicate low' o) <$> expandRule (maxLen - low') (MIt (Occur o OIZeroOrMore))
-          else pure $ Branch []
-      (Nothing, Just (fromIntegral -> high')) ->
-        pure $ Branch [Leaf $ replicate n o | n <- [0 .. min maxLen high']]
-      (Just (fromIntegral -> low'), Just (fromIntegral -> high')) ->
-        if maxLen >= low'
-          then pure $ Branch [Leaf $ replicate n o | n <- [low' .. min maxLen high']]
-          else pure $ Branch []
-    _ -> pure $ Branch [Leaf [rule] | maxLen > 0]
+expandRule :: Int -> Rule -> [Rule] -> Reader CDDL ExpansionTree
+expandRule maxLen _ acc
+  | maxLen <= 0 = pure $ Leaf $ reverse acc
+expandRule maxLen rule acc =
+  traceShow (maxLen, rule) $
+    getRule rule >>= \case
+      -- For an optional branch, there is no point including a separate filter
+      Occur o OIOptional -> pure $ Branch [Leaf [o] | maxLen > 0]
+      Occur o OIZeroOrMore -> do
+        f <- filterOn o
+        FilterBranch f <$> expandRule maxLen (MIt (Occur o OIOneOrMore)) (o : acc)
+      Occur o OIOneOrMore ->
+        if maxLen > 0
+          then do
+            f <- filterOn o
+            FilterBranch f . prependRule o <$> expandRule (maxLen - 1) (MIt (Occur o OIOneOrMore)) (o : acc)
+          else pure $ Leaf acc
+      Occur o (OIBounded low high) -> case (low, high) of
+        (Nothing, Nothing) -> expandRule maxLen (MIt (Occur o OIZeroOrMore)) (o : acc)
+        (Just (fromIntegral -> low'), Nothing) ->
+          if maxLen >= low'
+            then
+              (prependRules $ replicate low' o)
+                <$> expandRule (maxLen - low') (MIt (Occur o OIZeroOrMore)) (o : acc)
+            else pure $ Leaf acc
+        (Nothing, Just (fromIntegral -> high')) ->
+          pure $ Branch [Leaf $ replicate n o <> acc | n <- [0 .. min maxLen high']]
+        (Just (fromIntegral -> low'), Just (fromIntegral -> high')) ->
+          if maxLen >= low'
+            then pure $ Branch [Leaf $ replicate n o <> acc | n <- [low' .. min maxLen high']]
+            else pure $ Leaf acc
+      _ -> pure . Leaf . reverse $ rule : acc
 
 -- | Which rules are optional?
 isOptional :: MonadReader CDDL m => Rule -> m Bool
@@ -856,7 +865,7 @@ validateExpandedList terms rules = go rules
         (CBORTermResult _ (Valid _)) -> go x
         -- In this case we insert a leaf since we haven't actually validated the
         -- subnodes.
-        err -> pure $ \r -> ListExpansionFail r rules $ FilterBranch f $ Leaf [(r, err)]
+        err -> pure $ \r -> ListExpansionFail r rules $ FilterBranch ((,err) <$> f) $ Leaf [(r, err)]
     go (Branch xs) = goBranch xs
 
     goBranch [] = pure $ \r -> ListExpansionFail r rules $ Branch []
