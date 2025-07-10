@@ -689,9 +689,13 @@ data ExpansionTree' r
 --
 -- We merge from the left, folding a copy of the second tree into each interior
 -- node in the first.
+--
+-- The trees to be merged are the expansions of each item in the top-level
+-- group to be matched. Thus the resulting tree should match a group
+-- containing all the argument trees.
 mergeTrees :: [ExpansionTree' a] -> ExpansionTree' a
 mergeTrees [] = Branch []
-mergeTrees (a : as) = Branch [a, foldl' go a as]
+mergeTrees (a : as) = foldl' go a as
   where
     go (Leaf xs) b = prependRules xs b
     go (Branch xs) b = Branch $ fmap (flip go b) xs
@@ -706,7 +710,7 @@ mergeTopBranch t1 (Branch t2) = Branch (t1 : t2)
 mergeTopBranch t1 t2 = Branch [t1, t2]
 
 -- | Clamp a tree to contain only expressions with a fixed number of elements.
-clampTree :: Int -> ExpansionTree -> ExpansionTree
+clampTree :: Int -> ExpansionTree' a  -> ExpansionTree' a
 clampTree sz a = maybe (Branch []) id (go a)
   where
     go l@(Leaf x) = if length x == sz then Just l else Nothing

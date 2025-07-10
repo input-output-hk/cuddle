@@ -1,5 +1,7 @@
 {-# LANGUAGE OverloadedLists #-}
+
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PatternSynonyms #-}
 
 module Test.Codec.CBOR.Cuddle.CBOR.Validator where
 
@@ -26,16 +28,28 @@ utilitySpec = describe "Utility functions should work" $ do
         CV.Leaf [True],
         CV.Leaf [False]
       ] `shouldBe` CV.Leaf [True, False]
-    it "Should should nest things" $
+    it "Should nest things" $
       CV.mergeTrees @Bool [
-        CV.FilterBranch (CV.ArrayFilter True) (CV.Leaf [True, True]),
-        CV.FilterBranch (CV.ArrayFilter False) (CV.Leaf [False, False])
+        CV.FilterBranch (CV.ArrayFilter True) (CV.Leaf [True]),
+        CV.FilterBranch (CV.ArrayFilter False) (CV.Leaf [False])
       ] `shouldBe`
-      CV.Branch [
         CV.FilterBranch (CV.ArrayFilter True)
-          (CV.FilterBranch (CV.ArrayFilter True) (CV.Leaf [True, True])),
-          CV.Branch [CV.FilterBranch (CV.ArrayFilter False) (CV.Leaf [True, True, False, False])]
-      ]
+          (CV.FilterBranch (CV.ArrayFilter False) (CV.Leaf [True, False]))
+    it "Should work 2 levels deep" $
+      CV.mergeTrees @Bool [
+          F (AF True) (B [L [True], F (AF True) (L [True, True])]),
+          F (AF False) (B [L [False], F (AF False) (L [False, False])])
+      ] `shouldBe`
+      F (AF True) (B [
+          F (AF False) (B [L [True, False], F (AF False) (L [True, False, False])]),
+          F (AF True) (F (AF False) (B [L [True, True, False], F (AF False) (L [True, True, False, False])]))
+      ])
+  describe "clampTree" $ do
+    it "Should exclude too long possibilities" $
+      CV.clampTree 2 (L [1..10]) `shouldBe` B []
+    it "Should work within branches" $
+      CV.clampTree 2 (B [L [1,2], L [2,3,4], L [3,4]]) `shouldBe`
+        B [L [1,2], L [ 3,4]]
 
 expandRuleSpec :: Spec
 expandRuleSpec = describe "Expand Rule should generate appropriate expansion trees" $ do
@@ -81,3 +95,12 @@ withHuddleRule hdl n rdr = runReader (rdr groupProductions) cddl
       MIt (Array elts) -> elts
       MIt (Map elts) -> elts
       _ -> error "Rule does not identify an array or map"
+
+pattern F :: forall {r}. CV.Filter r -> CV.ExpansionTree' r -> CV.ExpansionTree' r
+pattern F f e = CV.FilterBranch f e
+pattern L :: forall {r}. [r] -> CV.ExpansionTree' r
+pattern L rs = CV.Leaf rs
+pattern B :: forall {r}. [CV.ExpansionTree' r] -> CV.ExpansionTree' r
+pattern B xs = CV.Branch xs
+pattern AF :: forall {r}. r -> CV.Filter r
+pattern AF f = CV.ArrayFilter f
