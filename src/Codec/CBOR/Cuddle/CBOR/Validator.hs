@@ -13,7 +13,7 @@ import Codec.CBOR.Cuddle.CDDL.Resolve
 import Codec.CBOR.Read
 import Codec.CBOR.Term
 import Control.Exception
-import Control.Monad ((>=>))
+import Control.Monad ((>=>), join)
 import Control.Monad.Reader
 import Data.Bifunctor
 import Data.Bits hiding (And)
@@ -34,8 +34,6 @@ import GHC.Float
 import System.Exit
 import System.IO
 import Text.Regex.TDFA
-
-import Debug.Trace (traceShow, traceShowId)
 
 type CDDL = CTreeRoot' Identity MonoRef
 type Rule = Node MonoRef
@@ -701,6 +699,19 @@ mergeTrees (a : as) = foldl' go a as
     go (Branch xs) b = Branch $ fmap (flip go b) xs
     go (FilterBranch f x) b = FilterBranch f $ go x b
 
+-- | Normalise a tree
+--
+-- - Remove single node branches
+-- - Inline subbranches into higher branches
+normaliseTree :: ExpansionTree' a -> ExpansionTree' a
+normaliseTree (Branch [a]) = normaliseTree a
+normaliseTree (Branch xs) = Branch . join $ unwindBranches <$> xs
+  where
+    unwindBranches (Branch xs') = normaliseTree <$> xs'
+    unwindBranches a = [normaliseTree a]
+normaliseTree (FilterBranch f a) = FilterBranch f $ normaliseTree a
+normaliseTree a = a
+
 -- | Merge two trees by adding them as choices at the top-level using the
 --  `Branch` constructor.
 mergeTopBranch :: ExpansionTree' a -> ExpansionTree' a -> ExpansionTree' a
@@ -710,7 +721,7 @@ mergeTopBranch t1 (Branch t2) = Branch (t1 : t2)
 mergeTopBranch t1 t2 = Branch [t1, t2]
 
 -- | Clamp a tree to contain only expressions with a fixed number of elements.
-clampTree :: Int -> ExpansionTree' a  -> ExpansionTree' a
+clampTree :: Int -> ExpansionTree' a -> ExpansionTree' a
 clampTree sz a = maybe (Branch []) id (go a)
   where
     go l@(Leaf x) = if length x == sz then Just l else Nothing
@@ -719,18 +730,14 @@ clampTree sz a = maybe (Branch []) id (go a)
       ys -> Just $ Branch ys
     go (FilterBranch f x) = FilterBranch f <$> go x
 
-type ExpansionTree = ExpansionTree' Rule
-
--- | Prepend a rule at all leaf nodes
-prependRule :: a -> ExpansionTree' a -> ExpansionTree' a
-prependRule r = prependRules [r]
-
 -- | Prepend the given rules atop each leaf node in the tree
 prependRules :: [r] -> ExpansionTree' r -> ExpansionTree' r
 prependRules rs t = case t of
   Leaf a -> Leaf $ rs <> a
   Branch xs -> Branch $ fmap (prependRules rs) xs
   FilterBranch f x -> FilterBranch f $ prependRules rs x
+
+type ExpansionTree = ExpansionTree' Rule
 
 filterOn :: Rule -> Reader CDDL (Filter Rule)
 filterOn rule =
@@ -768,45 +775,86 @@ expandRules remainingLen []
   | remainingLen /= 0 = pure $ Branch []
 expandRules _ [] = pure $ Branch []
 expandRules remainingLen _
-  | remainingLen < 0 = pure $ Branch []
-  | remainingLen == 0 = pure $ Branch []
+  | remainingLen <= 0 = pure $ Branch []
 expandRules remainingLen xs = do
-  ys <- traceShow ("xs", xs) $ traverse (\a -> expandRule remainingLen a []) xs
-  let ms = traceShowId $ mergeTrees ys
-  traceShow ("ys:", ys) $ pure . clampTree remainingLen $ ms
+  ys <- traverse (\a -> expandRule remainingLen a) xs
+  let ms = mergeTrees ys
+  pure . normaliseTree . clampTree remainingLen $ ms
 
-expandRule :: Int -> Rule -> [Rule] -> Reader CDDL ExpansionTree
-expandRule maxLen _ acc
-  | maxLen <= 0 = pure $ Leaf $ reverse acc
-expandRule maxLen rule acc =
-  traceShow (maxLen, rule) $
-    getRule rule >>= \case
-      -- For an optional branch, there is no point including a separate filter
-      Occur o OIOptional -> pure $ Branch [Leaf [o] | maxLen > 0]
-      Occur o OIZeroOrMore -> do
-        f <- filterOn o
-        FilterBranch f <$> expandRule maxLen (MIt (Occur o OIOneOrMore)) (o : acc)
-      Occur o OIOneOrMore ->
-        if maxLen > 0
-          then do
+expandRule :: Int -> Rule -> Reader CDDL ExpansionTree
+expandRule = go []
+  where
+    go acc maxLen _ | maxLen <= 0 = pure $ Leaf $ reverse acc
+    go acc maxLen rule =
+      getRule rule >>= \case
+        Occur o OIOptional ->
+          -- If the rule is optional, then we have two cases - one just the acc,
+          -- and one with the new element as well. But there's little point guarding
+          -- that second branch with a filter.
+          pure $ Branch [Leaf (reverse $ o : acc), Leaf (reverse acc)]
+        Occur o OIZeroOrMore -> do
+          -- In the zero or more case, we allow the acc, and then another branch -
+          -- guarded by the element - which recurses decreasing the maxLen
+          rest <- go (o : acc) (maxLen - 1) rule
+          f <- filterOn o
+          pure $
+            Branch
+              [ FilterBranch f rest
+              , Leaf (reverse acc)
+              ]
+        Occur o OIOneOrMore -> do
+          -- In the one or more case, we filter directly on the element and then
+          -- recurse with a ZeroOrMore
+          f <- filterOn o
+          FilterBranch f <$> go (o : acc) (maxLen - 1) (MIt (Occur o OIZeroOrMore))
+        Occur o (OIBounded low high) -> case (low, high) of
+          (Nothing, Nothing) ->
+            -- This is basically the zero or more case again
+            go acc maxLen (MIt (Occur o OIZeroOrMore))
+          (Just (fromIntegral -> low'), Nothing) ->
+            -- We have a lower bound, so things must show up at least that number
+            -- of times.
+            if maxLen < low'
+              then
+                -- No way for this to work, so we yield an empty branch
+                pure $ Branch []
+              else do
+                -- We'll gate a single branch
+                let acc' = replicate low' o <> acc
+                f <- filterOn o
+                rest <- go acc' (maxLen - low') (MIt (Occur o OIZeroOrMore))
+                pure $ FilterBranch f rest
+          (Nothing, Just (fromIntegral -> high')) -> do
+            -- We have an upper bound but no lower bound. That's fine - we yield
+            -- a branch with just the acc and a branch where we consume one element
+            -- and decrease the upper bound.
+            rest <-
+              go
+                (o : acc)
+                (maxLen - 1)
+                (MIt (Occur o (OIBounded Nothing (Just $ high' - 1))))
             f <- filterOn o
-            FilterBranch f . prependRule o <$> expandRule (maxLen - 1) (MIt (Occur o OIOneOrMore)) (o : acc)
-          else pure $ Leaf acc
-      Occur o (OIBounded low high) -> case (low, high) of
-        (Nothing, Nothing) -> expandRule maxLen (MIt (Occur o OIZeroOrMore)) (o : acc)
-        (Just (fromIntegral -> low'), Nothing) ->
-          if maxLen >= low'
-            then
-              (prependRules $ replicate low' o)
-                <$> expandRule (maxLen - low') (MIt (Occur o OIZeroOrMore)) (o : acc)
-            else pure $ Leaf acc
-        (Nothing, Just (fromIntegral -> high')) ->
-          pure $ Branch [Leaf $ replicate n o <> acc | n <- [0 .. min maxLen high']]
-        (Just (fromIntegral -> low'), Just (fromIntegral -> high')) ->
-          if maxLen >= low'
-            then pure $ Branch [Leaf $ replicate n o <> acc | n <- [low' .. min maxLen high']]
-            else pure $ Leaf acc
-      _ -> pure . Leaf . reverse $ rule : acc
+            pure $
+              Branch
+                [ FilterBranch f rest
+                , Leaf (reverse acc)
+                ]
+          (Just (fromIntegral -> low'), Just (fromIntegral -> high')) -> do
+            -- Upper and lower bounds.
+            if maxLen < low'
+              then
+                -- No way for this to work, so we yield an empty branch
+                pure $ Branch []
+              else do
+                -- We'll gate a single branch
+                let acc' = replicate low' o <> acc
+                f <- filterOn o
+                rest <- go acc' (maxLen - low')
+                  (MIt (Occur o (OIBounded Nothing (Just $ high' - fromIntegral low'))))
+                pure $ FilterBranch f rest
+        _ ->
+          -- This is a rule without an occurence indicator, so it must be included
+          pure $ Leaf $ reverse (rule : acc)
 
 -- | Which rules are optional?
 isOptional :: MonadReader CDDL m => Rule -> m Bool
