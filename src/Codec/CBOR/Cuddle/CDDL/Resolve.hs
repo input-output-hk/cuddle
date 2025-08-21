@@ -60,6 +60,7 @@ import Data.Hashable
 #if __GLASGOW_HASKELL__ < 910
 import Data.List (foldl')
 #endif
+import Data.Bits (Bits (..))
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
@@ -132,7 +133,8 @@ data OrRef a
 
 type RefCTree = CTreeRoot OrRef
 
-deriving instance Show (CTree OrRef)
+instance Show (CTree OrRef) where
+  show = showCTree
 
 deriving instance Show (CTreeRoot OrRef)
 
@@ -340,11 +342,34 @@ data DistRef a
 
 instance Hashable a => Hashable (DistRef a)
 
-deriving instance Show (CTree DistRef)
+instance Show (CTree DistRef) where
+  show = showCTree
 
-deriving instance Eq (CTree DistRef)
+instance Eq (CTree DistRef) where
+  (==) = eqCTree
 
-instance Hashable (CTree DistRef)
+instance Hashable (CTree DistRef) where
+  hashWithSalt salt = \case
+    CTree.Literal x -> hashWithSalt salt $ hashWithSalt salt x
+    CTree.Postlude x -> hashWithSalt (salt `xor` 1) $ hashWithSalt salt x
+    CTree.Map x -> hashWithSalt (salt `xor` 2) $ hashWithSalt salt x
+    CTree.Array x -> hashWithSalt (salt `xor` 3) $ hashWithSalt salt x
+    CTree.Choice x -> hashWithSalt (salt `xor` 4) $ hashWithSalt salt x
+    CTree.Group x -> hashWithSalt (salt `xor` 5) $ hashWithSalt salt x
+    CTree.Enum x -> hashWithSalt (salt `xor` 6) $ hashWithSalt salt x
+    CTree.Unwrap x -> hashWithSalt (salt `xor` 7) $ hashWithSalt salt x
+    CTree.Occur x y -> hashWithSalt (salt `xor` 8) $ hashWithSalt salt x `xor` hashWithSalt (salt `xor` 1) y
+    CTree.Tag x y -> hashWithSalt (salt `xor` 9) $ hashWithSalt salt x `xor` hashWithSalt (salt `xor` 1) y
+    CTree.WithGen _ y -> hashWithSalt (salt `xor` 10) $ hashWithSalt (salt `xor` 1) y
+    CTree.KV x y z ->
+      hashWithSalt (salt `xor` 11) $
+        hashWithSalt salt x `xor` hashWithSalt (salt `xor` 1) y `xor` hashWithSalt (salt `xor` 2) z
+    CTree.Range x y z ->
+      hashWithSalt (salt `xor` 12) $
+        hashWithSalt salt x `xor` hashWithSalt (salt `xor` 1) y `xor` hashWithSalt (salt `xor` 2) z
+    CTree.Control x y z ->
+      hashWithSalt (salt `xor` 13) $
+        hashWithSalt salt x `xor` hashWithSalt (salt `xor` 1) y `xor` hashWithSalt (salt `xor` 2) z
 
 deriving instance Show (CTreeRoot DistRef)
 
@@ -400,7 +425,41 @@ data MonoRef a
   | MRuleRef Name
   deriving (Functor, Show)
 
-deriving instance Show (CTree MonoRef)
+showCTree :: Show (f (CTree f)) => CTree f -> String
+showCTree (CTree.Literal x) = "Literal " <> show x
+showCTree (CTree.Postlude x) = "Postlude " <> show x
+showCTree (CTree.Map x) = "Map " <> show x
+showCTree (CTree.Array x) = "Array " <> show x
+showCTree (CTree.Choice x) = "Choice " <> show x
+showCTree (CTree.Group x) = "Group " <> show x
+showCTree (CTree.KV x y z) = "KV " <> show x <> " " <> show y <> " " <> show z
+showCTree (CTree.Occur x y) = "Occur " <> show x <> " " <> show y
+showCTree (CTree.Range x y z) = "Range " <> show x <> " " <> show y <> " " <> show z
+showCTree (CTree.Control x y z) = "Control " <> show x <> " " <> show y <> " " <> show z
+showCTree (CTree.Enum x) = "Enum " <> show x
+showCTree (CTree.Unwrap x) = "Unwrap " <> show x
+showCTree (CTree.Tag x y) = "Tag " <> show x <> " " <> show y
+showCTree (CTree.WithGen _ y) = "WithGen " <> show y
+
+eqCTree :: Eq (f (CTree f)) => CTree f -> CTree f -> Bool
+eqCTree (CTree.Literal x) (CTree.Literal x') = x == x'
+eqCTree (CTree.Postlude x) (CTree.Postlude x') = x == x'
+eqCTree (CTree.Map x) (CTree.Map x') = x == x'
+eqCTree (CTree.Array x) (CTree.Array x') = x == x'
+eqCTree (CTree.Choice x) (CTree.Choice x') = x == x'
+eqCTree (CTree.Group x) (CTree.Group x') = x == x'
+eqCTree (CTree.KV x y z) (CTree.KV x' y' z') = x == x' && y == y' && z == z'
+eqCTree (CTree.Occur x y) (CTree.Occur x' y') = x == x' && y == y'
+eqCTree (CTree.Range x y z) (CTree.Range x' y' z') = x == x' && y == y' && z == z'
+eqCTree (CTree.Control x y z) (CTree.Control x' y' z') = x == x' && y == y' && z == z'
+eqCTree (CTree.Enum x) (CTree.Enum x') = x == x'
+eqCTree (CTree.Unwrap x) (CTree.Unwrap x') = x == x'
+eqCTree (CTree.Tag x y) (CTree.Tag x' y') = x == x' && y == y'
+eqCTree (CTree.WithGen _ y) (CTree.WithGen _ y') = y == y'
+eqCTree _ _ = False
+
+instance Show (CTree MonoRef) where
+  show = showCTree
 
 deriving instance
   Show (poly (CTree.Node MonoRef)) =>

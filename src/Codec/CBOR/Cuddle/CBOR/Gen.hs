@@ -25,7 +25,17 @@ import Codec.CBOR.Cuddle.CDDL (
   Value (..),
   ValueVariant (..),
  )
-import Codec.CBOR.Cuddle.CDDL.CTree (CTree, CTreeRoot' (..))
+import Codec.CBOR.Cuddle.CDDL.CTree (
+  CTree,
+  CTreeRoot' (..),
+  WrappedTerm,
+  flattenWrappedList,
+  pairTermList,
+  singleTermList,
+  pattern G,
+  pattern P,
+  pattern S,
+ )
 import Codec.CBOR.Cuddle.CDDL.CTree qualified as CTree
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
 import Codec.CBOR.Cuddle.CDDL.Postlude (PTerm (..))
@@ -53,6 +63,7 @@ import System.Random.Stateful (
   Random,
   RandomGen (..),
   StateGenM (..),
+  StatefulGen (..),
   UniformRange (uniformRM),
   randomM,
   uniformByteStringM,
@@ -208,52 +219,10 @@ genPostlude pt = case pt of
   PTUndefined -> pure $ TSimple 23
 
 --------------------------------------------------------------------------------
--- Kinds of terms
---------------------------------------------------------------------------------
-
-data WrappedTerm
-  = SingleTerm Term
-  | PairTerm Term Term
-  | GroupTerm [WrappedTerm]
-  deriving (Eq, Show)
-
--- | Recursively flatten wrapped list. That is, expand any groups out to their
--- individual entries.
-flattenWrappedList :: [WrappedTerm] -> [WrappedTerm]
-flattenWrappedList [] = []
-flattenWrappedList (GroupTerm xxs : xs) =
-  flattenWrappedList xxs <> flattenWrappedList xs
-flattenWrappedList (y : xs) = y : flattenWrappedList xs
-
-pattern S :: Term -> WrappedTerm
-pattern S t = SingleTerm t
-
--- | Convert a list of wrapped terms to a list of terms. If any 'PairTerm's are
--- present, we just take their "value" part.
-singleTermList :: [WrappedTerm] -> Maybe [Term]
-singleTermList [] = Just []
-singleTermList (S x : xs) = (x :) <$> singleTermList xs
-singleTermList (P _ y : xs) = (y :) <$> singleTermList xs
-singleTermList _ = Nothing
-
-pattern P :: Term -> Term -> WrappedTerm
-pattern P t1 t2 = PairTerm t1 t2
-
--- | Convert a list of wrapped terms to a list of pairs of terms, or fail if any
--- 'SingleTerm's are present.
-pairTermList :: [WrappedTerm] -> Maybe [(Term, Term)]
-pairTermList [] = Just []
-pairTermList (P x y : xs) = ((x, y) :) <$> pairTermList xs
-pairTermList _ = Nothing
-
-pattern G :: [WrappedTerm] -> WrappedTerm
-pattern G xs = GroupTerm xs
-
---------------------------------------------------------------------------------
 -- Generator functions
 --------------------------------------------------------------------------------
 
-genForCTree :: RandomGen g => CTree MonoRef -> M g WrappedTerm
+genForCTree :: forall g. RandomGen g => CTree MonoRef -> M g WrappedTerm
 genForCTree (CTree.Literal v) = S <$> genValue v
 genForCTree (CTree.Postlude pt) = S <$> genPostlude pt
 genForCTree (CTree.Map nodes) = do
@@ -362,6 +331,7 @@ genForCTree (CTree.Tag tag node) = do
   case enc of
     S x -> pure $ S $ TTagged tag x
     _ -> error "Tag controller does not correspond to a single term"
+genForCTree (CTree.WithGen gen _) = gen StateGenM
 
 genForNode :: RandomGen g => CTree.Node MonoRef -> M g WrappedTerm
 genForNode = genForCTree <=< resolveIfRef
@@ -446,7 +416,8 @@ generateCBORTerm cddl n stdGen =
       genState = GenState {randomSeed = stdGen, depth = 1}
    in evalGen (genForName n) genEnv genState
 
-generateCBORTerm' :: RandomGen g => CTreeRoot' Identity MonoRef -> Name -> g -> (Term, g)
+generateCBORTerm' ::
+  (RandomGen g, StatefulGen g (M g)) => CTreeRoot' Identity MonoRef -> Name -> g -> (Term, g)
 generateCBORTerm' cddl n stdGen =
   let genEnv = GenEnv {cddl}
       genState = GenState {randomSeed = stdGen, depth = 1}

@@ -145,7 +145,9 @@ validateCBOR' bs rule cddl@(CTreeRoot tree) =
 -- spec
 validateTerm ::
   MonadReader CDDL m =>
-  Term -> Rule -> m CBORTermResult
+  Term ->
+  Rule ->
+  m CBORTermResult
 validateTerm term rule =
   let f = case term of
         TInt i -> validateInteger (fromIntegral i)
@@ -183,7 +185,9 @@ validateTerm term rule =
 -- Ints, so we convert everything to Integer.
 validateInteger ::
   MonadReader CDDL m =>
-  Integer -> Rule -> m CDDLResult
+  Integer ->
+  Rule ->
+  m CDDLResult
 validateInteger i rule =
   ($ rule) <$> do
     getRule rule >>= \case
@@ -308,7 +312,9 @@ controlInteger i Ne ctrl =
 -- | Validating a `Float16`
 validateHalf ::
   MonadReader CDDL m =>
-  Float -> Rule -> m CDDLResult
+  Float ->
+  Rule ->
+  m CDDLResult
 validateHalf f rule =
   ($ rule) <$> do
     getRule rule >>= \case
@@ -343,7 +349,9 @@ controlHalf f Ne ctrl =
 -- | Validating a `Float32`
 validateFloat ::
   MonadReader CDDL m =>
-  Float -> Rule -> m CDDLResult
+  Float ->
+  Rule ->
+  m CDDLResult
 validateFloat f rule =
   ($ rule) <$> do
     getRule rule >>= \case
@@ -383,7 +391,9 @@ controlFloat f Ne ctrl =
 -- | Validating a `Float64`
 validateDouble ::
   MonadReader CDDL m =>
-  Double -> Rule -> m CDDLResult
+  Double ->
+  Rule ->
+  m CDDLResult
 validateDouble f rule =
   ($ rule) <$> do
     getRule rule >>= \case
@@ -430,7 +440,9 @@ controlDouble f Ne ctrl =
 -- | Validating a boolean
 validateBool ::
   MonadReader CDDL m =>
-  Bool -> Rule -> m CDDLResult
+  Bool ->
+  Rule ->
+  m CDDLResult
 validateBool b rule =
   ($ rule) <$> do
     getRule rule >>= \case
@@ -463,7 +475,9 @@ controlBool b Ne ctrl =
 -- | Validating a `TSimple`. It is unclear if this is used for anything else than undefined.
 validateSimple ::
   MonadReader CDDL m =>
-  Word8 -> Rule -> m CDDLResult
+  Word8 ->
+  Rule ->
+  m CDDLResult
 validateSimple 23 rule =
   ($ rule) <$> do
     getRule rule >>= \case
@@ -498,7 +512,9 @@ validateNull rule =
 -- | Validating a byte sequence
 validateBytes ::
   MonadReader CDDL m =>
-  BS.ByteString -> Rule -> m CDDLResult
+  BS.ByteString ->
+  Rule ->
+  m CDDLResult
 validateBytes bs rule =
   ($ rule) <$> do
     getRule rule >>= \case
@@ -517,7 +533,11 @@ validateBytes bs rule =
 -- | Controls for byte strings
 controlBytes ::
   forall m.
-  MonadReader CDDL m => BS.ByteString -> CtlOp -> Rule -> m (Either (Maybe CBORTermResult) ())
+  MonadReader CDDL m =>
+  BS.ByteString ->
+  CtlOp ->
+  Rule ->
+  m (Either (Maybe CBORTermResult) ())
 controlBytes bs Size ctrl =
   getRule ctrl >>= \case
     Literal (Value (VUInt (fromIntegral -> sz)) _) -> pure $ boolCtrl $ BS.length bs == sz
@@ -568,7 +588,9 @@ controlBytes bs Cborseq ctrl =
 -- | Validating text strings
 validateText ::
   MonadReader CDDL m =>
-  T.Text -> Rule -> m CDDLResult
+  T.Text ->
+  Rule ->
+  m CDDLResult
 validateText txt rule =
   ($ rule) <$> do
     getRule rule >>= \case
@@ -607,7 +629,10 @@ controlText s Regexp ctrl =
 -- | Validating a `TTagged`
 validateTagged ::
   MonadReader CDDL m =>
-  Word64 -> Term -> Rule -> m CDDLResult
+  Word64 ->
+  Term ->
+  Rule ->
+  m CDDLResult
 validateTagged tag term rule =
   ($ rule) <$> do
     getRule rule >>= \case
@@ -633,25 +658,25 @@ flattenGroup :: CDDL -> [Rule] -> [Rule]
 flattenGroup cddl nodes =
   mconcat
     [ case resolveIfRef cddl rule of
-        Literal {} -> [rule]
-        Postlude {} -> [rule]
-        Map {} -> [rule]
-        Array {} -> [rule]
-        Choice {} -> [rule]
-        KV {} -> [rule]
-        Occur {} -> [rule]
-        Range {} -> [rule]
-        Control {} -> [rule]
-        Enum e -> case resolveIfRef cddl e of
-          Group g -> flattenGroup cddl g
-          _ -> error "Malformed cddl"
-        Unwrap g -> case resolveIfRef cddl g of
-          Map n -> flattenGroup cddl n
-          Array n -> flattenGroup cddl n
-          Tag _ n -> [n]
-          _ -> error "Malformed cddl"
-        Tag {} -> [rule]
+      Literal {} -> [rule]
+      Postlude {} -> [rule]
+      Map {} -> [rule]
+      Array {} -> [rule]
+      Choice {} -> [rule]
+      KV {} -> [rule]
+      Occur {} -> [rule]
+      Range {} -> [rule]
+      Control {} -> [rule]
+      Enum e -> case resolveIfRef cddl e of
         Group g -> flattenGroup cddl g
+        _ -> error "Malformed cddl"
+      Unwrap g -> case resolveIfRef cddl g of
+        Map n -> flattenGroup cddl n
+        Array n -> flattenGroup cddl n
+        Tag _ n -> [n]
+        _ -> error "Malformed cddl"
+      Tag {} -> [rule]
+      Group g -> flattenGroup cddl g
     | rule <- nodes
     ]
 
@@ -725,7 +750,9 @@ isOptional rule =
 validateListWithExpandedRules ::
   forall m.
   MonadReader CDDL m =>
-  [Term] -> [Rule] -> m [(Rule, CBORTermResult)]
+  [Term] ->
+  [Rule] ->
+  m [(Rule, CBORTermResult)]
 validateListWithExpandedRules terms rules =
   go (zip terms rules)
   where
@@ -795,7 +822,9 @@ validateList terms rule =
 validateMapWithExpandedRules ::
   forall m.
   MonadReader CDDL m =>
-  [(Term, Term)] -> [Rule] -> m ([AMatchedItem], Maybe ANonMatchedItem)
+  [(Term, Term)] ->
+  [Rule] ->
+  m ([AMatchedItem], Maybe ANonMatchedItem)
 validateMapWithExpandedRules =
   go
   where
@@ -853,7 +882,9 @@ validateExpandedMap terms rules = go rules
 
 validateMap ::
   MonadReader CDDL m =>
-  [(Term, Term)] -> Rule -> m CDDLResult
+  [(Term, Term)] ->
+  Rule ->
+  m CDDLResult
 validateMap terms rule =
   ($ rule) <$> do
     getRule rule >>= \case
@@ -899,7 +930,10 @@ dummyRule = MRuleRef (Name "dummy" mempty)
 -- | Validate both rules
 ctrlAnd ::
   Monad m =>
-  (Rule -> m CDDLResult) -> Rule -> Rule -> m (Rule -> CDDLResult)
+  (Rule -> m CDDLResult) ->
+  Rule ->
+  Rule ->
+  m (Rule -> CDDLResult)
 ctrlAnd v tgt ctrl =
   v tgt >>= \case
     Valid _ ->
