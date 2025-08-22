@@ -20,14 +20,11 @@ import Capability.Sink (HasSink)
 import Capability.Source (HasSource, MonadState (..))
 import Capability.State (HasState, get, modify)
 import Codec.CBOR.Cuddle.CDDL (
+  CBORGenerator (..),
   Name (..),
   OccurrenceIndicator (..),
   Value (..),
   ValueVariant (..),
- )
-import Codec.CBOR.Cuddle.CDDL.CTree (
-  CTree,
-  CTreeRoot' (..),
   WrappedTerm,
   flattenWrappedList,
   pairTermList,
@@ -35,6 +32,10 @@ import Codec.CBOR.Cuddle.CDDL.CTree (
   pattern G,
   pattern P,
   pattern S,
+ )
+import Codec.CBOR.Cuddle.CDDL.CTree (
+  CTree,
+  CTreeRoot' (..),
  )
 import Codec.CBOR.Cuddle.CDDL.CTree qualified as CTree
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
@@ -331,7 +332,7 @@ genForCTree (CTree.Tag tag node) = do
   case enc of
     S x -> pure $ S $ TTagged tag x
     _ -> error "Tag controller does not correspond to a single term"
-genForCTree (CTree.WithGen gen _) = gen StateGenM
+genForCTree (CTree.WithGen (CBORGenerator gen) _) = gen StateGenM
 
 genForNode :: RandomGen g => CTree.Node MonoRef -> M g WrappedTerm
 genForNode = genForCTree <=< resolveIfRef

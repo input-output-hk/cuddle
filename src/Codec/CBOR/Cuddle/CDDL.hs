@@ -1,10 +1,12 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE PatternSynonyms #-}
 
 -- | This module defined the data structure of CDDL as specified in
 --   https://datatracker.ietf.org/doc/rfc8610/
 module Codec.CBOR.Cuddle.CDDL (
   CDDL (..),
+  CBORGenerator (..),
   sortCDDL,
   cddlTopLevel,
   cddlRules,
@@ -33,10 +35,18 @@ module Codec.CBOR.Cuddle.CDDL (
   GrpChoice (..),
   unwrap,
   compareRuleName,
+  WrappedTerm (..),
+  flattenWrappedList,
+  singleTermList,
+  pairTermList,
+  pattern S,
+  pattern G,
+  pattern P,
 ) where
 
 import Codec.CBOR.Cuddle.CDDL.CtlOp (CtlOp)
 import Codec.CBOR.Cuddle.Comments (CollectComments (..), Comment, HasComment (..))
+import Codec.CBOR.Term (Term)
 import Data.ByteString qualified as B
 import Data.Default.Class (Default (..))
 import Data.Function (on, (&))
@@ -51,6 +61,52 @@ import GHC.Generics (Generic)
 import Optics.Core ((%), (.~))
 import Optics.Getter (view)
 import Optics.Lens (lens)
+import System.Random.Stateful (StatefulGen)
+
+--------------------------------------------------------------------------------
+-- Kinds of terms
+--------------------------------------------------------------------------------
+
+data WrappedTerm
+  = SingleTerm Term
+  | PairTerm Term Term
+  | GroupTerm [WrappedTerm]
+  deriving (Eq, Show, Generic)
+
+-- | Recursively flatten wrapped list. That is, expand any groups out to their
+-- individual entries.
+flattenWrappedList :: [WrappedTerm] -> [WrappedTerm]
+flattenWrappedList [] = []
+flattenWrappedList (GroupTerm xxs : xs) =
+  flattenWrappedList xxs <> flattenWrappedList xs
+flattenWrappedList (y : xs) = y : flattenWrappedList xs
+
+pattern S :: Term -> WrappedTerm
+pattern S t = SingleTerm t
+
+-- | Convert a list of wrapped terms to a list of terms. If any 'PairTerm's are
+-- present, we just take their "value" part.
+singleTermList :: [WrappedTerm] -> Maybe [Term]
+singleTermList [] = Just []
+singleTermList (S x : xs) = (x :) <$> singleTermList xs
+singleTermList (P _ y : xs) = (y :) <$> singleTermList xs
+singleTermList _ = Nothing
+
+pattern P :: Term -> Term -> WrappedTerm
+pattern P t1 t2 = PairTerm t1 t2
+
+-- | Convert a list of wrapped terms to a list of pairs of terms, or fail if any
+-- 'SingleTerm's are present.
+pairTermList :: [WrappedTerm] -> Maybe [(Term, Term)]
+pairTermList [] = Just []
+pairTermList (P x y : xs) = ((x, y) :) <$> pairTermList xs
+pairTermList _ = Nothing
+
+pattern G :: [WrappedTerm] -> WrappedTerm
+pattern G xs = GroupTerm xs
+
+newtype CBORGenerator
+  = CBORGenerator (forall g m. StatefulGen g m => g -> m WrappedTerm)
 
 -- | The CDDL constructor takes three arguments:
 --     1. Top level comments that precede the first definition
@@ -58,7 +114,7 @@ import Optics.Lens (lens)
 --     3. All the other top level comments and definitions
 --   This ensures that `CDDL` is correct by construction.
 data CDDL = CDDL [Comment] Rule [TopLevel]
-  deriving (Eq, Generic, Show, ToExpr)
+  deriving (Generic)
 
 -- | Sort the CDDL Rules on the basis of their names
 -- Top level comments will be removed!
@@ -92,7 +148,7 @@ instance Semigroup CDDL where
 data TopLevel
   = TopLevelRule Rule
   | TopLevelComment Comment
-  deriving (Eq, Generic, Show, ToExpr)
+  deriving (Generic)
 
 -- |
 --  A name can consist of any of the characters from the set {"A" to
@@ -209,9 +265,9 @@ data Rule = Rule
   , ruleAssign :: Assign
   , ruleTerm :: TypeOrGroup
   , ruleComment :: Comment
+  , ruleGenerator :: Maybe CBORGenerator
   }
-  deriving (Eq, Generic, Show)
-  deriving anyclass (ToExpr)
+  deriving (Generic)
 
 instance HasComment Rule where
   commentL = lens ruleComment (\x y -> x {ruleComment = y})

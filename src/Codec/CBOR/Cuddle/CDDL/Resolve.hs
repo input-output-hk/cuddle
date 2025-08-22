@@ -91,7 +91,7 @@ asMap cddl = foldl' go Map.empty rules
     go x (TopLevelRule r) = assignOrExtend x r
 
     assignOrExtend :: CDDLMap -> Rule -> CDDLMap
-    assignOrExtend m (Rule n gps assign tog _) = case assign of
+    assignOrExtend m (Rule n gps assign tog _ _) = case assign of
       -- Equals assignment
       AssignEq -> Map.insert n (toParametrised tog gps) m
       AssignExt -> Map.alter (extend tog gps) n m

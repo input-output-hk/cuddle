@@ -58,7 +58,7 @@ type0Def :: Type0 -> Doc ann
 type0Def t = nest 2 $ line' <> pretty t
 
 instance Pretty Rule where
-  pretty (Rule n mgen assign tog cmt) =
+  pretty (Rule n mgen assign tog cmt _) =
     pretty cmt
       <> groupIfNoComments
         tog

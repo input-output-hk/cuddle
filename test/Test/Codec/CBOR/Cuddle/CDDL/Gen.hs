@@ -89,6 +89,7 @@ instance Arbitrary Rule where
       <*> arbitrary
       <*> arbitrary
       <*> arbitrary
+      <*> pure Nothing
   shrink = genericShrink
 
 instance Arbitrary RangeBound where

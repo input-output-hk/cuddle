@@ -1,9 +1,9 @@
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE PatternSynonyms #-}
 
 module Codec.CBOR.Cuddle.CDDL.CTree where
 
 import Codec.CBOR.Cuddle.CDDL (
+  CBORGenerator,
   Name,
   OccurrenceIndicator,
   RangeBound,
@@ -11,55 +11,11 @@ import Codec.CBOR.Cuddle.CDDL (
  )
 import Codec.CBOR.Cuddle.CDDL.CtlOp
 import Codec.CBOR.Cuddle.CDDL.Postlude (PTerm)
-import Codec.CBOR.Term (Term)
 import Data.Hashable (Hashable)
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as Map
 import Data.Word (Word64)
 import GHC.Generics (Generic)
-import System.Random.Stateful (StatefulGen)
-
---------------------------------------------------------------------------------
--- Kinds of terms
---------------------------------------------------------------------------------
-
-data WrappedTerm
-  = SingleTerm Term
-  | PairTerm Term Term
-  | GroupTerm [WrappedTerm]
-  deriving (Eq, Show, Generic)
-
--- | Recursively flatten wrapped list. That is, expand any groups out to their
--- individual entries.
-flattenWrappedList :: [WrappedTerm] -> [WrappedTerm]
-flattenWrappedList [] = []
-flattenWrappedList (GroupTerm xxs : xs) =
-  flattenWrappedList xxs <> flattenWrappedList xs
-flattenWrappedList (y : xs) = y : flattenWrappedList xs
-
-pattern S :: Term -> WrappedTerm
-pattern S t = SingleTerm t
-
--- | Convert a list of wrapped terms to a list of terms. If any 'PairTerm's are
--- present, we just take their "value" part.
-singleTermList :: [WrappedTerm] -> Maybe [Term]
-singleTermList [] = Just []
-singleTermList (S x : xs) = (x :) <$> singleTermList xs
-singleTermList (P _ y : xs) = (y :) <$> singleTermList xs
-singleTermList _ = Nothing
-
-pattern P :: Term -> Term -> WrappedTerm
-pattern P t1 t2 = PairTerm t1 t2
-
--- | Convert a list of wrapped terms to a list of pairs of terms, or fail if any
--- 'SingleTerm's are present.
-pairTermList :: [WrappedTerm] -> Maybe [(Term, Term)]
-pairTermList [] = Just []
-pairTermList (P x y : xs) = ((x, y) :) <$> pairTermList xs
-pairTermList _ = Nothing
-
-pattern G :: [WrappedTerm] -> WrappedTerm
-pattern G xs = GroupTerm xs
 
 --------------------------------------------------------------------------------
 
@@ -89,7 +45,7 @@ data CTree f
   | Enum (Node f)
   | Unwrap (Node f)
   | Tag Word64 (Node f)
-  | WithGen (forall g m. StatefulGen g m => g -> m WrappedTerm) (Node f)
+  | WithGen CBORGenerator (Node f)
 
 -- | Traverse the CTree, carrying out the given operation at each node
 traverseCTree :: Monad m => (Node f -> m (Node g)) -> CTree f -> m (CTree g)

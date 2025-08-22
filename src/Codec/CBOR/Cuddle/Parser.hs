@@ -59,7 +59,7 @@ pRule = do
             <*> (TOGType <$> pType0 <* notFollowedBy (space >> (":" <|> "=>")))
       , (,) <$> pAssignG <* space <*> (TOGGroup <$> pGrpEntry)
       ]
-  pure $ Rule name genericParam assign typeOrGrp cmt
+  pure $ Rule name genericParam assign typeOrGrp cmt Nothing
 
 pName :: Parser Name
 pName = label "name" $ do
