@@ -24,7 +24,7 @@ let shellFor = fun ghcver =>
       packages = {},
     },
 
-    shells.dev = shellFor "ghc912",
+    shells.dev = shellFor "ghc967",
   }
 }
   | organist.OrganistExpression

@@ -34,6 +34,7 @@ import GHC.Float
 import System.Exit
 import System.IO
 import Text.Regex.TDFA
+import Data.Foldable (Foldable(..))
 
 type CDDL = CTreeRoot' Identity MonoRef
 type Rule = Node MonoRef
