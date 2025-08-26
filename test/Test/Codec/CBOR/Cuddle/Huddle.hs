@@ -5,13 +5,13 @@
 
 module Test.Codec.CBOR.Cuddle.Huddle where
 
-import Codec.CBOR.Cuddle.CDDL (CDDL, sortCDDL)
-import Codec.CBOR.Cuddle.Huddle
-import Codec.CBOR.Cuddle.Parser
+import Codec.CBOR.Cuddle.CDDL (CDDL (..), Rule (..), TopLevel (..), sortCDDL)
+import Codec.CBOR.Cuddle.Huddle hiding (Rule)
+import Codec.CBOR.Cuddle.Parser (pCDDL, pRule)
 import Data.Text qualified as T
+import Data.TreeDiff (ToExpr, ediff, prettyEditExpr)
 import Test.Codec.CBOR.Cuddle.CDDL.Pretty qualified as Pretty
 import Test.Hspec
-import Test.Hspec.Megaparsec
 import Text.Megaparsec
 import Prelude hiding ((/))
 
@@ -146,19 +146,49 @@ constraintSpec =
 -- Helper functions
 --------------------------------------------------------------------------------
 
-shouldMatchParse ::
-  (Text.Megaparsec.ShowErrorComponent e, Show a, Eq a) =>
+shouldMatchParseWith ::
+  (Text.Megaparsec.ShowErrorComponent e, Show e, ToExpr a) =>
+  (a -> a -> Bool) ->
   a ->
   Text.Megaparsec.Parsec e T.Text a ->
   String ->
   Expectation
-shouldMatchParse x parseFun input = parse parseFun "" (T.pack input) `shouldParse` x
+shouldMatchParseWith matches expected parseFun input = do
+  case parse parseFun "" $ T.pack input of
+    Right parsed
+      | parsed `matches` expected -> pure ()
+      | otherwise ->
+          expectationFailure $
+            unlines
+              [ "Mismatch between parsed and expected"
+              , show . prettyEditExpr $ expected `ediff` parsed
+              ]
+    Left e -> expectationFailure $ show e
 
-shouldMatchParseCDDL ::
-  CDDL ->
+shouldMatchParse ::
+  (ShowErrorComponent e, Show e, ToExpr a, Eq a) =>
+  a ->
+  Text.Megaparsec.Parsec e T.Text a ->
   String ->
   Expectation
-shouldMatchParseCDDL x = shouldMatchParse x pCDDL
+shouldMatchParse = shouldMatchParseWith (==)
+
+shouldMatchParseCDDL :: CDDL -> String -> Expectation
+shouldMatchParseCDDL x = shouldMatchParseWith cddlMatches x pCDDL
+
+shouldMatchParseRule :: Rule -> String -> Expectation
+shouldMatchParseRule x = shouldMatchParseWith ruleMatches x pRule
+
+cddlMatches :: CDDL -> CDDL -> Bool
+cddlMatches (CDDL c r t) (CDDL c' r' t') = c == c' && ruleMatches r r' && and (zipWith topLevelMatches t t')
+
+ruleMatches :: Codec.CBOR.Cuddle.CDDL.Rule -> Codec.CBOR.Cuddle.CDDL.Rule -> Bool
+ruleMatches (Rule n b c d e _) (Rule n' b' c' d' e' _) = n == n' && b == b' && c == c' && d == d' && e == e'
+
+topLevelMatches :: TopLevel -> TopLevel -> Bool
+topLevelMatches (TopLevelComment c) (TopLevelComment c') = c == c'
+topLevelMatches (TopLevelRule r) (TopLevelRule r') = ruleMatches r r'
+topLevelMatches _ _ = False
 
 toSortedCDDL :: Huddle -> CDDL
 toSortedCDDL = sortCDDL . toCDDLNoRoot

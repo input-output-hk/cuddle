@@ -90,7 +90,10 @@ instance Arbitrary Rule where
       <*> arbitrary
       <*> arbitrary
       <*> pure Nothing
-  shrink = genericShrink
+  shrink (Rule a b c d e _) =
+    [ Rule a' b' c' d' e' Nothing
+    | (a', b', c', d', e') <- shrink (a, b, c, d, e)
+    ]
 
 instance Arbitrary RangeBound where
   arbitrary = Gen.elements [ClOpen, Closed]

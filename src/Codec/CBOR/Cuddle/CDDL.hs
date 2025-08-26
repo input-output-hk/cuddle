@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE RecordWildCards #-}
 
 -- | This module defined the data structure of CDDL as specified in
 --   https://datatracker.ietf.org/doc/rfc8610/
@@ -55,7 +56,8 @@ import Data.List.NonEmpty (NonEmpty (..))
 import Data.List.NonEmpty qualified as NE
 import Data.String (IsString (..))
 import Data.Text qualified as T
-import Data.TreeDiff (ToExpr)
+import Data.TreeDiff (ToExpr (..))
+import Data.TreeDiff.Expr qualified as Expr
 import Data.Word (Word64, Word8)
 import GHC.Generics (Generic)
 import Optics.Core ((%), (.~))
@@ -114,7 +116,8 @@ newtype CBORGenerator
 --     3. All the other top level comments and definitions
 --   This ensures that `CDDL` is correct by construction.
 data CDDL = CDDL [Comment] Rule [TopLevel]
-  deriving (Generic)
+  deriving (Generic, Show)
+  deriving anyclass (ToExpr)
 
 -- | Sort the CDDL Rules on the basis of their names
 -- Top level comments will be removed!
@@ -148,7 +151,8 @@ instance Semigroup CDDL where
 data TopLevel
   = TopLevelRule Rule
   | TopLevelComment Comment
-  deriving (Generic)
+  deriving (Generic, Show)
+  deriving anyclass (ToExpr)
 
 -- |
 --  A name can consist of any of the characters from the set {"A" to
@@ -271,6 +275,30 @@ data Rule = Rule
 
 instance HasComment Rule where
   commentL = lens ruleComment (\x y -> x {ruleComment = y})
+
+instance ToExpr Rule where
+  toExpr r@(Rule _ _ _ _ _ _) =
+    let Rule {..} = r
+     in Expr.App
+          "Rule"
+          [ toExpr ruleName
+          , toExpr ruleGenParam
+          , toExpr ruleAssign
+          , toExpr ruleTerm
+          , toExpr ruleComment
+          , toExpr $ const "<Custom generator>" <$> ruleGenerator
+          ]
+
+instance Show Rule where
+  show r@(Rule _ _ _ _ _ _) =
+    let Rule {..} = r
+     in unwords
+          [ show ruleName
+          , show ruleGenParam
+          , show ruleAssign
+          , show ruleTerm
+          , show ruleComment
+          ]
 
 compareRuleName :: Rule -> Rule -> Ordering
 compareRuleName = compare `on` ruleName

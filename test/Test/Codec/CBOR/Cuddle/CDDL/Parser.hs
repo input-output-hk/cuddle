@@ -11,11 +11,12 @@ import Codec.CBOR.Cuddle.Pretty ()
 import Data.Default.Class (Default (..))
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Text qualified as T
-import Data.TreeDiff (ToExpr (..), ansiWlBgEditExprCompact, exprDiff)
+import Data.TreeDiff (ToExpr (..), ansiWlBgEditExprCompact, exprDiff, prettyExpr)
 import Prettyprinter (Pretty, defaultLayoutOptions, layoutPretty, pretty)
 import Prettyprinter.Render.String (renderString)
 import Prettyprinter.Render.Text (renderStrict)
 import Test.Codec.CBOR.Cuddle.CDDL.Gen qualified as Gen ()
+import Test.Codec.CBOR.Cuddle.Huddle (ruleMatches, shouldMatchParseRule, shouldMatchParseWith)
 import Test.Hspec
 import Test.Hspec.Megaparsec
 import Test.QuickCheck
@@ -40,14 +41,13 @@ roundtripSpec = describe "Roundtripping should be id" $ do
   xit "Trip Value" $ trip pValue
   xit "Trip Type0" $ trip pType0
   xit "Trip GroupEntry" $ trip pGrpEntry
-  xit "Trip Rule" $ trip pRule
   where
     -- We show that, for a printed CDDL document p, print (parse p) == p. Note
     -- that we do not show that parse (print p) is p for a given generated
     -- 'CDDL' doc, since CDDL contains some statements that allow multiple
     -- parsings.
-    trip :: forall a. (Eq a, ToExpr a, Show a, Pretty a, Arbitrary a) => Parser a -> Property
-    trip pa = property $ \(x :: a) -> within 1000000 $ do
+    trip :: forall a. (ToExpr a, Arbitrary a, Pretty a) => Parser a -> Property
+    trip pa = forAllShow arbitrary (show . prettyExpr . toExpr) $ \(x :: a) -> within 1000000 $ do
       let printed = printText x
       case parse (pa <* eof) "" printed of
         Left e ->
@@ -106,63 +106,65 @@ nameSpec = describe "pName" $ do
 genericSpec :: Spec
 genericSpec = describe "generics" $ do
   it "Parses a simple value generic" $
-    parse pRule "" "a = b<0>"
-      `shouldParse` Rule
-        (Name "a" mempty)
-        Nothing
-        AssignEq
-        ( TOGType
-            ( Type0
-                ( Type1
-                    ( T2Name
-                        (Name "b" mempty)
-                        ( Just
-                            ( GenericArg
-                                ( Type1
-                                    (T2Value (value $ VUInt 0))
-                                    Nothing
-                                    mempty
-                                    :| []
-                                )
-                            )
-                        )
-                    )
-                    Nothing
-                    mempty
-                    :| []
-                )
-            )
-        )
-        mempty
+    Rule
+      (Name "a" mempty)
+      Nothing
+      AssignEq
+      ( TOGType
+          ( Type0
+              ( Type1
+                  ( T2Name
+                      (Name "b" mempty)
+                      ( Just
+                          ( GenericArg
+                              ( Type1
+                                  (T2Value (value $ VUInt 0))
+                                  Nothing
+                                  mempty
+                                  :| []
+                              )
+                          )
+                      )
+                  )
+                  Nothing
+                  mempty
+                  :| []
+              )
+          )
+      )
+      mempty
+      Nothing
+      `shouldMatchParseRule` "a = b<0>"
   it "Parses a range as a generic" $
-    parse pRule "" "a = b<0 ... 1>"
-      `shouldParse` Rule
-        (Name "a" mempty)
-        Nothing
-        AssignEq
-        ( TOGType
-            ( Type0
-                ( Type1
-                    ( T2Name
-                        (Name "b" mempty)
-                        ( Just
-                            ( GenericArg
-                                ( Type1
-                                    (T2Value (value $ VUInt 0))
-                                    (Just (RangeOp ClOpen, T2Value (value $ VUInt 1)))
-                                    mempty
-                                    :| []
-                                )
-                            )
-                        )
-                    )
-                    Nothing
-                    mempty
-                    :| []
-                )
-            )
-        )
-        mempty
+    Rule
+      (Name "a" mempty)
+      Nothing
+      AssignEq
+      ( TOGType
+          ( Type0
+              ( Type1
+                  ( T2Name
+                      (Name "b" mempty)
+                      ( Just
+                          ( GenericArg
+                              ( Type1
+                                  (T2Value (value $ VUInt 0))
+                                  (Just (RangeOp ClOpen, T2Value (value $ VUInt 1)))
+                                  mempty
+                                  :| []
+                              )
+                          )
+                      )
+                  )
+                  Nothing
+                  mempty
+                  :| []
+              )
+          )
+      )
+      mempty
+      Nothing
+      `shouldMatchParseRule` "a = b<0 ... 1>"
 
 type2Spec :: SpecWith ()
 type2Spec = describe "type2" $ do
@@ -616,10 +618,16 @@ type1Spec = describe "Type1" $ do
           (Just (RangeOp ClOpen, T2Value (value $ VUInt 3)))
           mempty
 
-parseExample :: (Show a, Eq a) => T.Text -> Parser a -> a -> Spec
-parseExample str parser val =
+parseExampleWith :: ToExpr a => (a -> a -> Bool) -> T.Text -> Parser a -> a -> Spec
+parseExampleWith matches str parser val =
   it (T.unpack str) $
-    parse (parser <* eof) "" str `shouldParse` val
+    shouldMatchParseWith matches val parser $
+      T.unpack str
+
+-- parse (parser <* eof) "" str `shouldParse` val
+
+parseExample :: (Show a, ToExpr a, Eq a) => T.Text -> Parser a -> a -> Spec
+parseExample = parseExampleWith (==)
 
 -- | A bunch of cases found by hedgehog/QC
 qcFoundSpec :: Spec
@@ -651,7 +659,7 @@ qcFoundSpec =
               )
         , t1Comment = Comment mempty
         }
-    parseExample "S = 0* ()" pRule $
+    parseExampleWith ruleMatches "S = 0* ()" pRule $
       Rule
         (Name "S" mempty)
         Nothing
@@ -662,7 +670,9 @@ qcFoundSpec =
             )
         )
         mempty
-    parseExample
+        Nothing
+    parseExampleWith
+      ruleMatches
       "W = \"6 ybe2ddl8frq0vqa8zgrk07khrljq7p plrufpd1sff3p95\" : \"u\""
       pRule
       ( Rule
@@ -679,4 +689,5 @@ qcFoundSpec =
               )
           )
           mempty
+          Nothing
       )
