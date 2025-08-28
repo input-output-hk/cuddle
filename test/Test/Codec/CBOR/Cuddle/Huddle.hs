@@ -180,7 +180,7 @@ shouldMatchParseRule :: Rule -> String -> Expectation
 shouldMatchParseRule x = shouldMatchParseWith ruleMatches x pRule
 
 cddlMatches :: CDDL -> CDDL -> Bool
-cddlMatches (CDDL c r t) (CDDL c' r' t') = c == c' && ruleMatches r r' && and (zipWith topLevelMatches t t')
+cddlMatches (CDDL c r t) (CDDL c' r' t') = c == c' && ruleMatches r r' && and (zipWith topLevelMatches t t') && length t == length t'
 
 ruleMatches :: Codec.CBOR.Cuddle.CDDL.Rule -> Codec.CBOR.Cuddle.CDDL.Rule -> Bool
 ruleMatches (Rule n b c d e _) (Rule n' b' c' d' e' _) = n == n' && b == b' && c == c' && d == d' && e == e'
