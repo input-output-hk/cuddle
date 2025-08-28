@@ -624,7 +624,6 @@ parseExampleWith matches str parser val =
     shouldMatchParseWith matches val parser $
       T.unpack str
 
--- parse (parser <* eof) "" str `shouldParse` val
 
 parseExample :: (Show a, ToExpr a, Eq a) => T.Text -> Parser a -> a -> Spec
 parseExample = parseExampleWith (==)
