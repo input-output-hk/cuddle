@@ -64,7 +64,6 @@ import System.Random.Stateful (
   Random,
   RandomGen (..),
   StateGenM (..),
-  StatefulGen (..),
   UniformRange (uniformRM),
   randomM,
   uniformByteStringM,
@@ -418,7 +417,7 @@ generateCBORTerm cddl n stdGen =
    in evalGen (genForName n) genEnv genState
 
 generateCBORTerm' ::
-  (RandomGen g, StatefulGen g (M g)) => CTreeRoot' Identity MonoRef -> Name -> g -> (Term, g)
+  RandomGen g => CTreeRoot' Identity MonoRef -> Name -> g -> (Term, g)
 generateCBORTerm' cddl n stdGen =
   let genEnv = GenEnv {cddl}
       genState = GenState {randomSeed = stdGen, depth = 1}
