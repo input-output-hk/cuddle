@@ -1,5 +1,10 @@
 # Changelog for `cuddle`
 
+## 1.0.0.0
+
+* First official release to Hackage
+* Added one more parameter to `BindingEnv`
+
 ## 0.5.0.0
 
 * Implement a validator for CBOR terms.
