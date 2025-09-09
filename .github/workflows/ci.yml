@@ -80,3 +80,62 @@ jobs:
 
     - name: Run fourmolu
       run: ./scripts/fourmolize.sh
+
+  test-with-stack:
+    name: Stack
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        resolver: [lts-22, lts-23, lts-24, nightly]
+        include:
+          - resolver: lts-22
+            ghc: "9.6.7"
+          - resolver: lts-23
+            ghc: "9.8.4"
+          - resolver: lts-24
+            ghc: "9.10.2"
+          - resolver: nightly
+            ghc: "9.12.2"
+    env:
+      STACK_ARGS: '--resolver ${{ matrix.resolver }} --system-ghc'
+      cache-version: v0 # bump up this version to invalidate currently stored cache
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: haskell-actions/setup@v2
+      id: setup-haskell-cabal
+      name: Setup Haskell
+      with:
+        ghc-version: ${{ matrix.ghc }}
+        enable-stack: true
+        stack-version: 'latest'
+        cabal-version: 'latest'
+    - name: Cache
+      id: cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          ${{ steps.setup-haskell-cabal.outputs.stack-root }}
+          .stack-work
+        key: ${{ runner.os }}-${{ matrix.resolver }}-${{ env.cache-version }}
+        restore-keys: |
+          ${{ runner.os }}-${{ matrix.resolver }}-${{ env.cache-version }}
+    - name: Build
+      run: |
+        set -ex
+        stack $STACK_ARGS test --no-run-tests --haddock --no-haddock-deps
+    - name: Test
+      env:
+        COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
+      run: |
+        set -ex
+        if [ "${{ matrix.os }}.${{ matrix.resolver }}" == "ubuntu-latest.lts-22" ] && [ -n "${COVERALLS_REPO_TOKEN}" ]; then
+          stack $STACK_ARGS test --coverage
+          stack $STACK_ARGS hpc report --all
+          curl -L https://github.com/rubik/stack-hpc-coveralls/releases/download/v0.0.7.0/shc-Linux-X64.tar.bz2 | tar xj shc
+          ./shc --repo-token="$COVERALLS_REPO_TOKEN" --partial-coverage --fetch-coverage combined custom
+        else
+          stack $STACK_ARGS test
+        fi
