@@ -139,6 +139,7 @@ test-suite cuddle-test
     Test.Codec.CBOR.Cuddle.CDDL.Gen
     Test.Codec.CBOR.Cuddle.CDDL.Parser
     Test.Codec.CBOR.Cuddle.CDDL.Pretty
+    Test.Codec.CBOR.Cuddle.CBOR.Validator
     Test.Codec.CBOR.Cuddle.Huddle
 
   type: exitcode-stdio-1.0
@@ -149,11 +150,13 @@ test-suite cuddle-test
     QuickCheck >=2.14,
     base,
     bytestring,
+    containers,
     cuddle,
     data-default-class,
     hspec >=2.11,
     hspec-megaparsec >=2.2,
     megaparsec,
+    mtl ^>=2.3.1,
     prettyprinter,
     string-qq >=0.0.6,
     text,
