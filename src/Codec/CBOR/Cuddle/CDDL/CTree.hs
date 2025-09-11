@@ -31,7 +31,7 @@ import GHC.Generics (Generic)
 --   We principally use this functor to represent references - thus, every 'f a'
 --   may be either an a or a reference to another CTree.
 data CTree f
-  = Literal Value
+  = Literal (Value ())
   | Postlude PTerm
   | Map [Node f]
   | Array [Node f]

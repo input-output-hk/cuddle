@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ViewPatterns #-}
@@ -28,10 +29,10 @@ import Data.String (fromString)
 import Data.Text qualified as T
 import Prettyprinter
 
-instance Pretty CDDL where
+instance Pretty (CDDL Comment) where
   pretty = vsep . fmap pretty . NE.toList . cddlTopLevel
 
-instance Pretty TopLevel where
+instance Pretty (TopLevel Comment) where
   pretty (TopLevelComment cmt) = pretty cmt
   pretty (TopLevelRule x) = pretty x <> hardline
 
@@ -54,10 +55,10 @@ instance Pretty Comment where
   pretty (Comment "") = mempty
   pretty c = prettyCommentNoBreak c <> hardline
 
-type0Def :: Type0 -> Doc ann
+type0Def :: Type0 Comment -> Doc ann
 type0Def t = nest 2 $ line' <> pretty t
 
-instance Pretty Rule where
+instance Pretty (Rule Comment) where
   pretty (Rule n mgen assign tog cmt) =
     pretty cmt
       <> groupIfNoComments
@@ -74,7 +75,7 @@ instance Pretty Rule where
         AssignEq -> "="
         AssignExt -> "//="
 
-instance Pretty GenericArg where
+instance Pretty (GenericArg Comment) where
   pretty (GenericArg (NE.toList -> l))
     | null (collectComments l) = group . cEncloseSep "<" ">" "," $ fmap pretty l
     | otherwise = columnarListing "<" ">" "," . Columnar $ singletonRow . pretty <$> l
@@ -84,7 +85,7 @@ instance Pretty GenericParam where
     | null (collectComments l) = group . cEncloseSep "<" ">" "," $ fmap pretty l
     | otherwise = columnarListing "<" ">" "," . Columnar $ singletonRow . pretty <$> l
 
-instance Pretty Type0 where
+instance Pretty (Type0 Comment) where
   pretty t0@(Type0 (NE.toList -> l)) =
     groupIfNoComments t0 $ columnarSepBy "/" . Columnar $ type1ToRow <$> l
     where
@@ -104,7 +105,7 @@ instance Pretty TyOp where
   pretty (RangeOp Closed) = ".."
   pretty (CtrlOp n) = "." <> pretty n
 
-instance Pretty Type1 where
+instance Pretty (Type1 Comment) where
   pretty (Type1 t2 Nothing cmt) = groupIfNoComments t2 (pretty t2) <> prettyCommentNoBreakWS cmt
   pretty (Type1 t2 (Just (tyop, t2')) cmt) =
     groupIfNoComments t2 (pretty t2)
@@ -112,7 +113,7 @@ instance Pretty Type1 where
       <+> groupIfNoComments t2' (pretty t2')
       <> prettyCommentNoBreakWS cmt
 
-instance Pretty Type2 where
+instance Pretty (Type2 Comment) where
   pretty (T2Value v) = pretty v
   pretty (T2Name n mg) = pretty n <> pretty mg
   pretty (T2Group g) = cEncloseSep "(" ")" mempty [pretty g]
@@ -144,7 +145,7 @@ data GroupRender
   | AsArray
   | AsGroup
 
-memberKeySep :: MemberKey -> Doc ann
+memberKeySep :: MemberKey Comment -> Doc ann
 memberKeySep MKType {} = " => "
 memberKeySep _ = " : "
 
@@ -165,10 +166,10 @@ groupIfNoComments x
   | not (any (mempty /=) $ collectComments x) = group
   | otherwise = id
 
-columnarGroupChoice :: GrpChoice -> Columnar ann
+columnarGroupChoice :: GrpChoice Comment -> Columnar ann
 columnarGroupChoice (GrpChoice ges _cmt) = Columnar grpEntryRows
   where
-    groupEntryRow (GroupEntry oi cmt gev) =
+    groupEntryRow (GroupEntry oi gev cmt) =
       Row $
         [maybe emptyCell (\x -> Cell (pretty x <> space) LeftAlign) oi]
           <> groupEntryVariantCells gev
@@ -179,7 +180,7 @@ columnarGroupChoice (GrpChoice ges _cmt) = Columnar grpEntryRows
     groupEntryVariantCells (GEGroup g) = [Cell (prettyGroup AsGroup g) LeftAlign, emptyCell]
     grpEntryRows = groupEntryRow <$> ges
 
-prettyGroup :: GroupRender -> Group -> Doc ann
+prettyGroup :: GroupRender -> Group Comment -> Doc ann
 prettyGroup gr g@(Group (toList -> xs)) =
   groupIfNoComments g . columnarListing (lEnc <> softspace) rEnc "// " . Columnar $
     (\x -> singletonRow . groupIfNoComments x . columnarSepBy "," $ columnarGroupChoice x) <$> xs
@@ -189,15 +190,15 @@ prettyGroup gr g@(Group (toList -> xs)) =
       AsArray -> ("[", "]")
       AsGroup -> ("(", ")")
 
-instance Pretty GroupEntry where
+instance Pretty (GroupEntry Comment) where
   pretty ge = prettyColumnar . columnarGroupChoice $ GrpChoice [ge] mempty
 
-instance Pretty MemberKey where
+instance Pretty (MemberKey Comment) where
   pretty (MKType t1) = pretty t1
   pretty (MKBareword n) = pretty n
   pretty (MKValue v) = pretty v
 
-instance Pretty Value where
+instance Pretty (Value Comment) where
   pretty (Value v cmt) = pretty v <> prettyCommentNoBreakWS cmt
 
 instance Pretty ValueVariant where

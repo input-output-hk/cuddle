@@ -1,13 +1,15 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Codec.CBOR.Cuddle.CDDL.Prelude (prependPrelude) where
 
 import Codec.CBOR.Cuddle.CDDL (CDDL (..))
+import Codec.CBOR.Cuddle.Comments (Comment)
 import Codec.CBOR.Cuddle.Parser (pCDDL)
 import Text.Megaparsec (errorBundlePretty, parse)
 
 -- TODO switch to quasiquotes
-cddlPrelude :: CDDL
+cddlPrelude :: CDDL Comment
 cddlPrelude =
   either (error . errorBundlePretty) id $
     parse
@@ -57,5 +59,5 @@ cddlPrelude =
       \ null = nil \
       \ undefined = #7.23"
 
-prependPrelude :: CDDL -> CDDL
+prependPrelude :: CDDL Comment -> CDDL Comment
 prependPrelude = (cddlPrelude <>)

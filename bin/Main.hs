@@ -17,6 +17,7 @@ import Codec.CBOR.Term (encodeTerm)
 import Codec.CBOR.Write (toStrictByteString)
 import Data.ByteString.Base16 qualified as Base16
 import Data.ByteString.Char8 qualified as BSC
+import Data.Functor (($>))
 import Data.Text qualified as T
 import Data.Text.IO qualified as T
 import Options.Applicative
@@ -195,7 +196,7 @@ run (Opts cmd cddlFile) = do
               | vNoPrelude vOpts = res
               | otherwise = prependPrelude res
            in
-            case fullResolveCDDL res' of
+            case fullResolveCDDL (res' $> ()) of
               Left err -> putStrLnErr (show err) >> exitFailure
               Right _ -> exitSuccess
         (GenerateCBOR gOpts) ->
@@ -204,7 +205,7 @@ run (Opts cmd cddlFile) = do
               | gNoPrelude gOpts = res
               | otherwise = prependPrelude res
            in
-            case fullResolveCDDL res' of
+            case fullResolveCDDL (res' $> ()) of
               Left err -> putStrLnErr (show err) >> exitFailure
               Right mt -> do
                 stdGen <- getStdGen
@@ -222,7 +223,7 @@ run (Opts cmd cddlFile) = do
               | vcNoPrelude vcOpts = res
               | otherwise = prependPrelude res
            in
-            case fullResolveCDDL res' of
+            case fullResolveCDDL (res' $> ()) of
               Left err -> putStrLnErr (show err) >> exitFailure
               Right mt -> do
                 cbor <- BSC.readFile (vcInput vcOpts)

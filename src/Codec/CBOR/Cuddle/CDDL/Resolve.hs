@@ -70,7 +70,7 @@ import Optics.Core
 -- 1. Rule extensions
 --------------------------------------------------------------------------------
 
-type CDDLMap = Map.Map Name (Parametrised TypeOrGroup)
+type CDDLMap i = Map.Map Name (Parametrised (TypeOrGroup i))
 
 type Parametrised a = ParametrisedWith [Name] a
 
@@ -82,24 +82,24 @@ parameters :: Parametrised a -> [Name]
 parameters (Unparametrised _) = mempty
 parameters (Parametrised _ ps) = ps
 
-asMap :: CDDL -> CDDLMap
+asMap :: CDDL i -> CDDLMap i
 asMap cddl = foldl' go Map.empty rules
   where
     rules = cddlTopLevel cddl
     go x (TopLevelComment _) = x
     go x (TopLevelRule r) = assignOrExtend x r
 
-    assignOrExtend :: CDDLMap -> Rule -> CDDLMap
+    assignOrExtend :: CDDLMap i -> Rule i -> CDDLMap i
     assignOrExtend m (Rule n gps assign tog _) = case assign of
       -- Equals assignment
       AssignEq -> Map.insert n (toParametrised tog gps) m
       AssignExt -> Map.alter (extend tog gps) n m
 
     extend ::
-      TypeOrGroup ->
+      TypeOrGroup i ->
       Maybe GenericParam ->
-      Maybe (Parametrised TypeOrGroup) ->
-      Maybe (Parametrised TypeOrGroup)
+      Maybe (Parametrised (TypeOrGroup i)) ->
+      Maybe (Parametrised (TypeOrGroup i))
     extend tog _gps (Just existing) = case (underlying existing, tog) of
       (TOGType _, TOGType (Type0 new)) ->
         Just $
@@ -139,23 +139,23 @@ deriving instance Show (CTreeRoot OrRef)
 -- | Build a CTree incorporating references.
 --
 -- This translation cannot fail.
-buildRefCTree :: CDDLMap -> RefCTree
+buildRefCTree :: CDDLMap () -> RefCTree
 buildRefCTree rules = CTreeRoot $ fmap toCTreeRule rules
   where
     toCTreeRule ::
-      Parametrised TypeOrGroup ->
+      Parametrised (TypeOrGroup ()) ->
       ParametrisedWith [Name] (CTree.Node OrRef)
     toCTreeRule = fmap toCTreeTOG
 
-    toCTreeTOG :: TypeOrGroup -> CTree.Node OrRef
+    toCTreeTOG :: TypeOrGroup () -> CTree.Node OrRef
     toCTreeTOG (TOGType t0) = toCTreeT0 t0
     toCTreeTOG (TOGGroup ge) = toCTreeGroupEntry ge
 
-    toCTreeT0 :: Type0 -> CTree.Node OrRef
+    toCTreeT0 :: Type0 () -> CTree.Node OrRef
     toCTreeT0 (Type0 (t1 NE.:| [])) = toCTreeT1 t1
     toCTreeT0 (Type0 xs) = It . CTree.Choice $ toCTreeT1 <$> xs
 
-    toCTreeT1 :: Type1 -> CTree.Node OrRef
+    toCTreeT1 :: Type1 () -> CTree.Node OrRef
     toCTreeT1 (Type1 t2 Nothing _) = toCTreeT2 t2
     toCTreeT1 (Type1 t2 (Just (op, t2')) _) = case op of
       RangeOp bound ->
@@ -173,7 +173,7 @@ buildRefCTree rules = CTreeRoot $ fmap toCTreeRule rules
             , CTree.controller = toCTreeT2 t2'
             }
 
-    toCTreeT2 :: Type2 -> CTree.Node OrRef
+    toCTreeT2 :: Type2 () -> CTree.Node OrRef
     toCTreeT2 (T2Value v) = It $ CTree.Literal v
     toCTreeT2 (T2Name n garg) =
       Ref n (fromGenArgs garg)
@@ -215,35 +215,35 @@ buildRefCTree rules = CTreeRoot $ fmap toCTreeRule rules
     toCTreeDataItem _ =
       It $ CTree.Postlude PTAny
 
-    toCTreeGroupEntry :: GroupEntry -> CTree.Node OrRef
-    toCTreeGroupEntry (GroupEntry (Just occi) _ (GEType mmkey t0)) =
+    toCTreeGroupEntry :: GroupEntry () -> CTree.Node OrRef
+    toCTreeGroupEntry (GroupEntry (Just occi) (GEType mmkey t0) _) =
       It $
         CTree.Occur
           { CTree.item = toKVPair mmkey t0
           , CTree.occurs = occi
           }
-    toCTreeGroupEntry (GroupEntry Nothing _ (GEType mmkey t0)) = toKVPair mmkey t0
-    toCTreeGroupEntry (GroupEntry (Just occi) _ (GERef n margs)) =
+    toCTreeGroupEntry (GroupEntry Nothing (GEType mmkey t0) _) = toKVPair mmkey t0
+    toCTreeGroupEntry (GroupEntry (Just occi) (GERef n margs) _) =
       It $
         CTree.Occur
           { CTree.item = Ref n (fromGenArgs margs)
           , CTree.occurs = occi
           }
-    toCTreeGroupEntry (GroupEntry Nothing _ (GERef n margs)) = Ref n (fromGenArgs margs)
-    toCTreeGroupEntry (GroupEntry (Just occi) _ (GEGroup g)) =
+    toCTreeGroupEntry (GroupEntry Nothing (GERef n margs) _) = Ref n (fromGenArgs margs)
+    toCTreeGroupEntry (GroupEntry (Just occi) (GEGroup g) _) =
       It $
         CTree.Occur
           { CTree.item = groupToGroup g
           , CTree.occurs = occi
           }
-    toCTreeGroupEntry (GroupEntry Nothing _ (GEGroup g)) = groupToGroup g
+    toCTreeGroupEntry (GroupEntry Nothing (GEGroup g) _) = groupToGroup g
 
-    fromGenArgs :: Maybe GenericArg -> [CTree.Node OrRef]
+    fromGenArgs :: Maybe (GenericArg ()) -> [CTree.Node OrRef]
     fromGenArgs = maybe [] (\(GenericArg xs) -> NE.toList $ fmap toCTreeT1 xs)
 
     -- Interpret a group as an enumeration. Note that we float out the
     -- choice options
-    toCTreeEnum :: Group -> CTree.Node OrRef
+    toCTreeEnum :: Group () -> CTree.Node OrRef
     toCTreeEnum (Group (a NE.:| [])) =
       It . CTree.Enum . It . CTree.Group $ toCTreeGroupEntry <$> gcGroupEntries a
     toCTreeEnum (Group xs) =
@@ -253,14 +253,14 @@ buildRefCTree rules = CTreeRoot $ fmap toCTreeRule rules
         groupEntries = fmap gcGroupEntries xs
 
     -- Embed a group in another group, again floating out the choice options
-    groupToGroup :: Group -> CTree.Node OrRef
+    groupToGroup :: Group () -> CTree.Node OrRef
     groupToGroup (Group (a NE.:| [])) =
       It . CTree.Group $ fmap toCTreeGroupEntry (gcGroupEntries a)
     groupToGroup (Group xs) =
       It . CTree.Choice $
         fmap (It . CTree.Group . fmap toCTreeGroupEntry) (gcGroupEntries <$> xs)
 
-    toKVPair :: Maybe MemberKey -> Type0 -> CTree.Node OrRef
+    toKVPair :: Maybe (MemberKey ()) -> Type0 () -> CTree.Node OrRef
     toKVPair Nothing t0 = toCTreeT0 t0
     toKVPair (Just mkey) t0 =
       It $
@@ -272,7 +272,7 @@ buildRefCTree rules = CTreeRoot $ fmap toCTreeRule rules
           }
 
     -- Interpret a group as a map. Note that we float out the choice options
-    toCTreeMap :: Group -> CTree.Node OrRef
+    toCTreeMap :: Group () -> CTree.Node OrRef
     toCTreeMap (Group (a NE.:| [])) = It . CTree.Map $ fmap toCTreeGroupEntry (gcGroupEntries a)
     toCTreeMap (Group xs) =
       It
@@ -281,14 +281,14 @@ buildRefCTree rules = CTreeRoot $ fmap toCTreeRule rules
 
     -- Interpret a group as an array. Note that we float out the choice
     -- options
-    toCTreeArray :: Group -> CTree.Node OrRef
+    toCTreeArray :: Group () -> CTree.Node OrRef
     toCTreeArray (Group (a NE.:| [])) =
       It . CTree.Array $ fmap toCTreeGroupEntry (gcGroupEntries a)
     toCTreeArray (Group xs) =
       It . CTree.Choice $
         fmap (It . CTree.Array . fmap toCTreeGroupEntry) (gcGroupEntries <$> xs)
 
-    toCTreeMemberKey :: MemberKey -> CTree.Node OrRef
+    toCTreeMemberKey :: MemberKey () -> CTree.Node OrRef
     toCTreeMemberKey (MKValue v) = It $ CTree.Literal v
     toCTreeMemberKey (MKBareword (Name n _)) = It $ CTree.Literal (Value (VText n) mempty)
     toCTreeMemberKey (MKType t1) = toCTreeT1 t1
@@ -556,7 +556,7 @@ buildMonoCTree (CTreeRoot ct) = do
 -- Combined resolution
 --------------------------------------------------------------------------------
 
-fullResolveCDDL :: CDDL -> Either NameResolutionFailure (CTreeRoot' Identity MonoRef)
+fullResolveCDDL :: CDDL () -> Either NameResolutionFailure (CTreeRoot' Identity MonoRef)
 fullResolveCDDL cddl = do
   let refCTree = buildRefCTree (asMap cddl)
   rCTree <- buildResolvedCTree refCTree

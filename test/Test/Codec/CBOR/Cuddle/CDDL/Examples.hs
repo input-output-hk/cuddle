@@ -4,6 +4,7 @@ import Codec.CBOR.Cuddle.CDDL.Prelude (prependPrelude)
 import Codec.CBOR.Cuddle.CDDL.Resolve (fullResolveCDDL)
 import Codec.CBOR.Cuddle.Parser (pCDDL)
 import Data.Either (isRight)
+import Data.Functor (($>))
 import Data.Text.IO qualified as T
 import Test.Hspec
 import Text.Megaparsec (parse)
@@ -15,7 +16,7 @@ validateFile filePath = it ("Successfully validates " <> filePath) $ do
   cddl <- case parse pCDDL "" contents of
     Right x -> pure $ prependPrelude x
     Left x -> fail $ "Failed to parse the file:\n" <> errorBundlePretty x
-  fullResolveCDDL cddl `shouldSatisfy` isRight
+  fullResolveCDDL (cddl $> ()) `shouldSatisfy` isRight
 
 spec :: Spec
 spec = do

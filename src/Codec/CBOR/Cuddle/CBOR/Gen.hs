@@ -24,6 +24,13 @@ import Codec.CBOR.Cuddle.CDDL (
   OccurrenceIndicator (..),
   Value (..),
   ValueVariant (..),
+  WrappedTerm,
+  flattenWrappedList,
+  pairTermList,
+  singleTermList,
+  pattern G,
+  pattern P,
+  pattern S,
  )
 import Codec.CBOR.Cuddle.CDDL.CTree (CTree, CTreeRoot' (..))
 import Codec.CBOR.Cuddle.CDDL.CTree qualified as CTree
@@ -208,48 +215,6 @@ genPostlude pt = case pt of
   PTUndefined -> pure $ TSimple 23
 
 --------------------------------------------------------------------------------
--- Kinds of terms
---------------------------------------------------------------------------------
-
-data WrappedTerm
-  = SingleTerm Term
-  | PairTerm Term Term
-  | GroupTerm [WrappedTerm]
-  deriving (Eq, Show)
-
--- | Recursively flatten wrapped list. That is, expand any groups out to their
--- individual entries.
-flattenWrappedList :: [WrappedTerm] -> [WrappedTerm]
-flattenWrappedList [] = []
-flattenWrappedList (GroupTerm xxs : xs) =
-  flattenWrappedList xxs <> flattenWrappedList xs
-flattenWrappedList (y : xs) = y : flattenWrappedList xs
-
-pattern S :: Term -> WrappedTerm
-pattern S t = SingleTerm t
-
--- | Convert a list of wrapped terms to a list of terms. If any 'PairTerm's are
--- present, we just take their "value" part.
-singleTermList :: [WrappedTerm] -> Maybe [Term]
-singleTermList [] = Just []
-singleTermList (S x : xs) = (x :) <$> singleTermList xs
-singleTermList (P _ y : xs) = (y :) <$> singleTermList xs
-singleTermList _ = Nothing
-
-pattern P :: Term -> Term -> WrappedTerm
-pattern P t1 t2 = PairTerm t1 t2
-
--- | Convert a list of wrapped terms to a list of pairs of terms, or fail if any
--- 'SingleTerm's are present.
-pairTermList :: [WrappedTerm] -> Maybe [(Term, Term)]
-pairTermList [] = Just []
-pairTermList (P x y : xs) = ((x, y) :) <$> pairTermList xs
-pairTermList _ = Nothing
-
-pattern G :: [WrappedTerm] -> WrappedTerm
-pattern G xs = GroupTerm xs
-
---------------------------------------------------------------------------------
 -- Generator functions
 --------------------------------------------------------------------------------
 
@@ -420,7 +385,7 @@ applyOccurenceIndicator (OIBounded mlb mub) oldGen =
   genDepthBiasedRM (fromMaybe 0 mlb :: Word64, fromMaybe 10 mub)
     >>= \i -> G <$> replicateM (fromIntegral i) oldGen
 
-genValue :: RandomGen g => Value -> M g Term
+genValue :: RandomGen g => Value () -> M g Term
 genValue (Value x _) = genValueVariant x
 
 genValueVariant :: RandomGen g => ValueVariant -> M g Term
