@@ -3,3 +3,6 @@
 .devenv
 dist-newstyle
 .vscode
+
+/.pre-commit-config.yaml
+/result
