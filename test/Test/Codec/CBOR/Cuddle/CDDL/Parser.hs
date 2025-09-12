@@ -347,27 +347,27 @@ type2Spec = describe "type2" $ do
                     , gcComment = Comment mempty
                     }
                     :| [ GrpChoice
-                           { gcGroupEntries =
-                               [ GroupEntry
-                                   { geOccurrenceIndicator = Nothing
-                                   , geComment = Comment mempty
-                                   , geVariant =
-                                       GEType
-                                         Nothing
-                                         ( Type0
-                                             { t0Type1 =
-                                                 Type1
-                                                   { t1Main = T2Name (Name {name = "string", nameComment = Comment mempty}) Nothing
-                                                   , t1TyOp = Nothing
-                                                   , t1Comment = Comment mempty
-                                                   }
-                                                   :| []
-                                             }
-                                         )
-                                   }
-                               ]
-                           , gcComment = Comment mempty
-                           }
+                          { gcGroupEntries =
+                              [ GroupEntry
+                                  { geOccurrenceIndicator = Nothing
+                                  , geComment = Comment mempty
+                                  , geVariant =
+                                      GEType
+                                        Nothing
+                                        ( Type0
+                                            { t0Type1 =
+                                                Type1
+                                                  { t1Main = T2Name (Name {name = "string", nameComment = Comment mempty}) Nothing
+                                                  , t1TyOp = Nothing
+                                                  , t1Comment = Comment mempty
+                                                  }
+                                                  :| []
+                                            }
+                                        )
+                                  }
+                              ]
+                          , gcComment = Comment mempty
+                          }
                        ]
               }
           )
@@ -395,22 +395,22 @@ type2Spec = describe "type2" $ do
                     , gcComment = Comment mempty
                     }
                     :| [ GrpChoice
-                           { gcGroupEntries =
-                               [ GroupEntry
-                                   { geOccurrenceIndicator = Nothing
-                                   , geComment = Comment mempty
-                                   , geVariant =
-                                       GEType
-                                         Nothing
-                                         ( Type0
-                                             { t0Type1 =
-                                                 Type1 {t1Main = T2Value (value $ VUInt 1), t1TyOp = Nothing, t1Comment = Comment mempty} :| []
-                                             }
-                                         )
-                                   }
-                               ]
-                           , gcComment = Comment mempty
-                           }
+                          { gcGroupEntries =
+                              [ GroupEntry
+                                  { geOccurrenceIndicator = Nothing
+                                  , geComment = Comment mempty
+                                  , geVariant =
+                                      GEType
+                                        Nothing
+                                        ( Type0
+                                            { t0Type1 =
+                                                Type1 {t1Main = T2Value (value $ VUInt 1), t1TyOp = Nothing, t1Comment = Comment mempty} :| []
+                                            }
+                                        )
+                                  }
+                              ]
+                          , gcComment = Comment mempty
+                          }
                        ]
               }
           )
