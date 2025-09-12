@@ -1,0 +1,39 @@
+name: Nix Build
+
+on:
+  pull_request:
+  push:
+    branches: ["master"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Install nix
+      uses: cachix/install-nix-action@v31
+      with:
+        nix_path: nixpkgs=channel:nixos-unstable
+
+    - name: Build
+      id: build
+      run: |
+        nix build --accept-flake-config .#static
+        echo "name=$(nix derivation show ./result | jq -r .[].env.name)" >>"$GITHUB_OUTPUT"
+        echo "artifacts=$(find -L result -type f)" >>"$GITHUB_OUTPUT"
+
+    - name: Record system details
+      id: system-details
+      run: |
+        echo "system=$(uname -s)" >>"$GITHUB_OUTPUT"
+        echo "machine=$(uname -m)" >>"$GITHUB_OUTPUT"
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ steps.build.outputs.name }}-${{ steps.system-details.outputs.system }}-${{ steps.system-details.outputs.machine }}
+        path: ${{ steps.build.outputs.artifacts }}
