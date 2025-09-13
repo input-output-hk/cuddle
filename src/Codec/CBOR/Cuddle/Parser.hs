@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 
@@ -28,7 +29,7 @@ import Text.Megaparsec.Char hiding (space)
 import Text.Megaparsec.Char qualified as C
 import Text.Megaparsec.Char.Lexer qualified as L
 
-pCDDL :: Parser CDDL
+pCDDL :: Parser (CDDL Comment)
 pCDDL = do
   initialComments <- many (try $ C.space *> pCommentBlock <* notFollowedBy pRule)
   initialRuleComment <- C.space *> optional pCommentBlock
@@ -36,7 +37,7 @@ pCDDL = do
   cddlTail <- many $ pTopLevel <* C.space
   eof $> CDDL initialComments (initialRule //- fold initialRuleComment) cddlTail
 
-pTopLevel :: Parser TopLevel
+pTopLevel :: Parser (TopLevel Comment)
 pTopLevel = try tlRule <|> tlComment
   where
     tlRule = do
@@ -45,7 +46,7 @@ pTopLevel = try tlRule <|> tlComment
       pure . TopLevelRule $ rule //- fold mCmt
     tlComment = TopLevelComment <$> pCommentBlock
 
-pRule :: Parser Rule
+pRule :: Parser (Rule Comment)
 pRule = do
   name <- pName
   genericParam <- optcomp pGenericParam
@@ -94,15 +95,15 @@ pGenericParam =
   GenericParam
     <$> between "<" ">" (NE.sepBy1 (space !*> pName <*! space) ",")
 
-pGenericArg :: Parser GenericArg
+pGenericArg :: Parser (GenericArg Comment)
 pGenericArg =
   GenericArg
     <$> between "<" ">" (NE.sepBy1 (space !*> pType1 <*! space) ",")
 
-pType0 :: Parser Type0
+pType0 :: Parser (Type0 Comment)
 pType0 = Type0 <$> sepBy1' (space !*> pType1 <*! space) (try "/")
 
-pType1 :: Parser Type1
+pType1 :: Parser (Type1 Comment)
 pType1 = do
   v <- pType2
   rest <- optional $ do
@@ -118,7 +119,7 @@ pType1 = do
       pure $ Type1 v (Just (tyOp, w)) $ cmtFst <> cmtSnd
     Nothing -> pure $ Type1 v Nothing mempty
 
-pType2 :: Parser Type2
+pType2 :: Parser (Type2 Comment)
 pType2 =
   choice
     [ T2Value <$> pValue
@@ -176,13 +177,13 @@ pCtlOp =
                 ]
         )
 
-pGroup :: Parser Group
+pGroup :: Parser (Group Comment)
 pGroup = Group <$> NE.sepBy1 (space !*> pGrpChoice) "//"
 
-pGrpChoice :: Parser GrpChoice
+pGrpChoice :: Parser (GrpChoice Comment)
 pGrpChoice = GrpChoice <$> many (space !*> pGrpEntry <*! pOptCom) <*> mempty
 
-pGrpEntry :: Parser GroupEntry
+pGrpEntry :: Parser (GroupEntry Comment)
 pGrpEntry = do
   occur <- optcomp pOccur
   cmt <- space
@@ -195,9 +196,9 @@ pGrpEntry = do
       , try $ withComment <$> (GERef <$> pName <*> optional pGenericArg)
       , withComment . GEGroup <$> ("(" *> space !*> pGroup <*! space <* ")")
       ]
-  pure $ GroupEntry occur (cmt <> cmt') variant
+  pure $ GroupEntry occur variant (cmt <> cmt')
 
-pMemberKey :: Parser (WithComment MemberKey)
+pMemberKey :: Parser (WithComment (MemberKey Comment))
 pMemberKey =
   choice
     [ try $ do
@@ -229,7 +230,7 @@ pOccur =
       , pBounded
       ]
 
-pValue :: Parser Value
+pValue :: Parser (Value Comment)
 pValue =
   label "value" $
     (`Value` mempty)

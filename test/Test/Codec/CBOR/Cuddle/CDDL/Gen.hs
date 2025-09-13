@@ -1,3 +1,4 @@
+{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -15,17 +16,16 @@ import Data.Text qualified as T
 import Test.QuickCheck
 import Test.QuickCheck qualified as Gen
 
-instance Arbitrary CDDL where
+instance Arbitrary i => Arbitrary (CDDL i) where
   arbitrary = CDDL <$> arbitrary <*> arbitrary <*> arbitrary
   shrink = genericShrink
 
-instance Arbitrary TopLevel where
+instance Arbitrary i => Arbitrary (TopLevel i) where
   arbitrary =
     Gen.oneof
       [ TopLevelComment <$> arbitrary
       , TopLevelRule <$> arbitrary
       ]
-  shrink = genericShrink
 
 instance Arbitrary T.Text where
   arbitrary = T.pack <$> arbitrary
@@ -77,11 +77,11 @@ instance Arbitrary GenericParam where
   arbitrary = GenericParam <$> nonEmpty arbitrary
   shrink (GenericParam neName) = GenericParam <$> shrinkNE neName
 
-instance Arbitrary GenericArg where
+instance Arbitrary i => Arbitrary (GenericArg i) where
   arbitrary = GenericArg <$> nonEmpty arbitrary
   shrink (GenericArg neArg) = GenericArg <$> shrinkNE neArg
 
-instance Arbitrary Rule where
+instance Arbitrary i => Arbitrary (Rule i) where
   arbitrary =
     Rule
       <$> arbitrary
@@ -89,7 +89,6 @@ instance Arbitrary Rule where
       <*> arbitrary
       <*> arbitrary
       <*> arbitrary
-  shrink = genericShrink
 
 instance Arbitrary RangeBound where
   arbitrary = Gen.elements [ClOpen, Closed]
@@ -103,7 +102,7 @@ instance Arbitrary TyOp where
       ]
   shrink = genericShrink
 
-instance Arbitrary TypeOrGroup where
+instance Arbitrary i => Arbitrary (TypeOrGroup i) where
   arbitrary =
     Gen.oneof
       [ TOGGroup <$> arbitrary
@@ -111,15 +110,14 @@ instance Arbitrary TypeOrGroup where
       ]
   shrink = genericShrink
 
-instance Arbitrary Type0 where
+instance Arbitrary i => Arbitrary (Type0 i) where
   arbitrary = Type0 <$> nonEmpty arbitrary
   shrink (Type0 neType1) = Type0 <$> shrinkNE neType1
 
-instance Arbitrary Type1 where
+instance Arbitrary i => Arbitrary (Type1 i) where
   arbitrary = Type1 <$> arbitrary <*> arbitrary <*> arbitrary
-  shrink = genericShrink
 
-instance Arbitrary Type2 where
+instance Arbitrary i => Arbitrary (Type2 i) where
   arbitrary =
     recursive
       Gen.oneof
@@ -153,15 +151,14 @@ instance Arbitrary OccurrenceIndicator where
 
   shrink = genericShrink
 
-instance Arbitrary Group where
+instance Arbitrary i => Arbitrary (Group i) where
   arbitrary = Group <$> nonEmpty arbitrary
   shrink (Group gr) = Group <$> shrinkNE gr
 
-instance Arbitrary GrpChoice where
-  arbitrary = GrpChoice <$> listOf' arbitrary <*> pure mempty
-  shrink = genericShrink
+instance Arbitrary i => Arbitrary (GrpChoice i) where
+  arbitrary = GrpChoice <$> listOf' arbitrary <*> arbitrary
 
-instance Arbitrary GroupEntryVariant where
+instance Arbitrary i => Arbitrary (GroupEntryVariant i) where
   arbitrary =
     recursive
       Gen.oneof
@@ -176,15 +173,14 @@ instance Arbitrary GroupEntryVariant where
       ]
   shrink = genericShrink
 
-instance Arbitrary GroupEntry where
+instance Arbitrary i => Arbitrary (GroupEntry i) where
   arbitrary =
     GroupEntry
       <$> arbitrary
-      <*> pure mempty
       <*> arbitrary
-  shrink = genericShrink
+      <*> arbitrary
 
-instance Arbitrary MemberKey where
+instance Arbitrary i => Arbitrary (MemberKey i) where
   arbitrary =
     recursive
       Gen.oneof
@@ -196,7 +192,7 @@ instance Arbitrary MemberKey where
 
   shrink = genericShrink
 
-instance Arbitrary Value where
+instance Arbitrary i => Arbitrary (Value i) where
   arbitrary = Value <$> arbitrary <*> arbitrary
   shrink = genericShrink
 

@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE OverloadedStrings #-}
 
@@ -6,6 +7,7 @@
 module Test.Codec.CBOR.Cuddle.Huddle where
 
 import Codec.CBOR.Cuddle.CDDL (CDDL, sortCDDL)
+import Codec.CBOR.Cuddle.Comments (Comment)
 import Codec.CBOR.Cuddle.Huddle
 import Codec.CBOR.Cuddle.Parser
 import Data.Text qualified as T
@@ -29,37 +31,37 @@ huddleSpec = describe "huddle" $ do
 basicAssign :: Spec
 basicAssign = describe "basic assignment" $ do
   it "Can assign a primitive" $
-    toSortedCDDL ["port" =:= VUInt]
+    toSortedCDDLPretty ["port" =:= VUInt]
       `shouldMatchParseCDDL` "port = uint"
   it "Can assign an int" $
-    toSortedCDDL ["one" =:= (int 1)]
+    toSortedCDDLPretty ["one" =:= (int 1)]
       `shouldMatchParseCDDL` "one = 1"
   -- it "Can assign a float" $
-  --   toSortedCDDL ["onepointone" =:= (1.1 :: Float)]
+  --   toSortedCDDLPretty ["onepointone" =:= (1.1 :: Float)]
   --     `shouldMatchParseCDDL` "onepointone = 1.1"
   it "Can assign a text string" $
-    toSortedCDDL ["hello" =:= ("Hello World" :: T.Text)]
+    toSortedCDDLPretty ["hello" =:= ("Hello World" :: T.Text)]
       `shouldMatchParseCDDL` "hello = \"Hello World\""
   it "Can handle multiple assignments" $
-    toSortedCDDL ["age" =:= VUInt, "location" =:= VText]
+    toSortedCDDLPretty ["age" =:= VUInt, "location" =:= VText]
       `shouldMatchParseCDDL` "age = uint\n location = text"
 
 arraySpec :: Spec
 arraySpec = describe "Arrays" $ do
   it "Can assign a small array" $
-    toSortedCDDL ["asl" =:= arr [a VUInt, a VBool, a VText]]
+    toSortedCDDLPretty ["asl" =:= arr [a VUInt, a VBool, a VText]]
       `shouldMatchParseCDDL` "asl = [ uint, bool, text ]"
   it "Can quantify an upper bound" $
-    toSortedCDDL ["age" =:= arr [a VUInt +> 64]]
+    toSortedCDDLPretty ["age" =:= arr [a VUInt +> 64]]
       `shouldMatchParseCDDL` "age = [ *64 uint ]"
   it "Can quantify an optional" $
-    toSortedCDDL ["age" =:= arr [0 <+ a VUInt +> 1]]
+    toSortedCDDLPretty ["age" =:= arr [0 <+ a VUInt +> 1]]
       `shouldMatchParseCDDL` "age = [ ? uint ]"
   it "Can handle a choice" $
-    toSortedCDDL ["ageOrSex" =:= arr [a VUInt] / arr [a VBool]]
+    toSortedCDDLPretty ["ageOrSex" =:= arr [a VUInt] / arr [a VBool]]
       `shouldMatchParseCDDL` "ageOrSex = [ uint // bool ]"
   it "Can handle choices of groups" $
-    toSortedCDDL
+    toSortedCDDLPretty
       [ "asl"
           =:= arr [a VUInt, a VBool, a VText]
           / arr
@@ -72,35 +74,35 @@ arraySpec = describe "Arrays" $ do
 mapSpec :: Spec
 mapSpec = describe "Maps" $ do
   it "Can assign a small map" $
-    toSortedCDDL ["asl" =:= mp ["age" ==> VUInt, "sex" ==> VBool, "location" ==> VText]]
+    toSortedCDDLPretty ["asl" =:= mp ["age" ==> VUInt, "sex" ==> VBool, "location" ==> VText]]
       `shouldMatchParseCDDL` "asl = { age : uint, sex : bool, location : text }"
   it "Can quantify a lower bound" $
-    toSortedCDDL ["age" =:= mp [0 <+ "years" ==> VUInt]]
+    toSortedCDDLPretty ["age" =:= mp [0 <+ "years" ==> VUInt]]
       `shouldMatchParseCDDL` "age = { * years : uint }"
   it "Can quantify an upper bound" $
-    toSortedCDDL ["age" =:= mp ["years" ==> VUInt +> 64]]
+    toSortedCDDLPretty ["age" =:= mp ["years" ==> VUInt +> 64]]
       `shouldMatchParseCDDL` "age = { *64 years : uint }"
   it "Can handle a choice" $
-    toSortedCDDL ["ageOrSex" =:= mp ["age" ==> VUInt] / mp ["sex" ==> VBool]]
+    toSortedCDDLPretty ["ageOrSex" =:= mp ["age" ==> VUInt] / mp ["sex" ==> VBool]]
       `shouldMatchParseCDDL` "ageOrSex = { age : uint // sex : bool }"
   it "Can handle a choice with an entry" $
-    toSortedCDDL ["mir" =:= arr [a (int 0 / int 1), a $ mp [0 <+ "test" ==> VUInt]]]
+    toSortedCDDLPretty ["mir" =:= arr [a (int 0 / int 1), a $ mp [0 <+ "test" ==> VUInt]]]
       `shouldMatchParseCDDL` "mir = [ 0 / 1, { * test : uint }]"
 
 grpSpec :: Spec
 grpSpec = describe "Groups" $ do
   it "Can handle a choice in a group entry" $
     let g1 = "g1" =:~ grp [a (VUInt / VBytes), a VUInt]
-     in toSortedCDDL (collectFrom [HIRule $ "a1" =:= arr [a g1]])
+     in toSortedCDDLPretty (collectFrom [HIRule $ "a1" =:= arr [a g1]])
           `shouldMatchParseCDDL` "a1 = [g1]\n g1 = ( uint / bytes, uint )"
   it "Can handle keys in a group entry" $
     let g1 = "g1" =:~ grp ["bytes" ==> VBytes]
-     in toSortedCDDL (collectFrom [HIRule $ "a1" =:= arr [a g1]])
+     in toSortedCDDLPretty (collectFrom [HIRule $ "a1" =:= arr [a g1]])
           `shouldMatchParseCDDL` "a1 = [g1]\n g1 = (bytes : bytes)"
 
 -- it "Can handle a group in a map" $
 --   let g1 = "g1" =:~ grp ["bytes"==> VBytes]
---   in toSortedCDDL (collectFrom ["a1" =:= mp [g1]])
+--   in toSortedCDDLPretty (collectFrom ["a1" =:= mp [g1]])
 --     `shouldMatchParseCDDL` "a1 = [g1]\n g1 = (bytes : bytes)"
 
 nestedSpec :: Spec
@@ -108,7 +110,7 @@ nestedSpec =
   describe "Nesting" $
     it "Handles references" $
       let headerBody = "header_body" =:= arr ["block_number" ==> VUInt, "slot" ==> VUInt]
-       in toSortedCDDL
+       in toSortedCDDLPretty
             [ headerBody
             , "header" =:= arr [a headerBody, "body_signature" ==> VBytes]
             ]
@@ -117,29 +119,29 @@ nestedSpec =
 genericSpec :: Spec
 genericSpec =
   describe "Generics" $
-    let set :: IsType0 t0 => t0 -> GRuleCall
+    let set :: IsType0 t0 => t0 -> GRuleCall DHuddle
         set = binding $ \x -> "set" =:= arr [0 <+ a x]
 
-        dict :: (IsType0 t0, IsType0 t1) => t0 -> t1 -> GRuleCall
+        dict :: (IsType0 t0, IsType0 t1) => t0 -> t1 -> GRuleCall DHuddle
         dict = binding2 $ \k v -> "dict" =:= mp [0 <+ asKey k ==> v]
      in do
           it "Should bind a single parameter" $
-            toSortedCDDL (collectFrom [HIRule $ "intset" =:= set VUInt])
+            toSortedCDDLPretty (collectFrom [HIRule $ "intset" =:= set VUInt])
               `shouldMatchParseCDDL` "intset = set<uint>\n set<a0> = [* a0]"
           it "Should bind two parameters" $
-            toSortedCDDL (collectFrom [HIRule $ "mymap" =:= dict VUInt VText])
+            toSortedCDDLPretty (collectFrom [HIRule $ "mymap" =:= dict VUInt VText])
               `shouldMatchParseCDDL` "dict<a0, b0> = {* a0 => b0}\n mymap = dict<uint, text>"
 
 constraintSpec :: Spec
 constraintSpec =
   describe "Constraints" $ do
     it "Size can take a Word" $
-      toSortedCDDL (collectFrom [HIRule $ "sz" =:= VUInt `sized` (2 :: Word)])
+      toSortedCDDLPretty (collectFrom [HIRule $ "sz" =:= VUInt `sized` (2 :: Word)])
         `shouldMatchParseCDDL` "sz = uint .size 2"
 
     it "Range bound can take a reference" $
       let b = "b" =:= (16 :: Integer)
-       in toSortedCDDL (collectFrom [HIRule $ "b" =:= (16 :: Integer), HIRule $ "c" =:= int 0 ... b])
+       in toSortedCDDLPretty (collectFrom [HIRule $ "b" =:= (16 :: Integer), HIRule $ "c" =:= int 0 ... b])
             `shouldMatchParseCDDL` "b = 16\n c = 0 .. b"
 
 --------------------------------------------------------------------------------
@@ -155,10 +157,10 @@ shouldMatchParse ::
 shouldMatchParse x parseFun input = parse parseFun "" (T.pack input) `shouldParse` x
 
 shouldMatchParseCDDL ::
-  CDDL ->
+  CDDL Comment ->
   String ->
   Expectation
 shouldMatchParseCDDL x = shouldMatchParse x pCDDL
 
-toSortedCDDL :: Huddle -> CDDL
-toSortedCDDL = sortCDDL . toCDDLNoRoot
+toSortedCDDLPretty :: Huddle DHuddle -> CDDL Comment
+toSortedCDDLPretty = sortCDDL . fmap dhComment . toCDDLNoRoot

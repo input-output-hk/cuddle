@@ -179,7 +179,7 @@ type2Spec = describe "type2" $ do
                     { gcGroupEntries =
                         [ GroupEntry
                             { geOccurrenceIndicator = Nothing
-                            , geComment = Comment mempty
+                            , geDecoration = Comment mempty
                             , geVariant =
                                 GEType
                                   ( Just
@@ -187,7 +187,7 @@ type2Spec = describe "type2" $ do
                                           ( Type1
                                               { t1Main = T2Name (Name {name = "int", nameComment = Comment mempty}) Nothing
                                               , t1TyOp = Nothing
-                                              , t1Comment = Comment mempty
+                                              , t1Decoration = Comment mempty
                                               }
                                           )
                                       )
@@ -197,14 +197,14 @@ type2Spec = describe "type2" $ do
                                           Type1
                                             { t1Main = T2Name (Name {name = "string", nameComment = Comment mempty}) Nothing
                                             , t1TyOp = Nothing
-                                            , t1Comment = Comment mempty
+                                            , t1Decoration = Comment mempty
                                             }
                                             :| []
                                       }
                                   )
                             }
                         ]
-                    , gcComment = Comment mempty
+                    , gcDecoration = Comment mempty
                     }
                     :| []
               }
@@ -218,7 +218,7 @@ type2Spec = describe "type2" $ do
                     { gcGroupEntries =
                         [ GroupEntry
                             { geOccurrenceIndicator = Just OIZeroOrMore
-                            , geComment = Comment mempty
+                            , geDecoration = Comment mempty
                             , geVariant =
                                 GEType
                                   ( Just
@@ -226,7 +226,7 @@ type2Spec = describe "type2" $ do
                                           ( Type1
                                               { t1Main = T2Name (Name {name = "int", nameComment = Comment mempty}) Nothing
                                               , t1TyOp = Nothing
-                                              , t1Comment = Comment mempty
+                                              , t1Decoration = Comment mempty
                                               }
                                           )
                                       )
@@ -236,14 +236,14 @@ type2Spec = describe "type2" $ do
                                           Type1
                                             { t1Main = T2Name (Name {name = "string", nameComment = Comment mempty}) Nothing
                                             , t1TyOp = Nothing
-                                            , t1Comment = Comment mempty
+                                            , t1Decoration = Comment mempty
                                             }
                                             :| []
                                       }
                                   )
                             }
                         ]
-                    , gcComment = Comment mempty
+                    , gcDecoration = Comment mempty
                     }
                     :| []
               }
@@ -257,18 +257,18 @@ type2Spec = describe "type2" $ do
                     { gcGroupEntries =
                         [ GroupEntry
                             { geOccurrenceIndicator = Nothing
-                            , geComment = Comment mempty
+                            , geDecoration = Comment mempty
                             , geVariant =
                                 GEType
                                   ( Just
-                                      (MKType (Type1 {t1Main = T2Value (value $ VUInt 1), t1TyOp = Nothing, t1Comment = Comment mempty}))
+                                      (MKType (Type1 {t1Main = T2Value (value $ VUInt 1), t1TyOp = Nothing, t1Decoration = Comment mempty}))
                                   )
                                   ( Type0
                                       { t0Type1 =
                                           Type1
                                             { t1Main = T2Name (Name {name = "string", nameComment = Comment mempty}) Nothing
                                             , t1TyOp = Nothing
-                                            , t1Comment = Comment mempty
+                                            , t1Decoration = Comment mempty
                                             }
                                             :| []
                                       }
@@ -276,18 +276,18 @@ type2Spec = describe "type2" $ do
                             }
                         , GroupEntry
                             { geOccurrenceIndicator = Nothing
-                            , geComment = Comment mempty
+                            , geDecoration = Comment mempty
                             , geVariant =
                                 GEType
                                   ( Just
-                                      (MKType (Type1 {t1Main = T2Value (value $ VUInt 2), t1TyOp = Nothing, t1Comment = Comment mempty}))
+                                      (MKType (Type1 {t1Main = T2Value (value $ VUInt 2), t1TyOp = Nothing, t1Decoration = Comment mempty}))
                                   )
                                   ( Type0
                                       { t0Type1 =
                                           Type1
                                             { t1Main = T2Name (Name {name = "int", nameComment = Comment mempty}) Nothing
                                             , t1TyOp = Nothing
-                                            , t1Comment = Comment mempty
+                                            , t1Decoration = Comment mempty
                                             }
                                             :| []
                                       }
@@ -295,25 +295,25 @@ type2Spec = describe "type2" $ do
                             }
                         , GroupEntry
                             { geOccurrenceIndicator = Nothing
-                            , geComment = Comment mempty
+                            , geDecoration = Comment mempty
                             , geVariant =
                                 GEType
                                   ( Just
-                                      (MKType (Type1 {t1Main = T2Value (value $ VUInt 3), t1TyOp = Nothing, t1Comment = Comment mempty}))
+                                      (MKType (Type1 {t1Main = T2Value (value $ VUInt 3), t1TyOp = Nothing, t1Decoration = Comment mempty}))
                                   )
                                   ( Type0
                                       { t0Type1 =
                                           Type1
                                             { t1Main = T2Name (Name {name = "bytes", nameComment = Comment mempty}) Nothing
                                             , t1TyOp = Nothing
-                                            , t1Comment = Comment mempty
+                                            , t1Decoration = Comment mempty
                                             }
                                             :| []
                                       }
                                   )
                             }
                         ]
-                    , gcComment = Comment mempty
+                    , gcDecoration = Comment mempty
                     }
                     :| []
               }
@@ -328,7 +328,7 @@ type2Spec = describe "type2" $ do
                     { gcGroupEntries =
                         [ GroupEntry
                             { geOccurrenceIndicator = Nothing
-                            , geComment = Comment mempty
+                            , geDecoration = Comment mempty
                             , geVariant =
                                 GEType
                                   Nothing
@@ -337,20 +337,20 @@ type2Spec = describe "type2" $ do
                                           Type1
                                             { t1Main = T2Name (Name {name = "int", nameComment = Comment mempty}) Nothing
                                             , t1TyOp = Nothing
-                                            , t1Comment = Comment mempty
+                                            , t1Decoration = Comment mempty
                                             }
                                             :| []
                                       }
                                   )
                             }
                         ]
-                    , gcComment = Comment mempty
+                    , gcDecoration = Comment mempty
                     }
                     :| [ GrpChoice
                            { gcGroupEntries =
                                [ GroupEntry
                                    { geOccurrenceIndicator = Nothing
-                                   , geComment = Comment mempty
+                                   , geDecoration = Comment mempty
                                    , geVariant =
                                        GEType
                                          Nothing
@@ -359,14 +359,14 @@ type2Spec = describe "type2" $ do
                                                  Type1
                                                    { t1Main = T2Name (Name {name = "string", nameComment = Comment mempty}) Nothing
                                                    , t1TyOp = Nothing
-                                                   , t1Comment = Comment mempty
+                                                   , t1Decoration = Comment mempty
                                                    }
                                                    :| []
                                              }
                                          )
                                    }
                                ]
-                           , gcComment = Comment mempty
+                           , gcDecoration = Comment mempty
                            }
                        ]
               }
@@ -381,35 +381,35 @@ type2Spec = describe "type2" $ do
                     { gcGroupEntries =
                         [ GroupEntry
                             { geOccurrenceIndicator = Nothing
-                            , geComment = Comment mempty
+                            , geDecoration = Comment mempty
                             , geVariant =
                                 GEType
                                   Nothing
                                   ( Type0
                                       { t0Type1 =
-                                          Type1 {t1Main = T2Value (value $ VUInt 0), t1TyOp = Nothing, t1Comment = Comment mempty} :| []
+                                          Type1 {t1Main = T2Value (value $ VUInt 0), t1TyOp = Nothing, t1Decoration = Comment mempty} :| []
                                       }
                                   )
                             }
                         ]
-                    , gcComment = Comment mempty
+                    , gcDecoration = Comment mempty
                     }
                     :| [ GrpChoice
                            { gcGroupEntries =
                                [ GroupEntry
                                    { geOccurrenceIndicator = Nothing
-                                   , geComment = Comment mempty
+                                   , geDecoration = Comment mempty
                                    , geVariant =
                                        GEType
                                          Nothing
                                          ( Type0
                                              { t0Type1 =
-                                                 Type1 {t1Main = T2Value (value $ VUInt 1), t1TyOp = Nothing, t1Comment = Comment mempty} :| []
+                                                 Type1 {t1Main = T2Value (value $ VUInt 1), t1TyOp = Nothing, t1Decoration = Comment mempty} :| []
                                              }
                                          )
                                    }
                                ]
-                           , gcComment = Comment mempty
+                           , gcDecoration = Comment mempty
                            }
                        ]
               }
@@ -423,18 +423,18 @@ type2Spec = describe "type2" $ do
                     { gcGroupEntries =
                         [ GroupEntry
                             { geOccurrenceIndicator = Nothing
-                            , geComment = Comment mempty
+                            , geDecoration = Comment mempty
                             , geVariant =
                                 GEType
                                   Nothing
                                   ( Type0
                                       { t0Type1 =
-                                          Type1 {t1Main = T2Value (value $ VUInt 1), t1TyOp = Nothing, t1Comment = Comment mempty} :| []
+                                          Type1 {t1Main = T2Value (value $ VUInt 1), t1TyOp = Nothing, t1Decoration = Comment mempty} :| []
                                       }
                                   )
                             }
                         ]
-                    , gcComment = Comment mempty
+                    , gcDecoration = Comment mempty
                     }
                     :| []
               }
@@ -448,19 +448,19 @@ type2Spec = describe "type2" $ do
                     { gcGroupEntries =
                         [ GroupEntry
                             { geOccurrenceIndicator = Nothing
-                            , geComment = Comment mempty
+                            , geDecoration = Comment mempty
                             , geVariant =
                                 GEType
                                   Nothing
                                   ( Type0
                                       { t0Type1 =
-                                          Type1 {t1Main = T2Value (value $ VUInt 2), t1TyOp = Nothing, t1Comment = Comment mempty} :| []
+                                          Type1 {t1Main = T2Value (value $ VUInt 2), t1TyOp = Nothing, t1Decoration = Comment mempty} :| []
                                       }
                                   )
                             }
                         , GroupEntry
                             { geOccurrenceIndicator = Nothing
-                            , geComment = Comment mempty
+                            , geDecoration = Comment mempty
                             , geVariant =
                                 GEType
                                   Nothing
@@ -469,14 +469,14 @@ type2Spec = describe "type2" $ do
                                           Type1
                                             { t1Main = T2Name (Name {name = "soon", nameComment = Comment mempty}) Nothing
                                             , t1TyOp = Nothing
-                                            , t1Comment = Comment mempty
+                                            , t1Decoration = Comment mempty
                                             }
                                             :| []
                                       }
                                   )
                             }
                         ]
-                    , gcComment = Comment mempty
+                    , gcDecoration = Comment mempty
                     }
                     :| []
               }
@@ -488,7 +488,7 @@ grpEntrySpec = describe "GroupEntry" $ do
     parse pGrpEntry "" "int"
       `shouldParse` GroupEntry
         { geOccurrenceIndicator = Nothing
-        , geComment = Comment mempty
+        , geDecoration = Comment mempty
         , geVariant =
             GEType
               Nothing
@@ -497,7 +497,7 @@ grpEntrySpec = describe "GroupEntry" $ do
                       Type1
                         { t1Main = T2Name (Name {name = "int", nameComment = Comment mempty}) Nothing
                         , t1TyOp = Nothing
-                        , t1Comment = Comment mempty
+                        , t1Decoration = Comment mempty
                         }
                         :| []
                   }
@@ -507,7 +507,7 @@ grpEntrySpec = describe "GroupEntry" $ do
     parse pGrpEntry "" "int // notConsideredHere"
       `shouldParse` GroupEntry
         { geOccurrenceIndicator = Nothing
-        , geComment = Comment mempty
+        , geDecoration = Comment mempty
         , geVariant =
             GEType
               Nothing
@@ -516,7 +516,7 @@ grpEntrySpec = describe "GroupEntry" $ do
                       Type1
                         { t1Main = T2Name (Name {name = "int", nameComment = Comment mempty}) Nothing
                         , t1TyOp = Nothing
-                        , t1Comment = Comment mempty
+                        , t1Decoration = Comment mempty
                         }
                         :| []
                   }
@@ -526,7 +526,7 @@ grpEntrySpec = describe "GroupEntry" $ do
     parse pGrpEntry "" "a<0 ... #6(0)>"
       `shouldParse` GroupEntry
         { geOccurrenceIndicator = Nothing
-        , geComment = Comment mempty
+        , geDecoration = Comment mempty
         , geVariant =
             GEType
               Nothing
@@ -547,18 +547,18 @@ grpEntrySpec = describe "GroupEntry" $ do
                                                     Nothing
                                                     ( Type0
                                                         { t0Type1 =
-                                                            Type1 {t1Main = T2Value (value $ VUInt 0), t1TyOp = Nothing, t1Comment = Comment mempty} :| []
+                                                            Type1 {t1Main = T2Value (value $ VUInt 0), t1TyOp = Nothing, t1Decoration = Comment mempty} :| []
                                                         }
                                                     )
                                                 )
-                                          , t1Comment = Comment mempty
+                                          , t1Decoration = Comment mempty
                                           }
                                           :| []
                                       )
                                   )
                               )
                         , t1TyOp = Nothing
-                        , t1Comment = Comment mempty
+                        , t1Decoration = Comment mempty
                         }
                         :| []
                   }
@@ -568,28 +568,31 @@ grpEntrySpec = describe "GroupEntry" $ do
     parse pGrpEntry "" "0* a"
       `shouldParse` GroupEntry
         (Just (OIBounded (Just 0) Nothing))
-        def
         ( GEType
             Nothing
             (Type0 (Type1 (T2Name (Name "a" mempty) Nothing) Nothing mempty :| []))
         )
+        def
 
 grpChoiceSpec :: SpecWith ()
 grpChoiceSpec = describe "GroupChoice" $ do
   it "Should parse part of a group alternative" $
     parse pGrpChoice "" "int // string"
       `shouldParse` GrpChoice
-        [ GroupEntry Nothing mempty $
-            GEType
-              Nothing
-              ( Type0
-                  ( Type1
-                      (T2Name (Name "int" mempty) Nothing)
-                      Nothing
-                      mempty
-                      :| []
-                  )
-              )
+        [ GroupEntry
+            Nothing
+            ( GEType
+                Nothing
+                ( Type0
+                    ( Type1
+                        (T2Name (Name "int" mempty) Nothing)
+                        Nothing
+                        mempty
+                        :| []
+                    )
+                )
+            )
+            mempty
         ]
         mempty
 
@@ -629,7 +632,7 @@ qcFoundSpec =
       Type1
         { t1Main =
             T2Map
-              (Group {unGroup = GrpChoice {gcGroupEntries = [], gcComment = Comment mempty} :| []})
+              (Group {unGroup = GrpChoice {gcGroupEntries = [], gcDecoration = Comment mempty} :| []})
         , t1TyOp =
             Just
               ( CtrlOp CtlOp.Ge
@@ -640,16 +643,16 @@ qcFoundSpec =
                           ( Type1
                               { t1Main =
                                   T2Map
-                                    (Group {unGroup = GrpChoice {gcGroupEntries = [], gcComment = Comment mempty} :| []})
+                                    (Group {unGroup = GrpChoice {gcGroupEntries = [], gcDecoration = Comment mempty} :| []})
                               , t1TyOp = Nothing
-                              , t1Comment = Comment mempty
+                              , t1Decoration = Comment mempty
                               }
-                              :| [Type1 {t1Main = T2Value (value $ VUInt 3), t1TyOp = Nothing, t1Comment = Comment mempty}]
+                              :| [Type1 {t1Main = T2Value (value $ VUInt 3), t1TyOp = Nothing, t1Decoration = Comment mempty}]
                           )
                       )
                   )
               )
-        , t1Comment = Comment mempty
+        , t1Decoration = Comment mempty
         }
     parseExample "S = 0* ()" pRule $
       Rule
@@ -657,8 +660,10 @@ qcFoundSpec =
         Nothing
         AssignEq
         ( TOGGroup
-            ( GroupEntry (Just (OIBounded (Just 0) Nothing)) mempty $
-                GEGroup (Group (GrpChoice mempty mempty :| []))
+            ( GroupEntry
+                (Just (OIBounded (Just 0) Nothing))
+                (GEGroup (Group (GrpChoice mempty mempty :| [])))
+                mempty
             )
         )
         mempty
@@ -672,10 +677,11 @@ qcFoundSpec =
           ( TOGGroup
               ( GroupEntry
                   Nothing
+                  ( GEType
+                      (Just (MKValue (value $ VText "6 ybe2ddl8frq0vqa8zgrk07khrljq7p plrufpd1sff3p95")))
+                      (Type0 (Type1 (T2Value (value $ VText "u")) Nothing mempty :| []))
+                  )
                   mempty
-                  $ GEType
-                    (Just (MKValue (value $ VText "6 ybe2ddl8frq0vqa8zgrk07khrljq7p plrufpd1sff3p95")))
-                    (Type0 (Type1 (T2Value (value $ VText "u")) Nothing mempty :| []))
               )
           )
           mempty

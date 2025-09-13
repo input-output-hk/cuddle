@@ -1,5 +1,10 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE OverloadedLabels #-}
+{-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 -- | This module defined the data structure of CDDL as specified in
 --   https://datatracker.ietf.org/doc/rfc8610/
@@ -33,10 +38,19 @@ module Codec.CBOR.Cuddle.CDDL (
   GrpChoice (..),
   unwrap,
   compareRuleName,
+  flattenWrappedList,
+  singleTermList,
+  pairTermList,
+  CBORGenerator (..),
+  WrappedTerm (..),
+  pattern G,
+  pattern P,
+  pattern S,
 ) where
 
 import Codec.CBOR.Cuddle.CDDL.CtlOp (CtlOp)
 import Codec.CBOR.Cuddle.Comments (CollectComments (..), Comment, HasComment (..))
+import Codec.CBOR.Term (Term)
 import Data.ByteString qualified as B
 import Data.Default.Class (Default (..))
 import Data.Function (on, (&))
@@ -51,48 +65,106 @@ import GHC.Generics (Generic)
 import Optics.Core ((%), (.~))
 import Optics.Getter (view)
 import Optics.Lens (lens)
+import System.Random.Stateful (StatefulGen)
+
+--------------------------------------------------------------------------------
+-- Kinds of terms
+--------------------------------------------------------------------------------
+
+data WrappedTerm
+  = SingleTerm Term
+  | PairTerm Term Term
+  | GroupTerm [WrappedTerm]
+  deriving (Eq, Show)
+
+-- | Recursively flatten wrapped list. That is, expand any groups out to their
+-- individual entries.
+flattenWrappedList :: [WrappedTerm] -> [WrappedTerm]
+flattenWrappedList [] = []
+flattenWrappedList (GroupTerm xxs : xs) =
+  flattenWrappedList xxs <> flattenWrappedList xs
+flattenWrappedList (y : xs) = y : flattenWrappedList xs
+
+pattern S :: Term -> WrappedTerm
+pattern S t = SingleTerm t
+
+-- | Convert a list of wrapped terms to a list of terms. If any 'PairTerm's are
+-- present, we just take their "value" part.
+singleTermList :: [WrappedTerm] -> Maybe [Term]
+singleTermList [] = Just []
+singleTermList (S x : xs) = (x :) <$> singleTermList xs
+singleTermList (P _ y : xs) = (y :) <$> singleTermList xs
+singleTermList _ = Nothing
+
+pattern P :: Term -> Term -> WrappedTerm
+pattern P t1 t2 = PairTerm t1 t2
+
+-- | Convert a list of wrapped terms to a list of pairs of terms, or fail if any
+-- 'SingleTerm's are present.
+pairTermList :: [WrappedTerm] -> Maybe [(Term, Term)]
+pairTermList [] = Just []
+pairTermList (P x y : xs) = ((x, y) :) <$> pairTermList xs
+pairTermList _ = Nothing
+
+pattern G :: [WrappedTerm] -> WrappedTerm
+pattern G xs = GroupTerm xs
+
+newtype CBORGenerator
+  = CBORGenerator (forall g m. StatefulGen g m => g -> m WrappedTerm)
 
 -- | The CDDL constructor takes three arguments:
 --     1. Top level comments that precede the first definition
 --     2. The root definition
 --     3. All the other top level comments and definitions
 --   This ensures that `CDDL` is correct by construction.
-data CDDL = CDDL [Comment] Rule [TopLevel]
-  deriving (Eq, Generic, Show, ToExpr)
+data CDDL i = CDDL [i] (Rule i) [TopLevel i]
+  deriving (Generic, Functor)
+
+deriving instance Eq i => Eq (CDDL i)
+
+deriving instance Show i => Show (CDDL i)
+
+deriving instance ToExpr i => ToExpr (CDDL i)
 
 -- | Sort the CDDL Rules on the basis of their names
 -- Top level comments will be removed!
-sortCDDL :: CDDL -> CDDL
+sortCDDL :: CDDL i -> CDDL i
 sortCDDL = fromRules . NE.sortBy (compare `on` ruleName) . cddlRules
 
-cddlTopLevel :: CDDL -> NonEmpty TopLevel
+cddlTopLevel :: CDDL i -> NonEmpty (TopLevel i)
 cddlTopLevel (CDDL cmts cHead cTail) =
   prependList (TopLevelComment <$> cmts) $ TopLevelRule cHead :| cTail
   where
     prependList [] l = l
     prependList (x : xs) (y :| ys) = prependList xs $ x :| (y : ys)
 
-cddlRules :: CDDL -> NonEmpty Rule
+cddlRules :: CDDL i -> NonEmpty (Rule i)
 cddlRules (CDDL _ x tls) = x :| concatMap getRule tls
   where
     getRule (TopLevelRule r) = [r]
     getRule _ = mempty
 
-fromRules :: NonEmpty Rule -> CDDL
+fromRules :: NonEmpty (Rule i) -> CDDL i
 fromRules (x :| xs) = CDDL [] x $ TopLevelRule <$> xs
 
-fromRule :: Rule -> CDDL
+fromRule :: Rule i -> CDDL i
 fromRule x = CDDL [] x []
 
-instance Semigroup CDDL where
+instance Semigroup (CDDL i) where
   CDDL aComments aHead aTail <> CDDL bComments bHead bTail =
     CDDL aComments aHead $
       aTail <> fmap TopLevelComment bComments <> (TopLevelRule bHead : bTail)
 
-data TopLevel
-  = TopLevelRule Rule
-  | TopLevelComment Comment
-  deriving (Eq, Generic, Show, ToExpr)
+data TopLevel i
+  = TopLevelRule (Rule i)
+  | TopLevelComment i
+  deriving (Generic, Functor)
+
+deriving instance Eq i => Eq (TopLevel i)
+
+deriving instance Show i => Show (TopLevel i)
+
+deriving instance ToExpr i => ToExpr (TopLevel i)
 
 -- |
 --  A name can consist of any of the characters from the set {"A" to
@@ -173,12 +245,17 @@ newtype GenericParam = GenericParam (NE.NonEmpty Name)
   deriving newtype (Semigroup)
   deriving anyclass (ToExpr)
 
-newtype GenericArg = GenericArg (NE.NonEmpty Type1)
-  deriving (Eq, Generic, Show)
+newtype GenericArg i = GenericArg (NE.NonEmpty (Type1 i))
+  deriving (Generic, Functor)
   deriving newtype (Semigroup)
-  deriving anyclass (ToExpr)
 
-instance CollectComments GenericArg
+deriving instance Eq i => Eq (GenericArg i)
+
+deriving instance Show i => Show (GenericArg i)
+
+deriving anyclass instance ToExpr i => ToExpr (GenericArg i)
+
+instance CollectComments (GenericArg Comment)
 
 -- |
 --  rule = typename [genericparm] S assignt S type
@@ -203,20 +280,25 @@ instance CollectComments GenericArg
 --   clear immediately either whether "b" stands for a group or a type --
 --   this semantic processing may need to span several levels of rule
 --   definitions before a determination can be made.)
-data Rule = Rule
+data Rule i = Rule
   { ruleName :: Name
   , ruleGenParam :: Maybe GenericParam
   , ruleAssign :: Assign
-  , ruleTerm :: TypeOrGroup
-  , ruleComment :: Comment
+  , ruleTerm :: TypeOrGroup i
+  , ruleDecoration :: i
   }
-  deriving (Eq, Generic, Show)
-  deriving anyclass (ToExpr)
+  deriving (Generic, Functor)
 
-instance HasComment Rule where
-  commentL = lens ruleComment (\x y -> x {ruleComment = y})
+deriving instance Eq i => Eq (Rule i)
 
-compareRuleName :: Rule -> Rule -> Ordering
+deriving instance Show i => Show (Rule i)
+
+deriving instance ToExpr i => ToExpr (Rule i)
+
+instance HasComment i => HasComment (Rule i) where
+  commentL = #ruleDecoration % commentL
+
+compareRuleName :: Rule i -> Rule i -> Ordering
 compareRuleName = compare `on` ruleName
 
 -- |
@@ -235,11 +317,16 @@ data TyOp = RangeOp RangeBound | CtrlOp CtlOp
   deriving (Eq, Generic, Show)
   deriving anyclass (ToExpr)
 
-data TypeOrGroup = TOGType Type0 | TOGGroup GroupEntry
-  deriving (Eq, Generic, Show)
-  deriving anyclass (ToExpr)
+data TypeOrGroup i = TOGType (Type0 i) | TOGGroup (GroupEntry i)
+  deriving (Generic, Functor)
 
-instance CollectComments TypeOrGroup
+deriving instance Eq i => Eq (TypeOrGroup i)
+
+deriving instance Show i => Show (TypeOrGroup i)
+
+deriving instance ToExpr i => ToExpr (TypeOrGroup i)
+
+instance CollectComments (TypeOrGroup Comment)
 
 {-- |
    The group that is used to define a map or an array can often be reused in the
@@ -290,7 +377,7 @@ instance CollectComments TypeOrGroup
    described as "threading in" the group or type inside the referenced type,
    which suggested the thread-like "~" character.)
 -}
-unwrap :: TypeOrGroup -> Maybe Group
+unwrap :: TypeOrGroup i -> Maybe (Group i)
 unwrap (TOGType (Type0 (Type1 t2 Nothing _ NE.:| []))) = case t2 of
   T2Map g -> Just g
   T2Array g -> Just g
@@ -301,70 +388,85 @@ unwrap _ = Nothing
 -- A type can be given as a choice between one or more types.  The
 --   choice matches a data item if the data item matches any one of the
 --   types given in the choice.
-newtype Type0 = Type0 {t0Type1 :: NE.NonEmpty Type1}
-  deriving (Eq, Generic, Show)
+newtype Type0 i = Type0 {t0Type1 :: NE.NonEmpty (Type1 i)}
+  deriving (Generic, Functor)
   deriving newtype (Semigroup)
-  deriving anyclass (ToExpr)
 
-instance HasComment Type0 where
+deriving instance Eq i => Eq (Type0 i)
+
+deriving instance Show i => Show (Type0 i)
+
+deriving anyclass instance ToExpr i => ToExpr (Type0 i)
+
+instance HasComment (Type0 Comment) where
   commentL = lens (view commentL . t0Type1) (\(Type0 x) y -> Type0 $ x & commentL .~ y)
 
-instance CollectComments Type0
+instance CollectComments (Type0 Comment)
 
 -- |
 -- Two types can be combined with a range operator (see below)
-data Type1 = Type1
-  { t1Main :: Type2
-  , t1TyOp :: Maybe (TyOp, Type2)
-  , t1Comment :: Comment
+data Type1 i = Type1
+  { t1Main :: Type2 i
+  , t1TyOp :: Maybe (TyOp, Type2 i)
+  , t1Decoration :: i
   }
-  deriving (Eq, Generic, Show)
-  deriving anyclass (ToExpr, Default)
+  deriving (Generic, Functor)
 
-instance HasComment Type1 where
-  commentL = lens t1Comment (\x y -> x {t1Comment = y})
+deriving instance Eq i => Eq (Type1 i)
 
-instance CollectComments Type1 where
+deriving instance Show i => Show (Type1 i)
+
+deriving instance ToExpr i => ToExpr (Type1 i)
+
+instance HasComment (Type1 Comment) where
+  commentL = #t1Decoration
+
+instance CollectComments (Type1 Comment) where
   collectComments (Type1 m tyOp c) = c : collectComments m <> collectComments (fmap snd tyOp)
 
-data Type2
+data Type2 i
   = -- | A type can be just a single value (such as 1 or "icecream" or
     --   h'0815'), which matches only a data item with that specific value
     --   (no conversions defined),
-    T2Value Value
+    T2Value (Value i)
   | -- | or be defined by a rule giving a meaning to a name (possibly after
     --   supplying generic arguments as required by the generic parameters)
-    T2Name Name (Maybe GenericArg)
+    T2Name Name (Maybe (GenericArg i))
   | -- | or be defined in a parenthesized type expression (parentheses may be
     --   necessary to override some operator precedence),
-    T2Group Type0
+    T2Group (Type0 i)
   | -- | a map expression, which matches a valid CBOR map the key/value pairs
     --  of which can be ordered in such a way that the resulting sequence
     --  matches the group expression, or
-    T2Map Group
+    T2Map (Group i)
   | -- | an array expression, which matches a CBOR array the elements of which
     -- when taken as values and complemented by a wildcard (matches
     -- anything) key each -- match the group, or
-    T2Array Group
+    T2Array (Group i)
   | -- | an "unwrapped" group (see Section 3.7), which matches the group
     --  inside a type defined as a map or an array by wrapping the group, or
-    T2Unwrapped Name (Maybe GenericArg)
+    T2Unwrapped Name (Maybe (GenericArg i))
   | -- | an enumeration expression, which matches any value that is within the
     --  set of values that the values of the group given can take, or
-    T2Enum Group
-  | T2EnumRef Name (Maybe GenericArg)
+    T2Enum (Group i)
+  | T2EnumRef Name (Maybe (GenericArg i))
   | -- | a tagged data item, tagged with the "uint" given and containing the
     --  type given as the tagged value, or
-    T2Tag (Maybe Word64) Type0
+    T2Tag (Maybe Word64) (Type0 i)
   | -- | a data item of a major type (given by the DIGIT), optionally
     --  constrained to the additional information given by the uint, or
     T2DataItem Word8 (Maybe Word64)
   | -- | Any data item
     T2Any
-  deriving (Eq, Generic, Show, Default)
-  deriving anyclass (ToExpr)
+  deriving (Generic, Default, Functor)
 
-instance CollectComments Type2
+deriving instance Eq i => Eq (Type2 i)
+
+deriving instance Show i => Show (Type2 i)
+
+deriving instance ToExpr i => ToExpr (Type2 i)
+
+instance CollectComments (Type2 Comment)
 
 -- |
 --  An optional _occurrence_ indicator can be given in front of a group
@@ -393,28 +495,38 @@ instance Hashable OccurrenceIndicator
 -- |
 --   A group matches any sequence of key/value pairs that matches any of
 --   the choices given (again using PEG semantics).
-newtype Group = Group {unGroup :: NE.NonEmpty GrpChoice}
-  deriving (Eq, Generic, Show)
+newtype Group i = Group {unGroup :: NE.NonEmpty (GrpChoice i)}
+  deriving (Generic, Functor)
   deriving newtype (Semigroup)
-  deriving anyclass (ToExpr)
 
-instance HasComment Group where
+deriving instance Eq i => Eq (Group i)
+
+deriving instance Show i => Show (Group i)
+
+deriving anyclass instance ToExpr i => ToExpr (Group i)
+
+instance HasComment (Group Comment) where
   commentL = lens unGroup (\x y -> x {unGroup = y}) % commentL
 
-instance CollectComments Group where
+instance CollectComments (Group Comment) where
   collectComments (Group xs) = concatMap collectComments xs
 
-data GrpChoice = GrpChoice
-  { gcGroupEntries :: [GroupEntry]
-  , gcComment :: Comment
+data GrpChoice i = GrpChoice
+  { gcGroupEntries :: [GroupEntry i]
+  , gcDecoration :: i
   }
-  deriving (Eq, Generic, Show)
-  deriving anyclass (ToExpr)
+  deriving (Generic, Functor)
 
-instance HasComment GrpChoice where
-  commentL = lens gcComment (\x y -> x {gcComment = y})
+deriving instance Eq i => Eq (GrpChoice i)
 
-instance CollectComments GrpChoice where
+deriving instance Show i => Show (GrpChoice i)
+
+deriving instance ToExpr i => ToExpr (GrpChoice i)
+
+instance HasComment (GrpChoice Comment) where
+  commentL = #gcDecoration
+
+instance CollectComments (GrpChoice Comment) where
   collectComments (GrpChoice ges c) = c : concatMap collectComments ges
 
 -- |
@@ -424,26 +536,38 @@ instance CollectComments GrpChoice where
 --  the memberkey is given.  If the memberkey is not given, the entry can
 --  only be used for matching arrays, not for maps.  (See below for how
 --  that is modified by the occurrence indicator.)
-data GroupEntry = GroupEntry
+data GroupEntry i = GroupEntry
   { geOccurrenceIndicator :: Maybe OccurrenceIndicator
-  , geComment :: Comment
-  , geVariant :: GroupEntryVariant
+  , geVariant :: GroupEntryVariant i
+  , geDecoration :: i
   }
-  deriving (Eq, Show, Generic, ToExpr)
+  deriving (Generic, Functor)
 
-instance CollectComments GroupEntry where
-  collectComments (GroupEntry _ c x) = c : collectComments x
+deriving instance Eq i => Eq (GroupEntry i)
 
-data GroupEntryVariant
-  = GEType (Maybe MemberKey) Type0
-  | GERef Name (Maybe GenericArg)
-  | GEGroup Group
-  deriving (Eq, Show, Generic, ToExpr)
+deriving instance Show i => Show (GroupEntry i)
 
-instance HasComment GroupEntry where
-  commentL = lens geComment (\x y -> x {geComment = y})
+deriving instance ToExpr i => ToExpr (GroupEntry i)
 
-instance CollectComments GroupEntryVariant where
+instance CollectComments (GroupEntry Comment) where
+  collectComments (GroupEntry _ x c) = c : collectComments x
+
+data GroupEntryVariant i
+  = GEType (Maybe (MemberKey i)) (Type0 i)
+  | GERef Name (Maybe (GenericArg i))
+  | GEGroup (Group i)
+  deriving (Generic, Functor)
+
+deriving instance Eq i => Eq (GroupEntryVariant i)
+
+deriving instance Show i => Show (GroupEntryVariant i)
+
+deriving instance ToExpr i => ToExpr (GroupEntryVariant i)
+
+instance HasComment (GroupEntry Comment) where
+  commentL = #geDecoration
+
+instance CollectComments (GroupEntryVariant Comment) where
   collectComments (GEType _ t0) = collectComments t0
   collectComments (GERef n mga) = collectComments n <> collectComments mga
   collectComments (GEGroup g) = collectComments g
@@ -456,19 +580,24 @@ instance CollectComments GroupEntryVariant where
 --  member of the key type, unless a cut preceding it in the group
 --  applies (see Section 3.5.4 for how map matching is influenced by the
 --  presence of the cuts denoted by "^" or ":" in previous entries).
-data MemberKey
-  = MKType Type1
+data MemberKey i
+  = MKType (Type1 i)
   | MKBareword Name
-  | MKValue Value
-  deriving (Eq, Generic, Show)
-  deriving anyclass (ToExpr)
+  | MKValue (Value i)
+  deriving (Generic, Functor)
 
-data Value = Value ValueVariant Comment
-  deriving (Eq, Generic, Show, Default)
+deriving instance Eq i => Eq (MemberKey i)
+
+deriving instance Show i => Show (MemberKey i)
+
+deriving instance ToExpr i => ToExpr (MemberKey i)
+
+data Value i = Value ValueVariant i
+  deriving (Eq, Generic, Show, Default, Functor)
   deriving anyclass (ToExpr, Hashable, CollectComments)
 
-value :: ValueVariant -> Value
-value x = Value x mempty
+value :: Default i => ValueVariant -> Value i
+value x = Value x def
 
 data ValueVariant
   = VUInt Word64
