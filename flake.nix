@@ -1,13 +1,32 @@
 {
-  inputs.nixpkgs.url = "nixpkgs/nixos-unstable";
-  inputs.fenix.url = "github:nix-community/fenix";
-  inputs.organist.url = "github:nickel-lang/organist";
+  description = "CDDL Generator and test utilities";
 
-  nixConfig = {
-    extra-substituters = ["https://organist.cachix.org" "https://nix-community.cachix.org"];
-    extra-trusted-public-keys = ["organist.cachix.org-1:GB9gOx3rbGl7YEh6DwOscD1+E/Gc5ZCnzqwObNH2Faw=" "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="];
+  inputs = {
+
+    haskell-nix = {
+      url = "github:input-output-hk/haskell.nix";
+      inputs.hackage.follows = "hackage";
+    };
+
+    hackage = {
+      url = "github:input-output-hk/hackage.nix";
+      flake = false;
+    };
+
+    pre-commit-hooks.url = "github:cachix/pre-commit-hooks.nix";
+
+    flake-utils.url = "github:numtide/flake-utils";
+
+    nixpkgs.follows = "haskell-nix/nixpkgs";
   };
 
-  outputs = {organist, ...} @ inputs:
-    organist.flake.outputsFromNickel ./. inputs {};
+  outputs = inputs:
+    inputs.flake-utils.lib.eachDefaultSystem (system:
+      import ./nix/outputs.nix { inherit inputs system; }
+    );
+
+  nixConfig = {
+    extra-substituters = [ "https://cache.iog.io" ];
+    extra-trusted-public-keys = [ "hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ=" ];
+  };
 }
