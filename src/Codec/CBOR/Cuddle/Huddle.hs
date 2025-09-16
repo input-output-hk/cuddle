@@ -77,6 +77,9 @@ module Codec.CBOR.Cuddle.Huddle (
   binding2,
   callToDef,
 
+  -- * Generators
+  withGenerator,
+
   -- * Conversion to CDDL
   collectFrom,
   collectFromInit,
@@ -85,7 +88,7 @@ module Codec.CBOR.Cuddle.Huddle (
 )
 where
 
-import Codec.CBOR.Cuddle.CDDL (CDDL)
+import Codec.CBOR.Cuddle.CDDL (CBORGenerator, CDDL)
 import Codec.CBOR.Cuddle.CDDL qualified as C
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
 import Codec.CBOR.Cuddle.Comments qualified as C
@@ -113,6 +116,7 @@ data Named a = Named
   { name :: T.Text
   , value :: a
   , description :: Maybe T.Text
+  , generator :: Maybe CBORGenerator
   }
   deriving (Functor, Generic)
 
@@ -121,7 +125,7 @@ comment :: HasField' "description" a (Maybe T.Text) => T.Text -> a -> a
 comment desc n = n & field' @"description" .~ Just desc
 
 instance Show (Named a) where
-  show (Named n _ _) = T.unpack n
+  show (Named n _ _ _) = T.unpack n
 
 type Rule = Named Type0
 
@@ -516,7 +520,7 @@ instance IsCborable (AnyRef a)
 instance IsCborable GRef
 
 cbor :: (IsCborable b, IsConstrainable c b) => c -> Rule -> Constrained
-cbor v r@(Named n _ _) =
+cbor v r@(Named n _ _ _) =
   Constrained
     (toConstrainable v)
     ValueConstraint
@@ -720,12 +724,12 @@ infixl 8 ==>
 
 -- | Assign a rule
 (=:=) :: IsType0 a => T.Text -> a -> Rule
-n =:= b = Named n (toType0 b) Nothing
+n =:= b = Named n (toType0 b) Nothing Nothing
 
 infixl 1 =:=
 
 (=:~) :: T.Text -> Group -> Named Group
-n =:~ b = Named n b Nothing
+n =:~ b = Named n b Nothing Nothing
 
 infixl 1 =:~
 
@@ -946,6 +950,7 @@ binding fRule t0 =
       , body = getField @"value" rule
       }
     Nothing
+    Nothing
   where
     rule = fRule (freshName 0)
     t2 = case toType0 t0 of
@@ -961,6 +966,7 @@ binding2 fRule t0 t1 =
       { args = t02 NE.:| [t12]
       , body = getField @"value" rule
       }
+    Nothing
     Nothing
   where
     rule = fRule (freshName 0) (freshName 1)
@@ -980,9 +986,9 @@ hiRule (HIRule r) = [r]
 hiRule _ = []
 
 hiName :: HuddleItem -> T.Text
-hiName (HIRule (Named n _ _)) = n
-hiName (HIGroup (Named n _ _)) = n
-hiName (HIGRule (Named n _ _)) = n
+hiName (HIRule (Named n _ _ _)) = n
+hiName (HIGroup (Named n _ _ _)) = n
+hiName (HIGRule (Named n _ _ _)) = n
 
 -- | Collect all rules starting from a given point. This will also insert a
 --   single pseudo-rule as the first element which references the specified
@@ -1001,8 +1007,8 @@ collectFrom topRs =
         }
     goHuddleItem (HIRule r) = goRule r
     goHuddleItem (HIGroup g) = goNamedGroup g
-    goHuddleItem (HIGRule (Named _ (GRule _ t0) _)) = goT0 t0
-    goRule r@(Named n t0 _) = do
+    goHuddleItem (HIGRule (Named _ (GRule _ t0) _ _)) = goT0 t0
+    goRule r@(Named n t0 _ _) = do
       items <- get
       when (OMap.notMember n items) $ do
         modify (OMap.|> (n, HIRule r))
@@ -1010,12 +1016,12 @@ collectFrom topRs =
     goChoice f (NoChoice x) = f x
     goChoice f (ChoiceOf x xs) = f x >> goChoice f xs
     goT0 = goChoice goT2
-    goNamedGroup r@(Named n g _) = do
+    goNamedGroup r@(Named n g _ _) = do
       items <- get
       when (OMap.notMember n items) $ do
         modify (OMap.|> (n, HIGroup r))
         goGroup g
-    goGRule r@(Named n g _) = do
+    goGRule r@(Named n g _ _) = do
       items <- get
       when (OMap.notMember n items) $ do
         modify (OMap.|> (n, HIGRule $ fmap callToDef r))
@@ -1088,8 +1094,8 @@ toCDDL' mkPseudoRoot hdl =
         comment "Pseudo-rule introduced by Cuddle to collect root elements" $
           "huddle_root_defs" =:= arr (fromList (fmap a topRs))
     toCDDLRule :: Rule -> C.Rule
-    toCDDLRule (Named n t0 c) =
-      (\x -> C.Rule (C.Name n mempty) Nothing C.AssignEq x (foldMap C.Comment c))
+    toCDDLRule (Named n t0 c gen) =
+      (\x -> C.Rule (C.Name n mempty) Nothing C.AssignEq x (foldMap C.Comment c) gen)
         . C.TOGType
         . C.Type0
         $ toCDDLType1 <$> choiceToNE t0
@@ -1137,8 +1143,8 @@ toCDDL' mkPseudoRoot hdl =
       T2Array x -> C.Type1 (C.T2Array $ arrayToCDDLGroup x) Nothing mempty
       T2Tagged (Tagged mmin x) ->
         C.Type1 (C.T2Tag mmin $ toCDDLType0 x) Nothing mempty
-      T2Ref (Named n _ _) -> C.Type1 (C.T2Name (C.Name n mempty) Nothing) Nothing mempty
-      T2Group (Named n _ _) -> C.Type1 (C.T2Name (C.Name n mempty) Nothing) Nothing mempty
+      T2Ref (Named n _ _ _) -> C.Type1 (C.T2Name (C.Name n mempty) Nothing) Nothing mempty
+      T2Group (Named n _ _ _) -> C.Type1 (C.T2Name (C.Name n mempty) Nothing) Nothing mempty
       T2Generic g -> C.Type1 (toGenericCall g) Nothing mempty
       T2GenericRef (GRef n) -> C.Type1 (C.T2Name (C.Name n mempty) Nothing) Nothing mempty
 
@@ -1192,10 +1198,10 @@ toCDDL' mkPseudoRoot hdl =
 
     toCDDLRangeBound :: RangeBound -> C.Type2
     toCDDLRangeBound (RangeBoundLiteral l) = C.T2Value $ toCDDLValue l
-    toCDDLRangeBound (RangeBoundRef (Named n _ _)) = C.T2Name (C.Name n mempty) Nothing
+    toCDDLRangeBound (RangeBoundRef (Named n _ _ _)) = C.T2Name (C.Name n mempty) Nothing
 
     toCDDLGroup :: Named Group -> C.Rule
-    toCDDLGroup (Named n (Group t0s) c) =
+    toCDDLGroup (Named n (Group t0s) c gen) =
       C.Rule
         (C.Name n mempty)
         Nothing
@@ -1211,15 +1217,16 @@ toCDDL' mkPseudoRoot hdl =
               t0s
         )
         (foldMap C.Comment c)
+        gen
 
     toGenericCall :: GRuleCall -> C.Type2
-    toGenericCall (Named n gr _) =
+    toGenericCall (Named n gr _ _) =
       C.T2Name
         (C.Name n mempty)
         (Just . C.GenericArg $ fmap toCDDLType1 (args gr))
 
     toGenRuleDef :: GRuleDef -> C.Rule
-    toGenRuleDef (Named n gr c) =
+    toGenRuleDef (Named n gr c gen) =
       C.Rule
         (C.Name n mempty)
         (Just gps)
@@ -1229,6 +1236,10 @@ toCDDL' mkPseudoRoot hdl =
             $ toCDDLType1 <$> choiceToNE (body gr)
         )
         (foldMap C.Comment c)
+        gen
       where
         gps =
           C.GenericParam $ fmap (\(GRef t) -> C.Name t mempty) (args gr)
+
+withGenerator :: HasField' "generator" a CBORGenerator => CBORGenerator -> a -> a
+withGenerator gen = field' @"generator" .~ gen

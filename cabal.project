@@ -2,3 +2,4 @@ packages:
   .
 
 test-show-details: streaming
+tests: True

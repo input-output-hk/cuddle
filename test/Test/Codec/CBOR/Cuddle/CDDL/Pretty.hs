@@ -86,30 +86,30 @@ drep =
                             ]
                             mempty
                             :| [ GrpChoice
-                                   [ GroupEntry
-                                       Nothing
-                                       mempty
-                                       (GEType Nothing (Type0 $ Type1 (T2Value . value $ VUInt 1) Nothing mempty :| []))
-                                   , GroupEntry
-                                       Nothing
-                                       mempty
-                                       (GEType Nothing (Type0 $ Type1 (T2Name "script_hash" Nothing) Nothing mempty :| []))
-                                   ]
-                                   mempty
+                                  [ GroupEntry
+                                      Nothing
+                                      mempty
+                                      (GEType Nothing (Type0 $ Type1 (T2Value . value $ VUInt 1) Nothing mempty :| []))
+                                  , GroupEntry
+                                      Nothing
+                                      mempty
+                                      (GEType Nothing (Type0 $ Type1 (T2Name "script_hash" Nothing) Nothing mempty :| []))
+                                  ]
+                                  mempty
                                , GrpChoice
-                                   [ GroupEntry
-                                       Nothing
-                                       mempty
-                                       (GEType Nothing (Type0 $ Type1 (T2Value . value $ VUInt 2) Nothing mempty :| []))
-                                   ]
-                                   mempty
+                                  [ GroupEntry
+                                      Nothing
+                                      mempty
+                                      (GEType Nothing (Type0 $ Type1 (T2Value . value $ VUInt 2) Nothing mempty :| []))
+                                  ]
+                                  mempty
                                , GrpChoice
-                                   [ GroupEntry
-                                       Nothing
-                                       mempty
-                                       (GEType Nothing (Type0 $ Type1 (T2Value . value $ VUInt 3) Nothing mempty :| []))
-                                   ]
-                                   mempty
+                                  [ GroupEntry
+                                      Nothing
+                                      mempty
+                                      (GEType Nothing (Type0 $ Type1 (T2Value . value $ VUInt 3) Nothing mempty :| []))
+                                  ]
+                                  mempty
                                ]
                         )
                     )
@@ -121,6 +121,7 @@ drep =
         )
     )
     mempty
+    Nothing
 
 unitSpec :: Spec
 unitSpec = describe "HUnit" $ do
@@ -181,6 +182,7 @@ unitSpec = describe "HUnit" $ do
         AssignEq
         (TOGType (Type0 (Type1 (T2Name (Name "b" mempty) mempty) Nothing mempty :| [])))
         mempty
+        Nothing
         `prettyPrintsTo` "a = b"
     xit "drep" $
       drep

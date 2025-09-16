@@ -3,6 +3,7 @@
 module Codec.CBOR.Cuddle.CDDL.CTree where
 
 import Codec.CBOR.Cuddle.CDDL (
+  CBORGenerator,
   Name,
   OccurrenceIndicator,
   RangeBound,
@@ -44,7 +45,7 @@ data CTree f
   | Enum (Node f)
   | Unwrap (Node f)
   | Tag Word64 (Node f)
-  deriving (Generic)
+  | WithGen CBORGenerator (Node f)
 
 -- | Traverse the CTree, carrying out the given operation at each node
 traverseCTree :: Monad m => (Node f -> m (Node g)) -> CTree f -> m (CTree g)
@@ -70,6 +71,7 @@ traverseCTree atNode (Control o t c) = do
 traverseCTree atNode (Enum ref) = Enum <$> atNode ref
 traverseCTree atNode (Unwrap ref) = Unwrap <$> atNode ref
 traverseCTree atNode (Tag i ref) = Tag i <$> atNode ref
+traverseCTree atNode (WithGen g ref) = WithGen g <$> atNode ref
 
 type Node f = f (CTree f)
 
