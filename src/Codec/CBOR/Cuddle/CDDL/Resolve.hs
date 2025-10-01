@@ -31,9 +31,9 @@ module Codec.CBOR.Cuddle.CDDL.Resolve (
   asMap,
   buildMonoCTree,
   fullResolveCDDL,
-  MonoRef (..),
-  OrRef (..),
   NameResolutionFailure (..),
+  MonoReferenced,
+  MonoRef (..),
 )
 where
 
@@ -56,7 +56,6 @@ import Codec.CBOR.Cuddle.CDDL.Postlude (PTerm (..))
 import Control.Monad.Except (ExceptT (..), runExceptT)
 import Control.Monad.Reader (Reader, ReaderT (..), runReader)
 import Control.Monad.State.Strict (StateT (..))
-import Data.Functor.Identity (Identity (..))
 import Data.Generics.Product
 import Data.Generics.Sum
 import Data.Hashable
@@ -345,7 +344,7 @@ data DistRef a
     RuleRef Name [CTree.Node DistReferenced]
   deriving (Eq, Generic, Functor, Show)
 
-instance Hashable (DistRef a)
+instance Hashable a => Hashable (DistRef a)
 
 deriving instance Show (CTree DistReferenced)
 
@@ -530,32 +529,23 @@ resolveGenericCTree = CTree.traverseCTree resolveGenericRef resolveGenericCTree
 -- Concretely, for each reference in the tree to a generic rule, we synthesize a
 -- new monomorphic instance of that rule at top-level with the correct
 -- parameters applied.
-monoCTree ::
-  CTreeRoot DistReferenced ->
-  MonoM (CTreeRoot MonoReferenced)
-monoCTree (CTreeRoot ct) = CTreeRoot <$> traverse go ct
-  where
-    go = traverse resolveGenericRef
-
 buildMonoCTree ::
   CTreeRoot DistReferenced ->
   Either NameResolutionFailure (Map.Map Name (CTree.Node MonoReferenced))
 buildMonoCTree (CTreeRoot ct) = do
-  let a1 = runExceptT $ runMonoM (monoCTree monoC)
+  let a1 = runExceptT $ runMonoM (traverse resolveGenericRef monoC)
       a2 = runStateT a1 mempty
-      (er, newBindings) = runReader a2 initBindingEnv
-  CTreeRoot r <- er
-  pure $ Map.union r $ newBindings
+      (r, newBindings) = runReader a2 initBindingEnv
+  (`Map.union` newBindings) <$> r
   where
     initBindingEnv = BindingEnv ct mempty
     monoC =
-      CTreeRoot $
-        Map.mapMaybe
-          ( \case
-              CTree.Parametrisation [] f -> Just $ Identity f
-              CTree.Parametrisation _ _ -> Nothing
-          )
-          ct
+      Map.mapMaybe
+        ( \case
+            Parametrisation [] f -> Just f
+            Parametrisation _ _ -> Nothing
+        )
+        ct
 
 --------------------------------------------------------------------------------
 -- Combined resolution
