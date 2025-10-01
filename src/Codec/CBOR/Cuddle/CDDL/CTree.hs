@@ -12,6 +12,7 @@ import Codec.CBOR.Cuddle.CDDL (
  )
 import Codec.CBOR.Cuddle.CDDL.CtlOp
 import Codec.CBOR.Cuddle.CDDL.Postlude (PTerm)
+import Data.Hashable (Hashable)
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as Map
 import Data.Word (Word64)
@@ -33,7 +34,9 @@ data Parametrisation a = Parametrisation
   { parameters :: [Name]
   , underlying :: a
   }
-  deriving (Generic, Functor)
+  deriving (Generic, Functor, Show, Eq, Foldable, Traversable)
+
+instance Hashable a => Hashable (Parametrisation a)
 
 data Parametrised
 
