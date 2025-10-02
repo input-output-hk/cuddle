@@ -94,5 +94,5 @@ traverseCTree atExt _ (CTreeE x) = atExt x
 
 type Node i = CTreeExt i
 
-newtype CTreeRoot i = CTreeRoot (Map.Map Name (ProvidedParameters (CTree i)))
+newtype CTreeRoot i = CTreeRoot (Map.Map Name (CTree i))
   deriving (Generic)
