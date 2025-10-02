@@ -30,10 +30,6 @@ import GHC.Generics (Generic)
 
 type family CTreeExt i
 
--- | CDDL Tree, parametrised over a functor
---
---   We principally use this functor to represent references - thus, every 'f a'
---   may be either an a or a reference to another CTree.
 data CTree i
   = Literal Value
   | Postlude PTerm
