@@ -3,24 +3,22 @@
 module Test.Codec.CBOR.Cuddle.CDDL.Examples (spec) where
 
 import Codec.CBOR.Cuddle.CDDL (Value (..), ValueVariant (..))
-import Codec.CBOR.Cuddle.CDDL.CTree (CTree (..), CTreeRoot')
+import Codec.CBOR.Cuddle.CDDL.CTree (CTree (..), CTreeRoot)
 import Codec.CBOR.Cuddle.CDDL.Postlude (PTerm (..))
 import Codec.CBOR.Cuddle.CDDL.Prelude (prependPrelude)
 import Codec.CBOR.Cuddle.CDDL.Resolve (
-  MonoRef,
+  MonoReferenced,
   NameResolutionFailure (..),
-  OrRef (..),
   fullResolveCDDL,
  )
 import Codec.CBOR.Cuddle.Parser (pCDDL)
-import Data.Functor.Identity (Identity)
 import Data.Text.IO qualified as T
 import Test.HUnit (assertFailure)
 import Test.Hspec
 import Text.Megaparsec (parse)
 import Text.Megaparsec.Error (errorBundlePretty)
 
-tryValidateFile :: FilePath -> IO (Either NameResolutionFailure (CTreeRoot' Identity MonoRef))
+tryValidateFile :: FilePath -> IO (Either NameResolutionFailure (CTreeRoot MonoReferenced))
 tryValidateFile filePath = do
   contents <- T.readFile filePath
   cddl <- case parse pCDDL "" contents of
@@ -60,4 +58,4 @@ spec = do
       validateExpectFailure "example/cddl-files/validator/negative/too-many-args.cddl" $
         MismatchingArgs "foo" ["a"]
       validateExpectFailure "example/cddl-files/validator/negative/args-to-postlude.cddl" $
-        ArgsToPostlude PTUInt [It (Literal (Value (VUInt 3) mempty))]
+        ArgsToPostlude PTUInt [Literal (Value (VUInt 3) mempty)]
