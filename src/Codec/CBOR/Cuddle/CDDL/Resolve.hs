@@ -48,8 +48,7 @@ import Codec.CBOR.Cuddle.CDDL as CDDL
 import Codec.CBOR.Cuddle.CDDL.CTree (
   CTree (..),
   CTreeExt,
-  CTreeRoot (..),
-  ProvidedParameters (..),
+  ProvidedParameters (..), CTreeRoot (..),
  )
 import Codec.CBOR.Cuddle.CDDL.CTree qualified as CTree
 import Codec.CBOR.Cuddle.CDDL.Postlude (PTerm (..))
@@ -71,6 +70,9 @@ import Optics.Core
 --------------------------------------------------------------------------------
 -- 1. Rule extensions
 --------------------------------------------------------------------------------
+
+newtype PartialCTreeRoot i = PartialCTreeRoot (Map.Map Name (ProvidedParameters (CTree i)))
+  deriving (Generic)
 
 type CDDLMap = Map.Map Name (ProvidedParameters TypeOrGroup)
 
@@ -128,17 +130,17 @@ data OrRef a
     Ref Name [CTree OrReferenced]
   deriving (Eq, Show, Functor)
 
-type RefCTree = CTreeRoot OrReferenced
+type RefCTree = PartialCTreeRoot OrReferenced
 
 deriving instance Show (CTree OrReferenced)
 
-deriving instance Show (CTreeRoot OrReferenced)
+deriving instance Show (PartialCTreeRoot OrReferenced)
 
 -- | Build a CTree incorporating references.
 --
 -- This translation cannot fail.
 buildRefCTree :: CDDLMap -> RefCTree
-buildRefCTree rules = CTreeRoot $ toCTreeRule <$> rules
+buildRefCTree rules = PartialCTreeRoot $ toCTreeRule <$> rules
   where
     toCTreeRule ::
       ProvidedParameters TypeOrGroup ->
@@ -337,11 +339,11 @@ deriving instance Show (CTree DistReferenced)
 
 instance Hashable (CTree DistReferenced)
 
-deriving instance Show (CTreeRoot DistReferenced)
+deriving instance Show (PartialCTreeRoot DistReferenced)
 
-deriving instance Eq (CTreeRoot DistReferenced)
+deriving instance Eq (PartialCTreeRoot DistReferenced)
 
-instance Hashable (CTreeRoot DistReferenced)
+instance Hashable (PartialCTreeRoot DistReferenced)
 
 resolveRef ::
   BindingEnv OrReferenced OrReferenced ->
@@ -370,9 +372,9 @@ resolveCTree ::
 resolveCTree e = CTree.traverseCTree (resolveRef e) (resolveCTree e)
 
 buildResolvedCTree ::
-  CTreeRoot OrReferenced ->
-  Either NameResolutionFailure (CTreeRoot DistReferenced)
-buildResolvedCTree (CTreeRoot ct) = CTreeRoot <$> traverse go ct
+  PartialCTreeRoot OrReferenced ->
+  Either NameResolutionFailure (PartialCTreeRoot DistReferenced)
+buildResolvedCTree (PartialCTreeRoot ct) = PartialCTreeRoot <$> traverse go ct
   where
     go pn =
       let args = parameters pn
@@ -394,7 +396,7 @@ newtype MonoRef a
 
 deriving instance Show (CTree MonoReferenced)
 
-deriving instance Show (CTreeRoot MonoReferenced)
+deriving instance Show (PartialCTreeRoot MonoReferenced)
 
 type MonoEnv = BindingEnv DistReferenced MonoReferenced
 
@@ -513,13 +515,13 @@ resolveGenericCTree = CTree.traverseCTree resolveGenericRef resolveGenericCTree
 -- new monomorphic instance of that rule at top-level with the correct
 -- parameters applied.
 buildMonoCTree ::
-  CTreeRoot DistReferenced ->
-  Either NameResolutionFailure (Map.Map Name (CTree MonoReferenced))
-buildMonoCTree (CTreeRoot ct) = do
+  PartialCTreeRoot DistReferenced ->
+  Either NameResolutionFailure (CTreeRoot MonoReferenced)
+buildMonoCTree (PartialCTreeRoot ct) = do
   let a1 = runExceptT $ runMonoM (traverse resolveGenericCTree monoC)
       a2 = runStateT a1 mempty
       (r, newBindings) = runReader a2 initBindingEnv
-  (`Map.union` newBindings) <$> r
+  CTreeRoot . (`Map.union` newBindings) <$> r
   where
     initBindingEnv = BindingEnv ct mempty
     monoC =
@@ -534,7 +536,7 @@ buildMonoCTree (CTreeRoot ct) = do
 -- Combined resolution
 --------------------------------------------------------------------------------
 
-fullResolveCDDL :: CDDL -> Either NameResolutionFailure (Map.Map Name (CTree MonoReferenced))
+fullResolveCDDL :: CDDL -> Either NameResolutionFailure (CTreeRoot MonoReferenced)
 fullResolveCDDL cddl = do
   let refCTree = buildRefCTree (asMap cddl)
   rCTree <- buildResolvedCTree refCTree
