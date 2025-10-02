@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Codec.CBOR.Cuddle.CDDL.CTree where
 
@@ -83,3 +84,5 @@ type Node i = CTreeExt i
 
 newtype CTreeRoot i = CTreeRoot (Map.Map Name (CTree i))
   deriving (Generic)
+
+deriving instance Show (CTree i) => Show (CTreeRoot i)
