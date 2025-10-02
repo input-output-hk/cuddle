@@ -740,26 +740,26 @@ flattenGroup :: HasCallStack => CDDL -> [Rule] -> [Rule]
 flattenGroup cddl nodes =
   mconcat
     [ case resolveIfRef cddl rule of
-      Literal {} -> [rule]
-      Postlude {} -> [rule]
-      Map {} -> [rule]
-      Array {} -> [rule]
-      Choice {} -> [rule]
-      KV {} -> [rule]
-      Occur {} -> [rule]
-      Range {} -> [rule]
-      Control {} -> [rule]
-      Enum e -> case resolveIfRef cddl e of
+        Literal {} -> [rule]
+        Postlude {} -> [rule]
+        Map {} -> [rule]
+        Array {} -> [rule]
+        Choice {} -> [rule]
+        KV {} -> [rule]
+        Occur {} -> [rule]
+        Range {} -> [rule]
+        Control {} -> [rule]
+        Enum e -> case resolveIfRef cddl e of
+          Group g -> flattenGroup cddl g
+          _ -> error "Malformed cddl"
+        Unwrap g -> case resolveIfRef cddl g of
+          Map n -> flattenGroup cddl n
+          Array n -> flattenGroup cddl n
+          Tag _ n -> [n]
+          _ -> error "Malformed cddl"
+        Tag {} -> [rule]
         Group g -> flattenGroup cddl g
-        _ -> error "Malformed cddl"
-      Unwrap g -> case resolveIfRef cddl g of
-        Map n -> flattenGroup cddl n
-        Array n -> flattenGroup cddl n
-        Tag _ n -> [n]
-        _ -> error "Malformed cddl"
-      Tag {} -> [rule]
-      Group g -> flattenGroup cddl g
-      _ -> error "Not yet implemented"
+        _ -> error "Not yet implemented"
     | rule <- nodes
     ]
 
