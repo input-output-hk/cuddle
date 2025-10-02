@@ -30,6 +30,7 @@ module Codec.CBOR.Cuddle.CDDL.Resolve (
   buildMonoCTree,
   fullResolveCDDL,
   MonoRef (..),
+  OrRef (..),
   NameResolutionFailure (..),
 )
 where
@@ -128,7 +129,7 @@ data OrRef a
     It a
   | -- | Reference to another node with possible generic arguments supplied
     Ref Name [CTree.Node OrRef]
-  deriving (Show, Functor)
+  deriving (Eq, Show, Functor)
 
 type RefCTree = CTreeRoot OrRef
 
@@ -303,6 +304,8 @@ data NameResolutionFailure
   | ArgsToPostlude PTerm [CTree.Node OrRef]
   deriving (Show)
 
+deriving instance Eq (OrRef (CTree OrRef)) => Eq NameResolutionFailure
+
 postludeBinding :: Map.Map Name PTerm
 postludeBinding =
   Map.fromList
@@ -341,8 +344,6 @@ data DistRef a
 instance Hashable a => Hashable (DistRef a)
 
 deriving instance Show (CTree DistRef)
-
-deriving instance Eq (CTree DistRef)
 
 instance Hashable (CTree DistRef)
 
