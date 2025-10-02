@@ -48,7 +48,8 @@ import Codec.CBOR.Cuddle.CDDL as CDDL
 import Codec.CBOR.Cuddle.CDDL.CTree (
   CTree (..),
   CTreeExt,
-  ProvidedParameters (..), CTreeRoot (..),
+  CTreeRoot (..),
+  ProvidedParameters (..),
  )
 import Codec.CBOR.Cuddle.CDDL.CTree qualified as CTree
 import Codec.CBOR.Cuddle.CDDL.Postlude (PTerm (..))
