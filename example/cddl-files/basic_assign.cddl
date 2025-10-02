@@ -44,9 +44,3 @@ big_group = (
   5 ...10,
   h'11aaff3351bc'
 )
-
-test = ~ aaaa .. "j" / 
-# /
-{xco, lhXH // // } .cborseq # /
-& (* kkhw // // ) /
-"b"

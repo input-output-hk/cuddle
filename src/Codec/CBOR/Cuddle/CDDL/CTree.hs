@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Codec.CBOR.Cuddle.CDDL.CTree where
 
@@ -45,6 +46,8 @@ data CTree f
   | Unwrap (Node f)
   | Tag Word64 (Node f)
   deriving (Generic)
+
+deriving instance Eq (Node f) => Eq (CTree f)
 
 -- | Traverse the CTree, carrying out the given operation at each node
 traverseCTree :: Monad m => (Node f -> m (Node g)) -> CTree f -> m (CTree g)
