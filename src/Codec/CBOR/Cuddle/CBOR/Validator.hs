@@ -24,6 +24,7 @@ import Data.Functor ((<&>))
 import Data.Functor.Identity
 import Data.IntSet qualified as IS
 import Data.List.NonEmpty qualified as NE
+import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe
 import Data.Text qualified as T
@@ -34,9 +35,9 @@ import System.Exit
 import System.IO
 import Text.Regex.TDFA
 
-type CDDL = CTreeRoot' Identity MonoRef
-type Rule = Node MonoRef
-type ResolvedRule = CTree MonoRef
+type CDDL = Map Name Rule
+type Rule = Node MonoReferenced
+type ResolvedRule = CTree MonoReferenced
 
 data CBORTermResult = CBORTermResult Term CDDLResult
   deriving (Show)
@@ -130,13 +131,13 @@ validateCBOR bs rule cddl =
 
 validateCBOR' ::
   BS.ByteString -> Name -> CDDL -> CBORTermResult
-validateCBOR' bs rule cddl@(CTreeRoot tree) =
+validateCBOR' bs rule cddl =
   case deserialiseFromBytes decodeTerm (BSL.fromStrict bs) of
     Left e -> error $ show e
     Right (rest, term) ->
       if BSL.null rest
-        then runReader (validateTerm term (runIdentity $ tree Map.! rule)) cddl
-        else runReader (validateTerm (TBytes bs) (runIdentity $ tree Map.! rule)) cddl
+        then runReader (validateTerm term (cddl Map.! rule)) cddl
+        else runReader (validateTerm (TBytes bs) (cddl Map.! rule)) cddl
 
 --------------------------------------------------------------------------------
 -- Terms
@@ -218,12 +219,12 @@ validateInteger i rule =
       -- a = <big number>
       Literal (Value (VBignum i') _) -> pure $ check $ i == i'
       -- a = foo .ctrl bar
-      Control op tgt ctrl -> ctrlDispatch (validateInteger i) op tgt ctrl (controlInteger i)
+      Control op tgt ctrl -> ctrlDispatch (validateInteger i) op (MIt tgt) (MIt ctrl) (controlInteger i)
       -- a = foo / bar
-      Choice opts -> validateChoice (validateInteger i) opts
+      Choice opts -> validateChoice (validateInteger i) (MIt <$> opts)
       -- a = x..y
       Range low high bound ->
-        ((,) <$> getRule low <*> getRule high)
+        ((,) <$> getRule (MIt low) <*> getRule (MIt high))
           <&> check . \case
             (Literal (Value (VUInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _)) -> n <= i && range bound i m
             (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _)) -> -n <= i && range bound i m
@@ -235,14 +236,14 @@ validateInteger i rule =
             (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VBignum m) _)) -> (-n) <= i && range bound i m
       -- a = &(x, y, z)
       Enum g ->
-        getRule g >>= \case
+        getRule (MIt g) >>= \case
           Group g' -> validateInteger i (MIt (Choice (NE.fromList g'))) <&> replaceRule
       -- a = x: y
       -- Note KV cannot appear on its own, but we will use this when validating
       -- lists.
-      KV _ v _ -> validateInteger i v <&> replaceRule
-      Tag 2 (MIt (Postlude PTBytes)) -> pure Valid
-      Tag 3 (MIt (Postlude PTBytes)) -> pure Valid
+      KV _ v _ -> validateInteger i (MIt v) <&> replaceRule
+      Tag 2 (Postlude PTBytes) -> pure Valid
+      Tag 3 (Postlude PTBytes) -> pure Valid
       _ -> pure UnapplicableRule
 
 -- | Controls for an Integer
@@ -256,9 +257,9 @@ controlInteger i Bits ctrl = do
   indices <-
     getRule ctrl >>= \case
       Literal (Value (VUInt i') _) -> pure [i']
-      Choice nodes -> getIndicesOfChoice nodes
-      Range ff tt incl -> getIndicesOfRange ff tt incl
-      Enum g -> getIndicesOfEnum g
+      Choice nodes -> getIndicesOfChoice (MIt <$> nodes)
+      Range ff tt incl -> getIndicesOfRange (MIt ff) (MIt tt) incl
+      Enum g -> getIndicesOfEnum $ MIt g
   pure $ boolCtrl $ go (IS.fromList (map fromIntegral indices)) i 0
   where
     go _ 0 _ = True
@@ -325,12 +326,12 @@ validateHalf f rule =
       -- a = 0.5
       Literal (Value (VFloat16 f') _) -> pure $ check $ f == f'
       -- a = foo / bar
-      Choice opts -> validateChoice (validateHalf f) opts
+      Choice opts -> validateChoice (validateHalf f) (MIt <$> opts)
       -- a = foo .ctrl bar
-      Control op tgt ctrl -> ctrlDispatch (validateHalf f) op tgt ctrl (controlHalf f)
+      Control op tgt ctrl -> ctrlDispatch (validateHalf f) op (MIt tgt) (MIt ctrl) (controlHalf f)
       -- a = x..y
       Range low high bound ->
-        ((,) <$> getRule low <*> getRule high)
+        ((,) <$> getRule (MIt low) <*> getRule (MIt high))
           <&> check . \case
             (Literal (Value (VFloat16 n) _), Literal (Value (VFloat16 m) _)) -> n <= f && range bound f m
       _ -> pure UnapplicableRule
@@ -363,13 +364,13 @@ validateFloat f rule =
       -- TODO: it is unclear if smaller floats should also validate
       Literal (Value (VFloat32 f') _) -> pure $ check $ f == f'
       -- a = foo / bar
-      Choice opts -> validateChoice (validateFloat f) opts
+      Choice opts -> validateChoice (validateFloat f) (MIt <$> opts)
       -- a = foo .ctrl bar
-      Control op tgt ctrl -> ctrlDispatch (validateFloat f) op tgt ctrl (controlFloat f)
+      Control op tgt ctrl -> ctrlDispatch (validateFloat f) op (MIt tgt) (MIt ctrl) (controlFloat f)
       -- a = x..y
       -- TODO it is unclear if this should mix floating point types too
       Range low high bound ->
-        ((,) <$> getRule low <*> getRule high)
+        ((,) <$> getRule (MIt low) <*> getRule (MIt high))
           <&> check . \case
             (Literal (Value (VFloat16 n) _), Literal (Value (VFloat16 m) _)) -> n <= f && range bound f m
             (Literal (Value (VFloat32 n) _), Literal (Value (VFloat32 m) _)) -> n <= f && range bound f m
@@ -405,13 +406,13 @@ validateDouble f rule =
       -- TODO: it is unclear if smaller floats should also validate
       Literal (Value (VFloat64 f') _) -> pure $ check $ f == f'
       -- a = foo / bar
-      Choice opts -> validateChoice (validateDouble f) opts
+      Choice opts -> validateChoice (validateDouble f) (MIt <$> opts)
       -- a = foo .ctrl bar
-      Control op tgt ctrl -> ctrlDispatch (validateDouble f) op tgt ctrl (controlDouble f)
+      Control op tgt ctrl -> ctrlDispatch (validateDouble f) op (MIt tgt) (MIt ctrl) (controlDouble f)
       -- a = x..y
       -- TODO it is unclear if this should mix floating point types too
       Range low high bound ->
-        ((,) <$> getRule low <*> getRule high)
+        ((,) <$> getRule (MIt low) <*> getRule (MIt high))
           <&> check . \case
             (Literal (Value (VFloat16 (float2Double -> n)) _), Literal (Value (VFloat16 (float2Double -> m)) _)) -> n <= f && range bound f m
             (Literal (Value (VFloat32 (float2Double -> n)) _), Literal (Value (VFloat32 (float2Double -> m)) _)) -> n <= f && range bound f m
@@ -453,9 +454,9 @@ validateBool b rule =
       -- a = true
       Literal (Value (VBool b') _) -> pure $ check $ b == b'
       -- a = foo .ctrl bar
-      Control op tgt ctrl -> ctrlDispatch (validateBool b) op tgt ctrl (controlBool b)
+      Control op tgt ctrl -> ctrlDispatch (validateBool b) op (MIt tgt) (MIt ctrl) (controlBool b)
       -- a = foo / bar
-      Choice opts -> validateChoice (validateBool b) opts
+      Choice opts -> validateChoice (validateBool b) $ MIt <$> opts
       _ -> pure UnapplicableRule
 
 -- | Controls for `Bool`
@@ -486,7 +487,7 @@ validateSimple 23 rule =
       -- a = undefined
       Postlude PTUndefined -> pure Valid
       -- a = foo / bar
-      Choice opts -> validateChoice (validateSimple 23) opts
+      Choice opts -> validateChoice (validateSimple 23) $ MIt <$> opts
       _ -> pure UnapplicableRule
 validateSimple n _ = error $ "Found simple different to 23! please report this somewhere! Found: " <> show n
 
@@ -503,7 +504,7 @@ validateNull rule =
       Postlude PTAny -> pure Valid
       -- a = nil
       Postlude PTNil -> pure Valid
-      Choice opts -> validateChoice validateNull opts
+      Choice opts -> validateChoice validateNull $ MIt <$> opts
       _ -> pure UnapplicableRule
 
 --------------------------------------------------------------------------------
@@ -525,9 +526,9 @@ validateBytes bs rule =
       -- a = h'123456'
       Literal (Value (VBytes bs') _) -> pure $ check $ bs == bs'
       -- a = foo .ctrl bar
-      Control op tgt ctrl -> ctrlDispatch (validateBytes bs) op tgt ctrl (controlBytes bs)
+      Control op tgt ctrl -> ctrlDispatch (validateBytes bs) op (MIt tgt) (MIt ctrl) (controlBytes bs)
       -- a = foo / bar
-      Choice opts -> validateChoice (validateBytes bs) opts
+      Choice opts -> validateChoice (validateBytes bs) (MIt <$> opts)
       _ -> pure UnapplicableRule
 
 -- | Controls for byte strings
@@ -543,7 +544,7 @@ controlBytes bs Size ctrl =
     Literal (Value (VUInt (fromIntegral -> sz)) _) -> pure $ boolCtrl $ BS.length bs == sz
     Range low high bound ->
       let i = BS.length bs
-       in ((,) <$> getRule low <*> getRule high)
+       in ((,) <$> getRule (MIt low) <*> getRule (MIt high))
             <&> boolCtrl . \case
               (Literal (Value (VUInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _)) -> n <= i && range bound i m
               (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _)) -> -n <= i && range bound i m
@@ -553,9 +554,9 @@ controlBytes bs Bits ctrl = do
   indices <-
     getRule ctrl >>= \case
       Literal (Value (VUInt i') _) -> pure [i']
-      Choice nodes -> getIndicesOfChoice nodes
-      Range ff tt incl -> getIndicesOfRange ff tt incl
-      Enum g -> getIndicesOfEnum g
+      Choice nodes -> getIndicesOfChoice $ MIt <$> nodes
+      Range ff tt incl -> getIndicesOfRange (MIt ff) (MIt tt) incl
+      Enum g -> getIndicesOfEnum $ MIt g
   pure $ boolCtrl $ bitsControlCheck (map fromIntegral indices)
   where
     bitsControlCheck :: [Int] -> Bool
@@ -578,7 +579,7 @@ controlBytes bs Cbor ctrl =
 controlBytes bs Cborseq ctrl =
   case deserialiseFromBytes decodeTerm (BSL.fromStrict (BS.snoc (BS.cons 0x9f bs) 0xff)) of
     Right (BSL.null -> True, TListI terms) ->
-      validateTerm (TList terms) (MIt (Array [MIt (Occur ctrl OIZeroOrMore)])) >>= \case
+      validateTerm (TList terms) (MIt (Array [Occur ctrl OIZeroOrMore])) >>= \case
         CBORTermResult _ (Valid _) -> pure $ Right ()
         CBORTermResult _ err -> error $ show err
 
