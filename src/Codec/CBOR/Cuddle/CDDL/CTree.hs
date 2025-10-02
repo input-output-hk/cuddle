@@ -30,17 +30,17 @@ import GHC.Generics (Generic)
 
 type family CTreeExt i
 
-data Parametrisation a = Parametrisation
+data ProvidedParameters a = ProvidedParameters
   { parameters :: [Name]
   , underlying :: a
   }
   deriving (Generic, Functor, Show, Eq, Foldable, Traversable)
 
-instance Hashable a => Hashable (Parametrisation a)
+instance Hashable a => Hashable (ProvidedParameters a)
 
 data Parametrised
 
-type instance CTreeExt Parametrised = Parametrisation (CTree Parametrised)
+type instance CTreeExt Parametrised = ProvidedParameters (CTree Parametrised)
 
 -- | CDDL Tree, parametrised over a functor
 --
@@ -67,7 +67,7 @@ deriving instance Eq (Node f) => Eq (CTree f)
 
 -- | Traverse the CTree, carrying out the given operation at each node
 traverseCTree ::
-  Monad m => (CTreeExt i -> m (CTreeExt j)) -> (CTree i -> m (CTree j)) -> CTree i -> m (CTree j)
+  Monad m => (CTreeExt i -> m (CTree j)) -> (CTree i -> m (CTree j)) -> CTree i -> m (CTree j)
 traverseCTree _ _ (Literal a) = pure $ Literal a
 traverseCTree _ _ (Postlude a) = pure $ Postlude a
 traverseCTree _ atNode (Map xs) = Map <$> traverse atNode xs
@@ -90,9 +90,9 @@ traverseCTree _ atNode (Control o t c) = do
 traverseCTree _ atNode (Enum ref) = Enum <$> atNode ref
 traverseCTree _ atNode (Unwrap ref) = Unwrap <$> atNode ref
 traverseCTree _ atNode (Tag i ref) = Tag i <$> atNode ref
-traverseCTree atExt _ (CTreeE x) = CTreeE <$> atExt x
+traverseCTree atExt _ (CTreeE x) = atExt x
 
 type Node i = CTreeExt i
 
-newtype CTreeRoot i = CTreeRoot (Map.Map Name (Parametrisation (Node i)))
+newtype CTreeRoot i = CTreeRoot (Map.Map Name (ProvidedParameters (CTree i)))
   deriving (Generic)
