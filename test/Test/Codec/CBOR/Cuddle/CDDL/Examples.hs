@@ -55,7 +55,9 @@ spec = do
     describe "Negative" $ do
       validateExpectFailure "example/cddl-files/validator/negative/unknown-name.cddl" $
         UnboundReference "a"
-      validateExpectFailure "example/cddl-files/validator/negative/mismatching-args.cddl" $
+      validateExpectFailure "example/cddl-files/validator/negative/too-few-args.cddl" $
         MismatchingArgs "foo" ["a", "b"]
+      validateExpectFailure "example/cddl-files/validator/negative/too-many-args.cddl" $
+        MismatchingArgs "foo" ["a"]
       validateExpectFailure "example/cddl-files/validator/negative/args-to-postlude.cddl" $
         ArgsToPostlude PTUInt [It (Literal (Value (VUInt 3) mempty))]
