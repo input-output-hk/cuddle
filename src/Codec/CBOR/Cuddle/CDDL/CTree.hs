@@ -12,7 +12,6 @@ import Codec.CBOR.Cuddle.CDDL (
  )
 import Codec.CBOR.Cuddle.CDDL.CtlOp
 import Codec.CBOR.Cuddle.CDDL.Postlude (PTerm)
-import Data.Hashable (Hashable)
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as Map
 import Data.Word (Word64)
@@ -29,18 +28,6 @@ import GHC.Generics (Generic)
 --------------------------------------------------------------------------------
 
 type family CTreeExt i
-
-data ProvidedParameters a = ProvidedParameters
-  { parameters :: [Name]
-  , underlying :: a
-  }
-  deriving (Generic, Functor, Show, Eq, Foldable, Traversable)
-
-instance Hashable a => Hashable (ProvidedParameters a)
-
-data Parametrised
-
-type instance CTreeExt Parametrised = ProvidedParameters (CTree Parametrised)
 
 -- | CDDL Tree, parametrised over a functor
 --

@@ -49,7 +49,6 @@ import Codec.CBOR.Cuddle.CDDL.CTree (
   CTree (..),
   CTreeExt,
   CTreeRoot (..),
-  ProvidedParameters (..),
  )
 import Codec.CBOR.Cuddle.CDDL.CTree qualified as CTree
 import Codec.CBOR.Cuddle.CDDL.Postlude (PTerm (..))
@@ -68,6 +67,18 @@ import Data.Text qualified as T
 import GHC.Generics (Generic)
 import Optics.Core
 
+data ProvidedParameters a = ProvidedParameters
+  { parameters :: [Name]
+  , underlying :: a
+  }
+  deriving (Generic, Functor, Show, Eq, Foldable, Traversable)
+
+instance Hashable a => Hashable (ProvidedParameters a)
+
+data Parametrised
+
+type instance CTreeExt Parametrised = ProvidedParameters (CTree Parametrised)
+
 --------------------------------------------------------------------------------
 -- 1. Rule extensions
 --------------------------------------------------------------------------------
@@ -79,7 +90,7 @@ type CDDLMap = Map.Map Name (ProvidedParameters TypeOrGroup)
 
 toParametrised :: a -> Maybe GenericParam -> ProvidedParameters a
 toParametrised a Nothing = ProvidedParameters [] a
-toParametrised a (Just (GenericParam gps)) = CTree.ProvidedParameters (NE.toList gps) a
+toParametrised a (Just (GenericParam gps)) = ProvidedParameters (NE.toList gps) a
 
 asMap :: CDDL -> CDDLMap
 asMap cddl = foldl' go Map.empty rules
@@ -479,8 +490,8 @@ synthMono n@(Name origName _) args =
         -- Lookup the original name in the global bindings
         globalBinds <- ask @"global"
         case Map.lookup n globalBinds of
-          Just (CTree.ProvidedParameters [] _) -> throwNR $ MismatchingArgs n []
-          Just (CTree.ProvidedParameters params' r) ->
+          Just (ProvidedParameters [] _) -> throwNR $ MismatchingArgs n []
+          Just (ProvidedParameters params' r) ->
             if length params' == length args
               then do
                 rargs <- traverse resolveGenericCTree args
