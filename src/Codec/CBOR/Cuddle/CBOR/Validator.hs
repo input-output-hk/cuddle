@@ -1,9 +1,11 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ViewPatterns #-}
-{-# OPTIONS_GHC -Wno-incomplete-patterns #-}
 
-module Codec.CBOR.Cuddle.CBOR.Validator where
+module Codec.CBOR.Cuddle.CBOR.Validator (
+  validateCBOR,
+  validateCBOR',
+) where
 
 import Codec.CBOR.Cuddle.CDDL hiding (CDDL, Group, Rule)
 import Codec.CBOR.Cuddle.CDDL.CTree
@@ -21,7 +23,6 @@ import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as BSL
 import Data.Function ((&))
 import Data.Functor ((<&>))
-import Data.Functor.Identity
 import Data.IntSet qualified as IS
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as Map
@@ -30,13 +31,13 @@ import Data.Text qualified as T
 import Data.Text.Lazy qualified as TL
 import Data.Word
 import GHC.Float
+import GHC.Stack (HasCallStack)
 import System.Exit
 import System.IO
 import Text.Regex.TDFA
 
-type CDDL = CTreeRoot' Identity MonoRef
-type Rule = Node MonoRef
-type ResolvedRule = CTree MonoRef
+type CDDL = CTreeRoot MonoReferenced
+type Rule = CTree MonoReferenced
 
 data CBORTermResult = CBORTermResult Term CDDLResult
   deriving (Show)
@@ -135,8 +136,8 @@ validateCBOR' bs rule cddl@(CTreeRoot tree) =
     Left e -> error $ show e
     Right (rest, term) ->
       if BSL.null rest
-        then runReader (validateTerm term (runIdentity $ tree Map.! rule)) cddl
-        else runReader (validateTerm (TBytes bs) (runIdentity $ tree Map.! rule)) cddl
+        then runReader (validateTerm term (tree Map.! rule)) cddl
+        else runReader (validateTerm (TBytes bs) (tree Map.! rule)) cddl
 
 --------------------------------------------------------------------------------
 -- Terms
@@ -184,7 +185,9 @@ validateTerm term rule =
 -- For this reason, we cannot assume that bounds or literals are going to be
 -- Ints, so we convert everything to Integer.
 validateInteger ::
-  MonadReader CDDL m =>
+  ( HasCallStack
+  , MonadReader CDDL m
+  ) =>
   Integer ->
   Rule ->
   m CDDLResult
@@ -233,25 +236,33 @@ validateInteger i rule =
             (Literal (Value (VBignum n) _), Literal (Value (VNInt (fromIntegral -> m)) _)) -> n <= i && range bound i (-m)
             (Literal (Value (VUInt (fromIntegral -> n)) _), Literal (Value (VBignum m) _)) -> n <= i && range bound i m
             (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VBignum m) _)) -> (-n) <= i && range bound i m
+            _ -> error "Not yet implemented"
       -- a = &(x, y, z)
       Enum g ->
         getRule g >>= \case
-          Group g' -> validateInteger i (MIt (Choice (NE.fromList g'))) <&> replaceRule
+          Group g' -> validateInteger i (Choice (NE.fromList g')) <&> replaceRule
+          _ -> error "Not yet implemented"
       -- a = x: y
       -- Note KV cannot appear on its own, but we will use this when validating
       -- lists.
       KV _ v _ -> validateInteger i v <&> replaceRule
-      Tag 2 (MIt (Postlude PTBytes)) -> pure Valid
-      Tag 3 (MIt (Postlude PTBytes)) -> pure Valid
+      Tag 2 (Postlude PTBytes) -> pure Valid
+      Tag 3 (Postlude PTBytes) -> pure Valid
       _ -> pure UnapplicableRule
 
 -- | Controls for an Integer
 controlInteger ::
-  forall m. MonadReader CDDL m => Integer -> CtlOp -> Rule -> m (Either (Maybe CBORTermResult) ())
+  forall m.
+  (HasCallStack, MonadReader CDDL m) =>
+  Integer ->
+  CtlOp ->
+  Rule ->
+  m (Either (Maybe CBORTermResult) ())
 controlInteger i Size ctrl =
   getRule ctrl <&> \case
     Literal (Value (VUInt sz) _) ->
       boolCtrl $ 0 <= i && i < 256 ^ sz
+    _ -> error "Not yet implemented"
 controlInteger i Bits ctrl = do
   indices <-
     getRule ctrl >>= \case
@@ -259,6 +270,7 @@ controlInteger i Bits ctrl = do
       Choice nodes -> getIndicesOfChoice nodes
       Range ff tt incl -> getIndicesOfRange ff tt incl
       Enum g -> getIndicesOfEnum g
+      _ -> error "Not yet implemented"
   pure $ boolCtrl $ go (IS.fromList (map fromIntegral indices)) i 0
   where
     go _ 0 _ = True
@@ -272,36 +284,43 @@ controlInteger i Lt ctrl =
       Literal (Value (VUInt i') _) -> i < fromIntegral i'
       Literal (Value (VNInt i') _) -> i < -fromIntegral i'
       Literal (Value (VBignum i') _) -> i < i'
+      _ -> error "Not yet implemented"
 controlInteger i Gt ctrl =
   getRule ctrl
     <&> boolCtrl . \case
       Literal (Value (VUInt i') _) -> i > fromIntegral i'
       Literal (Value (VNInt i') _) -> i > -fromIntegral i'
       Literal (Value (VBignum i') _) -> i > i'
+      _ -> error "Not yet implemented"
 controlInteger i Le ctrl =
   getRule ctrl
     <&> boolCtrl . \case
       Literal (Value (VUInt i') _) -> i <= fromIntegral i'
       Literal (Value (VNInt i') _) -> i <= -fromIntegral i'
       Literal (Value (VBignum i') _) -> i <= i'
+      _ -> error "Not yet implemented"
 controlInteger i Ge ctrl =
   getRule ctrl
     <&> boolCtrl . \case
       Literal (Value (VUInt i') _) -> i >= fromIntegral i'
       Literal (Value (VNInt i') _) -> i >= -fromIntegral i'
       Literal (Value (VBignum i') _) -> i >= i'
+      _ -> error "Not yet implemented"
 controlInteger i Eq ctrl =
   getRule ctrl
     <&> boolCtrl . \case
       Literal (Value (VUInt i') _) -> i == fromIntegral i'
       Literal (Value (VNInt i') _) -> i == -fromIntegral i'
       Literal (Value (VBignum i') _) -> i == i'
+      _ -> error "Not yet implemented"
 controlInteger i Ne ctrl =
   getRule ctrl
     <&> boolCtrl . \case
       Literal (Value (VUInt i') _) -> i /= fromIntegral i'
       Literal (Value (VNInt i') _) -> i /= -fromIntegral i'
       Literal (Value (VBignum i') _) -> i /= i'
+      _ -> error "Not yet implemented"
+controlInteger _ _ _ = error "Not yet implemented"
 
 --------------------------------------------------------------------------------
 -- Floating point (Float16, Float32, Float64)
@@ -311,7 +330,7 @@ controlInteger i Ne ctrl =
 
 -- | Validating a `Float16`
 validateHalf ::
-  MonadReader CDDL m =>
+  (HasCallStack, MonadReader CDDL m) =>
   Float ->
   Rule ->
   m CDDLResult
@@ -333,22 +352,35 @@ validateHalf f rule =
         ((,) <$> getRule low <*> getRule high)
           <&> check . \case
             (Literal (Value (VFloat16 n) _), Literal (Value (VFloat16 m) _)) -> n <= f && range bound f m
+            _ -> error "Not yet implemented"
       _ -> pure UnapplicableRule
 
 -- | Controls for `Float16`
-controlHalf :: MonadReader CDDL m => Float -> CtlOp -> Rule -> m (Either (Maybe CBORTermResult) ())
+controlHalf ::
+  ( HasCallStack
+  , MonadReader CDDL m
+  ) =>
+  Float ->
+  CtlOp ->
+  Rule ->
+  m (Either (Maybe CBORTermResult) ())
 controlHalf f Eq ctrl =
   getRule ctrl
     <&> boolCtrl . \case
       Literal (Value (VFloat16 f') _) -> f == f'
+      _ -> error "Not yet implemented"
 controlHalf f Ne ctrl =
   getRule ctrl
     <&> boolCtrl . \case
       Literal (Value (VFloat16 f') _) -> f /= f'
+      _ -> error "Not yet implemented"
+controlHalf _ _ _ = error "Not yet implemented"
 
 -- | Validating a `Float32`
 validateFloat ::
-  MonadReader CDDL m =>
+  ( HasCallStack
+  , MonadReader CDDL m
+  ) =>
   Float ->
   Rule ->
   m CDDLResult
@@ -373,24 +405,37 @@ validateFloat f rule =
           <&> check . \case
             (Literal (Value (VFloat16 n) _), Literal (Value (VFloat16 m) _)) -> n <= f && range bound f m
             (Literal (Value (VFloat32 n) _), Literal (Value (VFloat32 m) _)) -> n <= f && range bound f m
+            _ -> error "Not yet implemented"
       _ -> pure UnapplicableRule
 
 -- | Controls for `Float32`
-controlFloat :: MonadReader CDDL m => Float -> CtlOp -> Rule -> m (Either (Maybe CBORTermResult) ())
+controlFloat ::
+  ( HasCallStack
+  , MonadReader CDDL m
+  ) =>
+  Float ->
+  CtlOp ->
+  Rule ->
+  m (Either (Maybe CBORTermResult) ())
 controlFloat f Eq ctrl =
   getRule ctrl
     <&> boolCtrl . \case
       Literal (Value (VFloat16 f') _) -> f == f'
       Literal (Value (VFloat32 f') _) -> f == f'
+      _ -> error "Not yet implemented"
 controlFloat f Ne ctrl =
   getRule ctrl
     <&> boolCtrl . \case
       Literal (Value (VFloat16 f') _) -> f /= f'
       Literal (Value (VFloat32 f') _) -> f /= f'
+      _ -> error "Not yet implemented"
+controlFloat _ _ _ = error "Not yet implemented"
 
 -- | Validating a `Float64`
 validateDouble ::
-  MonadReader CDDL m =>
+  ( HasCallStack
+  , MonadReader CDDL m
+  ) =>
   Double ->
   Rule ->
   m CDDLResult
@@ -416,23 +461,33 @@ validateDouble f rule =
             (Literal (Value (VFloat16 (float2Double -> n)) _), Literal (Value (VFloat16 (float2Double -> m)) _)) -> n <= f && range bound f m
             (Literal (Value (VFloat32 (float2Double -> n)) _), Literal (Value (VFloat32 (float2Double -> m)) _)) -> n <= f && range bound f m
             (Literal (Value (VFloat64 n) _), Literal (Value (VFloat64 m) _)) -> n <= f && range bound f m
+            _ -> error "Not yet implemented"
       _ -> pure UnapplicableRule
 
 -- | Controls for `Float64`
 controlDouble ::
-  MonadReader CDDL m => Double -> CtlOp -> Rule -> m (Either (Maybe CBORTermResult) ())
+  ( HasCallStack
+  , MonadReader CDDL m
+  ) =>
+  Double ->
+  CtlOp ->
+  Rule ->
+  m (Either (Maybe CBORTermResult) ())
 controlDouble f Eq ctrl =
   getRule ctrl
     <&> boolCtrl . \case
       Literal (Value (VFloat16 f') _) -> f == float2Double f'
       Literal (Value (VFloat32 f') _) -> f == float2Double f'
       Literal (Value (VFloat64 f') _) -> f == f'
+      _ -> error "Not yet implemented"
 controlDouble f Ne ctrl =
   getRule ctrl
     <&> boolCtrl . \case
       Literal (Value (VFloat16 f') _) -> f /= float2Double f'
       Literal (Value (VFloat32 f') _) -> f /= float2Double f'
       Literal (Value (VFloat64 f') _) -> f /= f'
+      _ -> error "Not yet implemented"
+controlDouble _ _ _ = error "Not yet implmented"
 
 --------------------------------------------------------------------------------
 -- Bool
@@ -459,15 +514,25 @@ validateBool b rule =
       _ -> pure UnapplicableRule
 
 -- | Controls for `Bool`
-controlBool :: MonadReader CDDL m => Bool -> CtlOp -> Rule -> m (Either (Maybe CBORTermResult) ())
+controlBool ::
+  ( HasCallStack
+  , MonadReader CDDL m
+  ) =>
+  Bool ->
+  CtlOp ->
+  Rule ->
+  m (Either (Maybe CBORTermResult) ())
 controlBool b Eq ctrl =
   getRule ctrl
     <&> boolCtrl . \case
       Literal (Value (VBool b') _) -> b == b'
+      _ -> error "Not yet implemented"
 controlBool b Ne ctrl =
   getRule ctrl
     <&> boolCtrl . \case
       Literal (Value (VBool b') _) -> b /= b'
+      _ -> error "Not yet implemented"
+controlBool _ _ _ = error "Not yet implemented"
 
 --------------------------------------------------------------------------------
 -- Simple
@@ -533,7 +598,9 @@ validateBytes bs rule =
 -- | Controls for byte strings
 controlBytes ::
   forall m.
-  MonadReader CDDL m =>
+  ( HasCallStack
+  , MonadReader CDDL m
+  ) =>
   BS.ByteString ->
   CtlOp ->
   Rule ->
@@ -549,6 +616,8 @@ controlBytes bs Size ctrl =
               (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _)) -> -n <= i && range bound i m
               (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VNInt (fromIntegral -> m)) _)) -> -n <= i && range bound i (-m)
               (Literal (Value VUInt {} _), Literal (Value VNInt {} _)) -> False
+              _ -> error "Not yet implemented"
+    _ -> error "Not yet implemented"
 controlBytes bs Bits ctrl = do
   indices <-
     getRule ctrl >>= \case
@@ -556,6 +625,7 @@ controlBytes bs Bits ctrl = do
       Choice nodes -> getIndicesOfChoice nodes
       Range ff tt incl -> getIndicesOfRange ff tt incl
       Enum g -> getIndicesOfEnum g
+      _ -> error "Not yet implemented"
   pure $ boolCtrl $ bitsControlCheck (map fromIntegral indices)
   where
     bitsControlCheck :: [Int] -> Bool
@@ -575,12 +645,15 @@ controlBytes bs Cbor ctrl =
       validateTerm term ctrl >>= \case
         CBORTermResult _ (Valid _) -> pure $ Right ()
         err -> pure $ Left $ Just err
+    _ -> error "Not yet implemented"
 controlBytes bs Cborseq ctrl =
   case deserialiseFromBytes decodeTerm (BSL.fromStrict (BS.snoc (BS.cons 0x9f bs) 0xff)) of
     Right (BSL.null -> True, TListI terms) ->
-      validateTerm (TList terms) (MIt (Array [MIt (Occur ctrl OIZeroOrMore)])) >>= \case
+      validateTerm (TList terms) (Array [Occur ctrl OIZeroOrMore]) >>= \case
         CBORTermResult _ (Valid _) -> pure $ Right ()
         CBORTermResult _ err -> error $ show err
+    _ -> error "Not yet implemented"
+controlBytes _ _ _ = error "Not yet implmented"
 
 --------------------------------------------------------------------------------
 -- Text
@@ -607,7 +680,14 @@ validateText txt rule =
       _ -> pure UnapplicableRule
 
 -- | Controls for text strings
-controlText :: MonadReader CDDL m => T.Text -> CtlOp -> Rule -> m (Either (Maybe CBORTermResult) ())
+controlText ::
+  ( HasCallStack
+  , MonadReader CDDL m
+  ) =>
+  T.Text ->
+  CtlOp ->
+  Rule ->
+  m (Either (Maybe CBORTermResult) ())
 controlText bs Size ctrl =
   getRule ctrl >>= \case
     Literal (Value (VUInt (fromIntegral -> sz)) _) -> pure $ boolCtrl $ T.length bs == sz
@@ -617,11 +697,16 @@ controlText bs Size ctrl =
           (Literal (Value (VUInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _)) -> n <= T.length bs && range bound (T.length bs) m
           (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _)) -> -n <= T.length bs && range bound (T.length bs) m
           (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VNInt (fromIntegral -> m)) _)) -> -n <= T.length bs && range bound (T.length bs) (-m)
+          _ -> error "Not yet implemented"
+    _ -> error "Not yet implemented"
 controlText s Regexp ctrl =
   getRule ctrl
     <&> boolCtrl . \case
       Literal (Value (VText rxp) _) -> case s =~ rxp :: (T.Text, T.Text, T.Text) of
         ("", s', "") -> s == s'
+        _ -> error "Not yet implemented"
+      _ -> error "Not yet implemented"
+controlText _ _ _ = error "Not yet implemented"
 
 --------------------------------------------------------------------------------
 -- Tagged values
@@ -654,7 +739,7 @@ validateTagged tag term rule =
 
 -- | Groups might contain enums, or unwraps inside. This resolves all those to
 -- the top level of the group.
-flattenGroup :: CDDL -> [Rule] -> [Rule]
+flattenGroup :: HasCallStack => CDDL -> [Rule] -> [Rule]
 flattenGroup cddl nodes =
   mconcat
     [ case resolveIfRef cddl rule of
@@ -677,6 +762,7 @@ flattenGroup cddl nodes =
           _ -> error "Malformed cddl"
         Tag {} -> [rule]
         Group g -> flattenGroup cddl g
+        _ -> error "Not yet implemented"
     | rule <- nodes
     ]
 
@@ -714,16 +800,16 @@ expandRule maxLen _
 expandRule maxLen rule =
   getRule rule >>= \case
     Occur o OIOptional -> pure $ [] : [[o] | maxLen > 0]
-    Occur o OIZeroOrMore -> ([] :) <$> expandRule maxLen (MIt (Occur o OIOneOrMore))
+    Occur o OIZeroOrMore -> ([] :) <$> expandRule maxLen (Occur o OIOneOrMore)
     Occur o OIOneOrMore ->
       if maxLen > 0
-        then ([o] :) . map (o :) <$> expandRule (maxLen - 1) (MIt (Occur o OIOneOrMore))
+        then ([o] :) . map (o :) <$> expandRule (maxLen - 1) (Occur o OIOneOrMore)
         else pure []
     Occur o (OIBounded low high) -> case (low, high) of
-      (Nothing, Nothing) -> expandRule maxLen (MIt (Occur o OIZeroOrMore))
+      (Nothing, Nothing) -> expandRule maxLen (Occur o OIZeroOrMore)
       (Just (fromIntegral -> low'), Nothing) ->
         if maxLen >= low'
-          then map (replicate low' o ++) <$> expandRule (maxLen - low') (MIt (Occur o OIZeroOrMore))
+          then map (replicate low' o ++) <$> expandRule (maxLen - low') (Occur o OIZeroOrMore)
           else pure []
       (Nothing, Just (fromIntegral -> high')) ->
         pure [replicate n o | n <- [0 .. min maxLen high']]
@@ -796,6 +882,7 @@ validateExpandedList terms rules = go rules
               >>= ( \case
                       Valid _ -> pure Valid
                       ListExpansionFail _ _ errors -> pure $ \r -> ListExpansionFail r rules (res : errors)
+                      _ -> error "Not yet implemented"
                   )
                 . ($ dummyRule)
 
@@ -821,7 +908,9 @@ validateList terms rule =
 
 validateMapWithExpandedRules ::
   forall m.
-  MonadReader CDDL m =>
+  ( HasCallStack
+  , MonadReader CDDL m
+  ) =>
   [(Term, Term)] ->
   [Rule] ->
   m ([AMatchedItem], Maybe ANonMatchedItem)
@@ -838,6 +927,7 @@ validateMapWithExpandedRules =
         Left tt -> pure ([], Just tt)
         Right (res, rs') ->
           first (res :) <$> go ts rs'
+    go _ _ = error "Not yet implemented"
 
     -- For each pair of terms, try to find some rule that can be applied here,
     -- and returns the others if there is a succesful match.
@@ -856,6 +946,7 @@ validateMapWithExpandedRules =
               CBORTermResult _ r1 ->
                 bimap (\anmi -> anmi {anmiResults = Left (r, r1) : anmiResults anmi}) (second (r :))
                   <$> go' tk tv rs
+        _ -> error "Not yet implemented"
 
 validateExpandedMap ::
   forall m.
@@ -877,6 +968,7 @@ validateExpandedMap terms rules = go rules
                     Valid _ -> pure Valid
                     MapExpansionFail _ _ errors ->
                       pure $ \r -> MapExpansionFail r rules ((matches, notMatched) : errors)
+                    _ -> error "Not yet implemented"
                 )
               . ($ dummyRule)
 
@@ -918,11 +1010,12 @@ validateChoice v rules = go rules
               >>= ( \case
                       Valid _ -> pure Valid
                       ChoiceFail _ _ errors -> pure $ \r -> ChoiceFail r rules ((choice, err) NE.<| errors)
+                      _ -> error "Not yet implemented"
                   )
                 . ($ dummyRule)
 
 dummyRule :: Rule
-dummyRule = MRuleRef (Name "dummy" mempty)
+dummyRule = CTreeE $ MRuleRef (Name "dummy" mempty)
 
 --------------------------------------------------------------------------------
 -- Control helpers
@@ -1013,14 +1106,14 @@ getIndicesOfEnum g =
 --------------------------------------------------------------------------------
 -- Resolving rules from the CDDL spec
 
-resolveIfRef :: CDDL -> Rule -> ResolvedRule
-resolveIfRef _ (MIt aa) = aa
-resolveIfRef ct@(CTreeRoot cddl) (MRuleRef n) = do
+resolveIfRef :: CDDL -> Rule -> Rule
+resolveIfRef ct@(CTreeRoot cddl) (CTreeE (MRuleRef n)) = do
   case Map.lookup n cddl of
     Nothing -> error $ "Unbound reference: " <> show n
-    Just val -> resolveIfRef ct $ runIdentity val
+    Just val -> resolveIfRef ct val
+resolveIfRef _ _ = error "Not yet implemented"
 
-getRule :: MonadReader CDDL m => Rule -> m ResolvedRule
+getRule :: MonadReader CDDL m => Rule -> m Rule
 getRule rule = asks (`resolveIfRef` rule)
 
 --------------------------------------------------------------------------------
