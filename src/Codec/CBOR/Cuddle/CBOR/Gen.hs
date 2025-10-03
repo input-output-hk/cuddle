@@ -361,8 +361,8 @@ genForCTree (CTree.CTreeE x) = genForNode x
 genForNode :: RandomGen g => CTree.Node MonoReferenced -> M g WrappedTerm
 genForNode = genForCTree <=< resolveRef
 
--- | Take something which might be a reference and resolve it to the relevant
--- Tree, following multiple links if necessary.
+-- | Take a reference and resolve it to the relevant Tree, following multiple
+-- links if necessary.
 resolveRef :: RandomGen g => CTree.Node MonoReferenced -> M g (CTree MonoReferenced)
 resolveRef (MRuleRef n) = do
   (CTreeRoot cddl) <- ask @"cddl"
