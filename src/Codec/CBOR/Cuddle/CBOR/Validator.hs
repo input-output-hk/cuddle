@@ -2,7 +2,10 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ViewPatterns #-}
 
-module Codec.CBOR.Cuddle.CBOR.Validator where
+module Codec.CBOR.Cuddle.CBOR.Validator (
+  validateCBOR,
+  validateCBOR',
+) where
 
 import Codec.CBOR.Cuddle.CDDL hiding (CDDL, Group, Rule)
 import Codec.CBOR.Cuddle.CDDL.CTree
