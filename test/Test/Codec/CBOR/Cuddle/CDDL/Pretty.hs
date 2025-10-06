@@ -22,7 +22,7 @@ import Codec.CBOR.Cuddle.CDDL (
   ValueVariant (..),
   value,
  )
-import Codec.CBOR.Cuddle.Pretty ()
+import Codec.CBOR.Cuddle.Pretty (PrettyStage)
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Text qualified as T
 import Data.TreeDiff (ToExpr (..), prettyExpr)
@@ -40,13 +40,13 @@ prettyPrintsTo x s = assertEqual (show . prettyExpr $ toExpr x) s rendered
   where
     rendered = renderString (layoutPretty defaultLayoutOptions (pretty x))
 
-t2Name :: Type2
+t2Name :: Type2 PrettyStage
 t2Name = T2Name (Name "a" mempty) mempty
 
-t1Name :: Type1
+t1Name :: Type1 PrettyStage
 t1Name = Type1 t2Name Nothing mempty
 
-mkType0 :: Type2 -> Type0
+mkType0 :: Type2 PrettyStage -> Type0 PrettyStage
 mkType0 t2 = Type0 $ Type1 t2 Nothing mempty :| []
 
 spec :: Spec
@@ -56,14 +56,14 @@ spec = describe "Pretty printer" $ do
 
 qcSpec :: Spec
 qcSpec = describe "QuickCheck" $ do
-  xprop "CDDL prettyprinter leaves no trailing spaces" $ \(cddl :: CDDL) -> do
+  xprop "CDDL prettyprinter leaves no trailing spaces" $ \(cddl :: CDDL PrettyStage) -> do
     let
       prettyStr = T.pack . renderString . layoutPretty defaultLayoutOptions $ pretty cddl
       stripLines = T.unlines . fmap T.stripEnd . T.lines
     counterexample (show . prettyExpr $ toExpr cddl) $
       prettyStr `shouldBe` stripLines prettyStr
 
-drep :: Rule
+drep :: Rule PrettyStage
 drep =
   Rule
     "drep"
@@ -77,37 +77,37 @@ drep =
                         ( GrpChoice
                             [ GroupEntry
                                 Nothing
-                                mempty
                                 (GEType Nothing (Type0 $ Type1 (T2Value . value $ VUInt 0) Nothing mempty :| []))
+                                mempty
                             , GroupEntry
                                 Nothing
-                                mempty
                                 (GEType Nothing (Type0 $ Type1 (T2Name "addr_keyhash" Nothing) Nothing mempty :| []))
+                                mempty
                             ]
                             mempty
                             :| [ GrpChoice
                                    [ GroupEntry
                                        Nothing
-                                       mempty
                                        (GEType Nothing (Type0 $ Type1 (T2Value . value $ VUInt 1) Nothing mempty :| []))
+                                       mempty
                                    , GroupEntry
                                        Nothing
-                                       mempty
                                        (GEType Nothing (Type0 $ Type1 (T2Name "script_hash" Nothing) Nothing mempty :| []))
+                                       mempty
                                    ]
                                    mempty
                                , GrpChoice
                                    [ GroupEntry
                                        Nothing
-                                       mempty
                                        (GEType Nothing (Type0 $ Type1 (T2Value . value $ VUInt 2) Nothing mempty :| []))
+                                       mempty
                                    ]
                                    mempty
                                , GrpChoice
                                    [ GroupEntry
                                        Nothing
-                                       mempty
                                        (GEType Nothing (Type0 $ Type1 (T2Value . value $ VUInt 3) Nothing mempty :| []))
+                                       mempty
                                    ]
                                    mempty
                                ]
@@ -125,22 +125,22 @@ drep =
 unitSpec :: Spec
 unitSpec = describe "HUnit" $ do
   describe "Name" $ do
-    it "names" $ Name "a" mempty `prettyPrintsTo` "a"
+    it "names" $ Name @PrettyStage "a" "" `prettyPrintsTo` "a"
   describe "Type0" $ do
-    it "name" $ Type0 (t1Name :| []) `prettyPrintsTo` "a"
+    it "name" $ Type0 @PrettyStage (t1Name :| []) `prettyPrintsTo` "a"
   describe "Type1" $ do
     it "name" $ t1Name `prettyPrintsTo` "a"
   describe "Type2" $ do
     it "T2Name" $ t2Name `prettyPrintsTo` "a"
     describe "T2Array" $ do
-      let groupEntryName = GroupEntry Nothing mempty $ GERef (Name "a" mempty) Nothing
+      let groupEntryName = GroupEntry Nothing (GERef (Name "a" mempty) Nothing) ""
       it "one element" $
         T2Array (Group (GrpChoice [groupEntryName] mempty :| [])) `prettyPrintsTo` "[a]"
       it "two elements" $
         T2Array
           ( Group
               ( GrpChoice
-                  [ GroupEntry Nothing mempty $ GEType Nothing (mkType0 . T2Value . value $ VUInt 1)
+                  [ GroupEntry Nothing (GEType Nothing (mkType0 . T2Value . value $ VUInt 1)) ""
                   , groupEntryName
                   ]
                   mempty
@@ -152,8 +152,8 @@ unitSpec = describe "HUnit" $ do
         T2Array
           ( Group
               ( GrpChoice
-                  [ GroupEntry Nothing "one" $ GEType Nothing (mkType0 . T2Value . value $ VUInt 1)
-                  , GroupEntry Nothing "two" $ GEType Nothing (mkType0 . T2Value . value $ VUInt 2)
+                  [ GroupEntry Nothing (GEType Nothing (mkType0 . T2Value . value $ VUInt 1)) "one"
+                  , GroupEntry Nothing (GEType Nothing (mkType0 . T2Value . value $ VUInt 2)) "two"
                   ]
                   mempty
                   :| []
@@ -164,9 +164,14 @@ unitSpec = describe "HUnit" $ do
         T2Array
           ( Group
               ( GrpChoice
-                  [ GroupEntry Nothing "first\nmultiline comment" $ GEType Nothing (mkType0 . T2Value . value $ VUInt 1)
-                  , GroupEntry Nothing "second\nmultiline comment" $
-                      GEType Nothing (mkType0 . T2Value . value $ VUInt 2)
+                  [ GroupEntry
+                      Nothing
+                      (GEType Nothing (mkType0 . T2Value . value $ VUInt 1))
+                      "first\nmultiline comment"
+                  , GroupEntry
+                      Nothing
+                      (GEType Nothing (mkType0 . T2Value . value $ VUInt 2))
+                      "second\nmultiline comment"
                   ]
                   mempty
                   :| []
@@ -175,7 +180,7 @@ unitSpec = describe "HUnit" $ do
           `prettyPrintsTo` "[ 1 ; first\n    ; multiline comment\n, 2 ; second\n    ; multiline comment\n]"
   describe "Rule" $ do
     it "simple assignment" $
-      Rule
+      Rule @PrettyStage
         (Name "a" mempty)
         Nothing
         AssignEq

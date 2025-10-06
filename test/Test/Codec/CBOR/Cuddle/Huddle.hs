@@ -5,8 +5,9 @@
 
 module Test.Codec.CBOR.Cuddle.Huddle where
 
-import Codec.CBOR.Cuddle.CDDL (CDDL, sortCDDL)
+import Codec.CBOR.Cuddle.CDDL (CDDL, fromRules, sortCDDL)
 import Codec.CBOR.Cuddle.Huddle
+import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
 import Codec.CBOR.Cuddle.Parser
 import Data.Text qualified as T
 import Test.Codec.CBOR.Cuddle.CDDL.Pretty qualified as Pretty
@@ -155,10 +156,10 @@ shouldMatchParse ::
 shouldMatchParse x parseFun input = parse parseFun "" (T.pack input) `shouldParse` x
 
 shouldMatchParseCDDL ::
-  CDDL ->
+  CDDL HuddleStage ->
   String ->
   Expectation
-shouldMatchParseCDDL x = shouldMatchParse x pCDDL
+shouldMatchParseCDDL x = shouldMatchParse x . fmap mapIndex $ pCDDL
 
-toSortedCDDL :: Huddle -> CDDL
-toSortedCDDL = sortCDDL . toCDDLNoRoot
+toSortedCDDL :: Huddle -> CDDL HuddleStage
+toSortedCDDL = fromRules . sortCDDL . toCDDLNoRoot

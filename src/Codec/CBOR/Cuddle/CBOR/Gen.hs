@@ -25,10 +25,9 @@ import Codec.CBOR.Cuddle.CDDL (
   Value (..),
   ValueVariant (..),
  )
-import Codec.CBOR.Cuddle.CDDL.CTree (CTree, CTreeRoot (..))
+import Codec.CBOR.Cuddle.CDDL.CTree (CTree, CTreePhase, CTreeRoot (..), PTerm (..))
 import Codec.CBOR.Cuddle.CDDL.CTree qualified as CTree
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
-import Codec.CBOR.Cuddle.CDDL.Postlude (PTerm (..))
 import Codec.CBOR.Cuddle.CDDL.Resolve (MonoRef (..), MonoReferenced)
 import Codec.CBOR.Term (Term (..))
 import Codec.CBOR.Term qualified as CBOR
@@ -380,7 +379,7 @@ resolveRef (MRuleRef n) = do
 -- This will throw an error if the generated item does not correspond to a
 -- single CBOR term (e.g. if the name resolves to a group, which cannot be
 -- generated outside a context).
-genForName :: RandomGen g => Name -> M g Term
+genForName :: RandomGen g => Name CTreePhase -> M g Term
 genForName n = do
   (CTreeRoot cddl) <- ask @"cddl"
   case Map.lookup n cddl of
@@ -434,13 +433,13 @@ genValueVariant (VBool b) = pure $ TBool b
 -- Generator functions
 --------------------------------------------------------------------------------
 
-generateCBORTerm :: RandomGen g => CTreeRoot MonoReferenced -> Name -> g -> Term
+generateCBORTerm :: RandomGen g => CTreeRoot MonoReferenced -> Name CTreePhase -> g -> Term
 generateCBORTerm cddl n stdGen =
   let genEnv = GenEnv {cddl}
       genState = GenState {randomSeed = stdGen, depth = 1}
    in evalGen (genForName n) genEnv genState
 
-generateCBORTerm' :: RandomGen g => CTreeRoot MonoReferenced -> Name -> g -> (Term, g)
+generateCBORTerm' :: RandomGen g => CTreeRoot MonoReferenced -> Name CTreePhase -> g -> (Term, g)
 generateCBORTerm' cddl n stdGen =
   let genEnv = GenEnv {cddl}
       genState = GenState {randomSeed = stdGen, depth = 1}

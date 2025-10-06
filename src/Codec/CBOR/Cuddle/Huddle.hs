@@ -22,6 +22,13 @@ module Codec.CBOR.Cuddle.Huddle (
   IsType0 (..),
   Value (..),
 
+  -- * AST extensions
+  HuddleStage,
+  C.XCddl (..),
+  C.XTerm (..),
+  C.XXTopLevel (..),
+  C.XXType2 (..),
+
   -- * Rules and assignment
   (=:=),
   (=:~),
@@ -110,6 +117,20 @@ import GHC.Exts (IsList (Item, fromList, toList))
 import GHC.Generics (Generic)
 import Optics.Core (lens, view, (%~), (&), (.~), (^.))
 import Prelude hiding ((/))
+
+data HuddleStage
+
+newtype instance C.XTerm HuddleStage = HuddleXTerm C.Comment
+  deriving (Generic, Semigroup, Monoid, Show, Eq)
+
+newtype instance C.XCddl HuddleStage = HuddleXCddl [C.Comment]
+  deriving (Generic, Semigroup, Monoid, Show, Eq)
+
+newtype instance C.XXTopLevel HuddleStage = HuddleXXTopLevel C.Comment
+  deriving (Generic, Semigroup, Monoid, Show, Eq)
+
+newtype instance C.XXType2 HuddleStage = HuddleXXType2 Void
+  deriving (Generic, Semigroup, Show, Eq)
 
 data Named a = Named
   { name :: T.Text
@@ -434,7 +455,7 @@ unconstrained v = Constrained (CValue v) def []
 -- | A constraint on a 'Value' is something applied via CtlOp or RangeOp on a
 -- Type2, forming a Type1.
 data ValueConstraint a = ValueConstraint
-  { applyConstraint :: C.Type2 -> C.Type1
+  { applyConstraint :: C.Type2 HuddleStage -> C.Type1 HuddleStage
   , showConstraint :: String
   }
 
@@ -464,7 +485,7 @@ instance IsSizeable CGRefType
 
 -- | Things which can be used on the RHS of the '.size' operator.
 class IsSize a where
-  sizeAsCDDL :: a -> C.Type2
+  sizeAsCDDL :: a -> C.Type2 HuddleStage
   sizeAsString :: a -> String
 
 instance IsSize Word where
@@ -1076,11 +1097,11 @@ defaultHuddleConfig =
     }
 
 -- | Convert from Huddle to CDDL, generating a top level root element.
-toCDDL :: Huddle -> CDDL
+toCDDL :: Huddle -> CDDL HuddleStage
 toCDDL = toCDDL' defaultHuddleConfig
 
 -- | Convert from Huddle to CDDL, skipping a root element.
-toCDDLNoRoot :: Huddle -> CDDL
+toCDDLNoRoot :: Huddle -> CDDL HuddleStage
 toCDDLNoRoot =
   toCDDL'
     defaultHuddleConfig
@@ -1088,7 +1109,7 @@ toCDDLNoRoot =
       }
 
 -- | Convert from Huddle to CDDL for the purpose of pretty-printing.
-toCDDL' :: HuddleConfig -> Huddle -> CDDL
+toCDDL' :: HuddleConfig -> Huddle -> CDDL HuddleStage
 toCDDL' HuddleConfig {..} hdl =
   C.fromRules
     . failOnDuplicate
@@ -1113,14 +1134,14 @@ toCDDL' HuddleConfig {..} hdl =
     toCDDLItem (HIRule r) = toCDDLRule r
     toCDDLItem (HIGroup g) = toCDDLGroup g
     toCDDLItem (HIGRule g) = toGenRuleDef g
-    toTopLevelPseudoRoot :: [Rule] -> C.Rule
+    toTopLevelPseudoRoot :: [Rule] -> C.Rule HuddleStage
     toTopLevelPseudoRoot topRs =
       toCDDLRule $
         comment "Pseudo-rule introduced by Cuddle to collect root elements" $
           "huddle_root_defs" =:= arr (fromList (fmap a topRs))
-    toCDDLRule :: Rule -> C.Rule
+    toCDDLRule :: Rule -> C.Rule HuddleStage
     toCDDLRule (Named n t0 c) =
-      (\x -> C.Rule (C.Name n mempty) Nothing C.AssignEq x (foldMap C.Comment c))
+      (\x -> C.Rule (C.Name n mempty) Nothing C.AssignEq x (foldMap (HuddleXTerm . C.Comment) c))
         . C.TOGType
         . C.Type0
         $ toCDDLType1 <$> choiceToNE t0
@@ -1134,18 +1155,18 @@ toCDDL' HuddleConfig {..} hdl =
     toCDDLValue' (LText t) = C.VText t
     toCDDLValue' (LBytes b) = C.VBytes b
 
-    mapToCDDLGroup :: Map -> C.Group
+    mapToCDDLGroup :: Map -> C.Group HuddleStage
     mapToCDDLGroup xs = C.Group $ mapChoiceToCDDL <$> choiceToNE xs
 
-    mapChoiceToCDDL :: MapChoice -> C.GrpChoice
+    mapChoiceToCDDL :: MapChoice -> C.GrpChoice HuddleStage
     mapChoiceToCDDL (MapChoice entries) = C.GrpChoice (fmap mapEntryToCDDL entries) mempty
 
-    mapEntryToCDDL :: MapEntry -> C.GroupEntry
+    mapEntryToCDDL :: MapEntry -> C.GroupEntry HuddleStage
     mapEntryToCDDL (MapEntry k v occ cmnt) =
       C.GroupEntry
         (toOccurrenceIndicator occ)
-        cmnt
         (C.GEType (Just $ toMemberKey k) (toCDDLType0 v))
+        (HuddleXTerm cmnt)
 
     toOccurrenceIndicator :: Occurs -> Maybe C.OccurrenceIndicator
     toOccurrenceIndicator (Occurs Nothing Nothing) = Nothing
@@ -1154,7 +1175,7 @@ toCDDL' HuddleConfig {..} hdl =
     toOccurrenceIndicator (Occurs (Just 1) Nothing) = Just C.OIOneOrMore
     toOccurrenceIndicator (Occurs lb ub) = Just $ C.OIBounded lb ub
 
-    toCDDLType1 :: Type2 -> C.Type1
+    toCDDLType1 :: Type2 -> C.Type1 HuddleStage
     toCDDLType1 = \case
       T2Constrained (Constrained x constr _) ->
         -- TODO Need to handle choices at the top level
@@ -1173,28 +1194,28 @@ toCDDL' HuddleConfig {..} hdl =
       T2Generic g -> C.Type1 (toGenericCall g) Nothing mempty
       T2GenericRef (GRef n) -> C.Type1 (C.T2Name (C.Name n mempty) Nothing) Nothing mempty
 
-    toMemberKey :: Key -> C.MemberKey
+    toMemberKey :: Key -> C.MemberKey HuddleStage
     toMemberKey (LiteralKey (Literal (LText t) _)) = C.MKBareword (C.Name t mempty)
     toMemberKey (LiteralKey v) = C.MKValue $ toCDDLValue v
     toMemberKey (TypeKey t) = C.MKType (toCDDLType1 t)
 
-    toCDDLType0 :: Type0 -> C.Type0
+    toCDDLType0 :: Type0 -> C.Type0 HuddleStage
     toCDDLType0 = C.Type0 . fmap toCDDLType1 . choiceToNE
 
-    arrayToCDDLGroup :: Array -> C.Group
+    arrayToCDDLGroup :: Array -> C.Group HuddleStage
     arrayToCDDLGroup xs = C.Group $ arrayChoiceToCDDL <$> choiceToNE xs
 
-    arrayChoiceToCDDL :: ArrayChoice -> C.GrpChoice
-    arrayChoiceToCDDL (ArrayChoice entries cmt) = C.GrpChoice (fmap arrayEntryToCDDL entries) cmt
+    arrayChoiceToCDDL :: ArrayChoice -> C.GrpChoice HuddleStage
+    arrayChoiceToCDDL (ArrayChoice entries cmt) = C.GrpChoice (fmap arrayEntryToCDDL entries) (HuddleXTerm cmt)
 
-    arrayEntryToCDDL :: ArrayEntry -> C.GroupEntry
+    arrayEntryToCDDL :: ArrayEntry -> C.GroupEntry HuddleStage
     arrayEntryToCDDL (ArrayEntry k v occ cmnt) =
       C.GroupEntry
         (toOccurrenceIndicator occ)
-        cmnt
         (C.GEType (fmap toMemberKey k) (toCDDLType0 v))
+        (HuddleXTerm cmnt)
 
-    toCDDLPostlude :: Value a -> C.Name
+    toCDDLPostlude :: Value a -> C.Name HuddleStage
     toCDDLPostlude VBool = C.Name "bool" mempty
     toCDDLPostlude VUInt = C.Name "uint" mempty
     toCDDLPostlude VNInt = C.Name "nint" mempty
@@ -1212,7 +1233,7 @@ toCDDL' HuddleConfig {..} hdl =
       CRef r -> C.Name (name r) mempty
       CGRef (GRef n) -> C.Name n mempty
 
-    toCDDLRanged :: Ranged -> C.Type1
+    toCDDLRanged :: Ranged -> C.Type1 HuddleStage
     toCDDLRanged (Unranged x) =
       C.Type1 (C.T2Value $ toCDDLValue x) Nothing mempty
     toCDDLRanged (Ranged lb ub rop) =
@@ -1221,18 +1242,18 @@ toCDDL' HuddleConfig {..} hdl =
         (Just (C.RangeOp rop, toCDDLRangeBound ub))
         mempty
 
-    toCDDLRangeBound :: RangeBound -> C.Type2
+    toCDDLRangeBound :: RangeBound -> C.Type2 HuddleStage
     toCDDLRangeBound (RangeBoundLiteral l) = C.T2Value $ toCDDLValue l
     toCDDLRangeBound (RangeBoundRef (Named n _ _)) = C.T2Name (C.Name n mempty) Nothing
 
-    toCDDLGroup :: Named Group -> C.Rule
+    toCDDLGroup :: Named Group -> C.Rule HuddleStage
     toCDDLGroup (Named n (Group t0s) c) =
       C.Rule
         (C.Name n mempty)
         Nothing
         C.AssignEq
         ( C.TOGGroup
-            . C.GroupEntry Nothing mempty
+            . (\x -> C.GroupEntry Nothing x mempty)
             . C.GEGroup
             . C.Group
             . (NE.:| [])
@@ -1241,15 +1262,15 @@ toCDDL' HuddleConfig {..} hdl =
               arrayEntryToCDDL
               t0s
         )
-        (foldMap C.Comment c)
+        (foldMap (HuddleXTerm . C.Comment) c)
 
-    toGenericCall :: GRuleCall -> C.Type2
+    toGenericCall :: GRuleCall -> C.Type2 HuddleStage
     toGenericCall (Named n gr _) =
       C.T2Name
         (C.Name n mempty)
         (Just . C.GenericArg $ fmap toCDDLType1 (args gr))
 
-    toGenRuleDef :: GRuleDef -> C.Rule
+    toGenRuleDef :: GRuleDef -> C.Rule HuddleStage
     toGenRuleDef (Named n gr c) =
       C.Rule
         (C.Name n mempty)
@@ -1259,7 +1280,7 @@ toCDDL' HuddleConfig {..} hdl =
             . C.Type0
             $ toCDDLType1 <$> choiceToNE (body gr)
         )
-        (foldMap C.Comment c)
+        (foldMap (HuddleXTerm . C.Comment) c)
       where
         gps =
           C.GenericParam $ fmap (\(GRef t) -> C.Name t mempty) (args gr)

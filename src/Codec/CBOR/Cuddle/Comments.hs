@@ -26,6 +26,7 @@ import Data.List.NonEmpty (NonEmpty (..))
 import Data.String (IsString (..))
 import Data.Text qualified as T
 import Data.TreeDiff (ToExpr)
+import Data.Void (Void, absurd)
 import Data.Word (Word16, Word32, Word64, Word8)
 import GHC.Generics (Generic (..), K1 (..), M1 (..), U1 (..), V1, (:*:) (..), (:+:) (..))
 import Optics.Core (Lens', lens, view, (%~), (&), (.~), (^.))
@@ -84,6 +85,10 @@ class CollectComments a where
   collectComments :: a -> [Comment]
   default collectComments :: (Generic a, GCollectComments (Rep a)) => a -> [Comment]
   collectComments = collectCommentsG . from
+
+instance CollectComments Void where collectComments = absurd
+
+instance CollectComments () where collectComments = mempty
 
 instance CollectComments a => CollectComments (Maybe a) where
   collectComments Nothing = []

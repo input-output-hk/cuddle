@@ -4,13 +4,14 @@ module Main (main) where
 
 import Codec.CBOR.Cuddle.CBOR.Gen (generateCBORTerm)
 import Codec.CBOR.Cuddle.CBOR.Validator
-import Codec.CBOR.Cuddle.CDDL (Name (..), sortCDDL)
-import Codec.CBOR.Cuddle.CDDL.Prelude (prependPrelude)
+import Codec.CBOR.Cuddle.CDDL (Name (..), fromRules, sortCDDL)
+import Codec.CBOR.Cuddle.CDDL.Postlude (appendPostlude)
 import Codec.CBOR.Cuddle.CDDL.Resolve (
   fullResolveCDDL,
  )
+import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
 import Codec.CBOR.Cuddle.Parser (pCDDL)
-import Codec.CBOR.Cuddle.Pretty ()
+import Codec.CBOR.Cuddle.Pretty (PrettyStage)
 import Codec.CBOR.FlatTerm (toFlatTerm)
 import Codec.CBOR.Pretty (prettyHexEnc)
 import Codec.CBOR.Term (encodeTerm)
@@ -185,26 +186,26 @@ run (Opts cmd cddlFile) = do
         Format fOpts ->
           let
             defs
-              | sort fOpts = sortCDDL res
+              | sort fOpts = fromRules $ sortCDDL res
               | otherwise = res
            in
-            putDocW 80 $ pretty defs
+            putDocW 80 . pretty $ mapIndex @_ @_ @PrettyStage defs
         Validate vOpts ->
           let
             res'
               | vNoPrelude vOpts = res
-              | otherwise = prependPrelude res
+              | otherwise = appendPostlude res
            in
-            case fullResolveCDDL res' of
+            case fullResolveCDDL $ mapIndex res' of
               Left err -> putStrLnErr (show err) >> exitFailure
               Right _ -> exitSuccess
         (GenerateCBOR gOpts) ->
           let
             res'
               | gNoPrelude gOpts = res
-              | otherwise = prependPrelude res
+              | otherwise = appendPostlude res
            in
-            case fullResolveCDDL res' of
+            case fullResolveCDDL $ mapIndex res' of
               Left err -> putStrLnErr (show err) >> exitFailure
               Right mt -> do
                 stdGen <- getStdGen
@@ -220,9 +221,9 @@ run (Opts cmd cddlFile) = do
           let
             res'
               | vcNoPrelude vcOpts = res
-              | otherwise = prependPrelude res
+              | otherwise = res
            in
-            case fullResolveCDDL res' of
+            case fullResolveCDDL $ mapIndex res' of
               Left err -> putStrLnErr (show err) >> exitFailure
               Right mt -> do
                 cbor <- BSC.readFile (vcInput vcOpts)

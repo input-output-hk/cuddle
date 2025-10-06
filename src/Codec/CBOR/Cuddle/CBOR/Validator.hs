@@ -10,7 +10,6 @@ module Codec.CBOR.Cuddle.CBOR.Validator (
 import Codec.CBOR.Cuddle.CDDL hiding (CDDL, Group, Rule)
 import Codec.CBOR.Cuddle.CDDL.CTree
 import Codec.CBOR.Cuddle.CDDL.CtlOp
-import Codec.CBOR.Cuddle.CDDL.Postlude
 import Codec.CBOR.Cuddle.CDDL.Resolve
 import Codec.CBOR.Read
 import Codec.CBOR.Term
@@ -113,7 +112,7 @@ data AMatchedItem = AMatchedItem
 --------------------------------------------------------------------------------
 -- Main entry point
 
-validateCBOR :: BS.ByteString -> Name -> CDDL -> IO ()
+validateCBOR :: BS.ByteString -> Name CTreePhase -> CDDL -> IO ()
 validateCBOR bs rule cddl =
   ( case validateCBOR' bs rule cddl of
       ok@(CBORTermResult _ (Valid _)) -> do
@@ -130,7 +129,7 @@ validateCBOR bs rule cddl =
             )
 
 validateCBOR' ::
-  BS.ByteString -> Name -> CDDL -> CBORTermResult
+  BS.ByteString -> Name CTreePhase -> CDDL -> CBORTermResult
 validateCBOR' bs rule cddl@(CTreeRoot tree) =
   case deserialiseFromBytes decodeTerm (BSL.fromStrict bs) of
     Left e -> error $ show e

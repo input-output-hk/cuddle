@@ -48,10 +48,12 @@ import Codec.CBOR.Cuddle.CDDL as CDDL
 import Codec.CBOR.Cuddle.CDDL.CTree (
   CTree (..),
   CTreeExt,
+  CTreePhase,
   CTreeRoot (..),
+  PTerm (..),
+  XXType2 (..),
  )
 import Codec.CBOR.Cuddle.CDDL.CTree qualified as CTree
-import Codec.CBOR.Cuddle.CDDL.Postlude (PTerm (..))
 import Control.Monad.Except (ExceptT (..), runExceptT)
 import Control.Monad.Reader (Reader, ReaderT (..), runReader)
 import Control.Monad.State.Strict (StateT (..))
@@ -64,11 +66,12 @@ import Data.List (foldl')
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
+import Data.Void (absurd)
 import GHC.Generics (Generic)
 import Optics.Core
 
 data ProvidedParameters a = ProvidedParameters
-  { parameters :: [Name]
+  { parameters :: [Name CTreePhase]
   , underlying :: a
   }
   deriving (Generic, Functor, Show, Eq, Foldable, Traversable)
@@ -83,33 +86,33 @@ type instance CTreeExt Parametrised = ProvidedParameters (CTree Parametrised)
 -- 1. Rule extensions
 --------------------------------------------------------------------------------
 
-newtype PartialCTreeRoot i = PartialCTreeRoot (Map.Map Name (ProvidedParameters (CTree i)))
+newtype PartialCTreeRoot i = PartialCTreeRoot (Map.Map (Name CTreePhase) (ProvidedParameters (CTree i)))
   deriving (Generic)
 
-type CDDLMap = Map.Map Name (ProvidedParameters TypeOrGroup)
+type CDDLMap = Map.Map (Name CTreePhase) (ProvidedParameters (TypeOrGroup CTreePhase))
 
-toParametrised :: a -> Maybe GenericParam -> ProvidedParameters a
+toParametrised :: a -> Maybe (GenericParam CTreePhase) -> ProvidedParameters a
 toParametrised a Nothing = ProvidedParameters [] a
 toParametrised a (Just (GenericParam gps)) = ProvidedParameters (NE.toList gps) a
 
-asMap :: CDDL -> CDDLMap
+asMap :: CDDL CTreePhase -> CDDLMap
 asMap cddl = foldl' go Map.empty rules
   where
     rules = cddlTopLevel cddl
-    go x (TopLevelComment _) = x
+    go x (XXTopLevel _) = x
     go x (TopLevelRule r) = assignOrExtend x r
 
-    assignOrExtend :: CDDLMap -> Rule -> CDDLMap
+    assignOrExtend :: CDDLMap -> Rule CTreePhase -> CDDLMap
     assignOrExtend m (Rule n gps assign tog _) = case assign of
       -- Equals assignment
       AssignEq -> Map.insert n (toParametrised tog gps) m
       AssignExt -> Map.alter (extend tog gps) n m
 
     extend ::
-      TypeOrGroup ->
-      Maybe GenericParam ->
-      Maybe (ProvidedParameters TypeOrGroup) ->
-      Maybe (ProvidedParameters TypeOrGroup)
+      TypeOrGroup CTreePhase ->
+      Maybe (GenericParam CTreePhase) ->
+      Maybe (ProvidedParameters (TypeOrGroup CTreePhase)) ->
+      Maybe (ProvidedParameters (TypeOrGroup CTreePhase))
     extend tog _gps (Just existing) = case (underlying existing, tog) of
       (TOGType _, TOGType (Type0 new)) ->
         Just $
@@ -139,7 +142,7 @@ type instance CTreeExt OrReferenced = OrRef
 -- | Indicates that an item may be referenced rather than defined.
 data OrRef
   = -- | Reference to another node with possible generic arguments supplied
-    Ref Name [CTree OrReferenced]
+    Ref (Name CTreePhase) [CTree OrReferenced]
   deriving (Eq, Show)
 
 type RefCTree = PartialCTreeRoot OrReferenced
@@ -155,19 +158,19 @@ buildRefCTree :: CDDLMap -> RefCTree
 buildRefCTree rules = PartialCTreeRoot $ toCTreeRule <$> rules
   where
     toCTreeRule ::
-      ProvidedParameters TypeOrGroup ->
+      ProvidedParameters (TypeOrGroup CTreePhase) ->
       ProvidedParameters (CTree OrReferenced)
     toCTreeRule = fmap toCTreeTOG
 
-    toCTreeTOG :: TypeOrGroup -> CTree OrReferenced
+    toCTreeTOG :: TypeOrGroup CTreePhase -> CTree OrReferenced
     toCTreeTOG (TOGType t0) = toCTreeT0 t0
     toCTreeTOG (TOGGroup ge) = toCTreeGroupEntry ge
 
-    toCTreeT0 :: Type0 -> CTree OrReferenced
+    toCTreeT0 :: Type0 CTreePhase -> CTree OrReferenced
     toCTreeT0 (Type0 (t1 NE.:| [])) = toCTreeT1 t1
     toCTreeT0 (Type0 xs) = CTree.Choice $ toCTreeT1 <$> xs
 
-    toCTreeT1 :: Type1 -> CTree OrReferenced
+    toCTreeT1 :: Type1 CTreePhase -> CTree OrReferenced
     toCTreeT1 (Type1 t2 Nothing _) = toCTreeT2 t2
     toCTreeT1 (Type1 t2 (Just (op, t2')) _) = case op of
       RangeOp bound ->
@@ -183,7 +186,7 @@ buildRefCTree rules = PartialCTreeRoot $ toCTreeRule <$> rules
           , CTree.controller = toCTreeT2 t2'
           }
 
-    toCTreeT2 :: Type2 -> CTree OrReferenced
+    toCTreeT2 :: Type2 CTreePhase -> CTree OrReferenced
     toCTreeT2 (T2Value v) = CTree.Literal v
     toCTreeT2 (T2Name n garg) = CTreeE $ Ref n (fromGenArgs garg)
     toCTreeT2 (T2Group t0) =
@@ -208,6 +211,7 @@ buildRefCTree rules = PartialCTreeRoot $ toCTreeRule <$> rules
       -- We don't validate numerical items yet
       CTree.Postlude PTAny
     toCTreeT2 T2Any = CTree.Postlude PTAny
+    toCTreeT2 (XXType2 (CTreeXXType2 v)) = absurd v
 
     toCTreeDataItem 20 =
       CTree.Literal $ Value (VBool False) mempty
@@ -224,32 +228,32 @@ buildRefCTree rules = PartialCTreeRoot $ toCTreeRule <$> rules
     toCTreeDataItem _ =
       CTree.Postlude PTAny
 
-    toCTreeGroupEntry :: GroupEntry -> CTree OrReferenced
-    toCTreeGroupEntry (GroupEntry (Just occi) _ (GEType mmkey t0)) =
+    toCTreeGroupEntry :: GroupEntry CTreePhase -> CTree OrReferenced
+    toCTreeGroupEntry (GroupEntry (Just occi) (GEType mmkey t0) _) =
       CTree.Occur
         { CTree.item = toKVPair mmkey t0
         , CTree.occurs = occi
         }
-    toCTreeGroupEntry (GroupEntry Nothing _ (GEType mmkey t0)) = toKVPair mmkey t0
-    toCTreeGroupEntry (GroupEntry (Just occi) _ (GERef n margs)) =
+    toCTreeGroupEntry (GroupEntry Nothing (GEType mmkey t0) _) = toKVPair mmkey t0
+    toCTreeGroupEntry (GroupEntry (Just occi) (GERef n margs) _) =
       CTree.Occur
         { CTree.item = CTreeE $ Ref n (fromGenArgs margs)
         , CTree.occurs = occi
         }
-    toCTreeGroupEntry (GroupEntry Nothing _ (GERef n margs)) = CTreeE $ Ref n (fromGenArgs margs)
-    toCTreeGroupEntry (GroupEntry (Just occi) _ (GEGroup g)) =
+    toCTreeGroupEntry (GroupEntry Nothing (GERef n margs) _) = CTreeE $ Ref n (fromGenArgs margs)
+    toCTreeGroupEntry (GroupEntry (Just occi) (GEGroup g) _) =
       CTree.Occur
         { CTree.item = groupToGroup g
         , CTree.occurs = occi
         }
-    toCTreeGroupEntry (GroupEntry Nothing _ (GEGroup g)) = groupToGroup g
+    toCTreeGroupEntry (GroupEntry Nothing (GEGroup g) _) = groupToGroup g
 
-    fromGenArgs :: Maybe GenericArg -> [CTree OrReferenced]
+    fromGenArgs :: Maybe (GenericArg CTreePhase) -> [CTree OrReferenced]
     fromGenArgs = maybe [] (\(GenericArg xs) -> NE.toList $ fmap toCTreeT1 xs)
 
     -- Interpret a group as an enumeration. Note that we float out the
     -- choice options
-    toCTreeEnum :: Group -> CTree OrReferenced
+    toCTreeEnum :: Group CTreePhase -> CTree OrReferenced
     toCTreeEnum (CDDL.Group (a NE.:| [])) =
       CTree.Enum . CTree.Group $ toCTreeGroupEntry <$> gcGroupEntries a
     toCTreeEnum (CDDL.Group xs) =
@@ -258,13 +262,13 @@ buildRefCTree rules = PartialCTreeRoot $ toCTreeRule <$> rules
         groupEntries = fmap gcGroupEntries xs
 
     -- Embed a group in another group, again floating out the choice options
-    groupToGroup :: Group -> CTree OrReferenced
+    groupToGroup :: Group CTreePhase -> CTree OrReferenced
     groupToGroup (CDDL.Group (a NE.:| [])) =
       CTree.Group $ fmap toCTreeGroupEntry (gcGroupEntries a)
     groupToGroup (CDDL.Group xs) =
       CTree.Choice $ fmap (CTree.Group . fmap toCTreeGroupEntry) (gcGroupEntries <$> xs)
 
-    toKVPair :: Maybe MemberKey -> Type0 -> CTree OrReferenced
+    toKVPair :: Maybe (MemberKey CTreePhase) -> Type0 CTreePhase -> CTree OrReferenced
     toKVPair Nothing t0 = toCTreeT0 t0
     toKVPair (Just mkey) t0 =
       CTree.KV
@@ -275,7 +279,7 @@ buildRefCTree rules = PartialCTreeRoot $ toCTreeRule <$> rules
         }
 
     -- Interpret a group as a map. Note that we float out the choice options
-    toCTreeMap :: Group -> CTree OrReferenced
+    toCTreeMap :: Group CTreePhase -> CTree OrReferenced
     toCTreeMap (CDDL.Group (a NE.:| [])) = CTree.Map $ fmap toCTreeGroupEntry (gcGroupEntries a)
     toCTreeMap (CDDL.Group xs) =
       CTree.Choice $
@@ -283,14 +287,14 @@ buildRefCTree rules = PartialCTreeRoot $ toCTreeRule <$> rules
 
     -- Interpret a group as an array. Note that we float out the choice
     -- options
-    toCTreeArray :: Group -> CTree OrReferenced
+    toCTreeArray :: Group CTreePhase -> CTree OrReferenced
     toCTreeArray (CDDL.Group (a NE.:| [])) =
       CTree.Array $ fmap toCTreeGroupEntry (gcGroupEntries a)
     toCTreeArray (CDDL.Group xs) =
       CTree.Choice $
         fmap (CTree.Array . fmap toCTreeGroupEntry) (gcGroupEntries <$> xs)
 
-    toCTreeMemberKey :: MemberKey -> CTree OrReferenced
+    toCTreeMemberKey :: MemberKey CTreePhase -> CTree OrReferenced
     toCTreeMemberKey (MKValue v) = CTree.Literal v
     toCTreeMemberKey (MKBareword (Name n _)) = CTree.Literal (Value (VText n) mempty)
     toCTreeMemberKey (MKType t1) = toCTreeT1 t1
@@ -300,14 +304,14 @@ buildRefCTree rules = PartialCTreeRoot $ toCTreeRule <$> rules
 --------------------------------------------------------------------------------
 
 data NameResolutionFailure
-  = UnboundReference Name
-  | MismatchingArgs Name [Name]
+  = UnboundReference (Name CTreePhase)
+  | MismatchingArgs (Name CTreePhase) [Name CTreePhase]
   | ArgsToPostlude PTerm [CTree OrReferenced]
   deriving (Show)
 
-deriving instance Eq NameResolutionFailure
+deriving instance Eq (CTree.Node OrReferenced) => Eq NameResolutionFailure
 
-postludeBinding :: Map.Map Name PTerm
+postludeBinding :: Map.Map (Name CTreePhase) PTerm
 postludeBinding =
   Map.fromList
     [ (Name "bool" mempty, PTBool)
@@ -327,9 +331,9 @@ postludeBinding =
     ]
 
 data BindingEnv i j = BindingEnv
-  { global :: Map.Map Name (ProvidedParameters (CTree i))
+  { global :: Map.Map (Name CTreePhase) (ProvidedParameters (CTree i))
   -- ^ Global name bindings via 'RuleDef'
-  , local :: Map.Map Name (CTree j)
+  , local :: Map.Map (Name CTreePhase) (CTree j)
   -- ^ Local bindings for generic parameters
   }
   deriving (Generic)
@@ -340,9 +344,9 @@ type instance CTreeExt DistReferenced = DistRef
 
 data DistRef
   = -- | Reference to a generic parameter
-    GenericRef Name
+    GenericRef (Name CTreePhase)
   | -- | Reference to a rule definition, possibly with generic arguments
-    RuleRef Name [CTree DistReferenced]
+    RuleRef (Name CTreePhase) [CTree DistReferenced]
   deriving (Eq, Generic, Show)
 
 instance Hashable DistRef
@@ -403,7 +407,7 @@ data MonoReferenced
 type instance CTreeExt MonoReferenced = MonoRef (CTree MonoReferenced)
 
 newtype MonoRef a
-  = MRuleRef Name
+  = MRuleRef (Name CTreePhase)
   deriving (Functor, Show)
 
 deriving instance Show (CTree MonoReferenced)
@@ -413,7 +417,7 @@ deriving instance Show (PartialCTreeRoot MonoReferenced)
 type MonoEnv = BindingEnv DistReferenced MonoReferenced
 
 -- | We introduce additional bindings in the state
-type MonoState = Map.Map Name (CTree MonoReferenced)
+type MonoState = Map.Map (Name CTreePhase) (CTree MonoReferenced)
 
 -- | Monad to run the monomorphisation process. We need some additional
 -- capabilities for this, so 'Either' doesn't fully cut it anymore.
@@ -435,10 +439,10 @@ newtype MonoM a = MonoM
   deriving
     ( HasSource
         "local"
-        (Map.Map Name (CTree MonoReferenced))
+        (Map.Map (Name CTreePhase) (CTree MonoReferenced))
     , HasReader
         "local"
-        (Map.Map Name (CTree MonoReferenced))
+        (Map.Map (Name CTreePhase) (CTree MonoReferenced))
     )
     via Field
           "local"
@@ -452,10 +456,10 @@ newtype MonoM a = MonoM
   deriving
     ( HasSource
         "global"
-        (Map.Map Name (ProvidedParameters (CTree DistReferenced)))
+        (Map.Map (Name CTreePhase) (ProvidedParameters (CTree DistReferenced)))
     , HasReader
         "global"
-        (Map.Map Name (ProvidedParameters (CTree DistReferenced)))
+        (Map.Map (Name CTreePhase) (ProvidedParameters (CTree DistReferenced)))
     )
     via Field
           "global"
@@ -481,7 +485,7 @@ throwNR :: NameResolutionFailure -> MonoM a
 throwNR = throw @"nameResolution"
 
 -- | Synthesize a monomorphic rule definition, returning the name
-synthMono :: Name -> [CTree DistReferenced] -> MonoM Name
+synthMono :: Name CTreePhase -> [CTree DistReferenced] -> MonoM (Name CTreePhase)
 synthMono n@(Name origName _) args =
   let fresh =
         -- % is not a valid CBOR name, so this should avoid conflict
@@ -548,7 +552,7 @@ buildMonoCTree (PartialCTreeRoot ct) = do
 -- Combined resolution
 --------------------------------------------------------------------------------
 
-fullResolveCDDL :: CDDL -> Either NameResolutionFailure (CTreeRoot MonoReferenced)
+fullResolveCDDL :: CDDL CTreePhase -> Either NameResolutionFailure (CTreeRoot MonoReferenced)
 fullResolveCDDL cddl = do
   let refCTree = buildRefCTree (asMap cddl)
   rCTree <- buildResolvedCTree refCTree

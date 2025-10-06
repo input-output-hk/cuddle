@@ -1,3 +1,5 @@
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -7,6 +9,8 @@ module Test.Codec.CBOR.Cuddle.CDDL.Gen () where
 import Codec.CBOR.Cuddle.CDDL
 import Codec.CBOR.Cuddle.CDDL.CtlOp
 import Codec.CBOR.Cuddle.Comments (Comment (..))
+import Codec.CBOR.Cuddle.Parser (ParserStage, XTerm (..))
+import Codec.CBOR.Cuddle.Pretty (PrettyStage, XTerm (..), XXTopLevel (..))
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
 import Data.List.NonEmpty qualified as NE
@@ -15,17 +19,23 @@ import Data.Text qualified as T
 import Test.QuickCheck
 import Test.QuickCheck qualified as Gen
 
-instance Arbitrary CDDL where
+instance Arbitrary (CDDL PrettyStage) where
   arbitrary = CDDL <$> arbitrary <*> arbitrary <*> arbitrary
   shrink = genericShrink
 
-instance Arbitrary TopLevel where
+deriving newtype instance Arbitrary (XXTopLevel PrettyStage)
+
+deriving newtype instance Arbitrary (XTerm PrettyStage)
+
+instance Arbitrary (TopLevel PrettyStage) where
   arbitrary =
     Gen.oneof
-      [ TopLevelComment <$> arbitrary
+      [ XXTopLevel <$> arbitrary
       , TopLevelRule <$> arbitrary
       ]
   shrink = genericShrink
+
+deriving newtype instance Arbitrary (XTerm ParserStage)
 
 instance Arbitrary T.Text where
   arbitrary = T.pack <$> arbitrary
@@ -48,7 +58,7 @@ nameMidChars = nameFstChars <> ['1' .. '9'] <> ['-', '.']
 nameEndChars :: [Char]
 nameEndChars = nameFstChars <> ['1' .. '9']
 
-instance Arbitrary Name where
+instance (Monoid (XTerm i), Arbitrary (XTerm i)) => Arbitrary (Name i) where
   arbitrary =
     let veryShortListOf = resize 3 . listOf
      in do
@@ -73,15 +83,15 @@ instance Arbitrary Assign where
   arbitrary = Gen.elements [AssignEq, AssignExt]
   shrink = genericShrink
 
-instance Arbitrary GenericParam where
+instance (Monoid (XTerm i), Arbitrary (XTerm i)) => Arbitrary (GenericParam i) where
   arbitrary = GenericParam <$> nonEmpty arbitrary
   shrink (GenericParam neName) = GenericParam <$> shrinkNE neName
 
-instance Arbitrary GenericArg where
+instance (Arbitrary (XTerm i), Monoid (XTerm i)) => Arbitrary (GenericArg i) where
   arbitrary = GenericArg <$> nonEmpty arbitrary
   shrink (GenericArg neArg) = GenericArg <$> shrinkNE neArg
 
-instance Arbitrary Rule where
+instance (Monoid (XTerm i), Arbitrary (XTerm i)) => Arbitrary (Rule i) where
   arbitrary =
     Rule
       <$> arbitrary
@@ -103,7 +113,12 @@ instance Arbitrary TyOp where
       ]
   shrink = genericShrink
 
-instance Arbitrary TypeOrGroup where
+instance
+  ( Arbitrary (XTerm i)
+  , Monoid (XTerm i)
+  ) =>
+  Arbitrary (TypeOrGroup i)
+  where
   arbitrary =
     Gen.oneof
       [ TOGGroup <$> arbitrary
@@ -111,15 +126,15 @@ instance Arbitrary TypeOrGroup where
       ]
   shrink = genericShrink
 
-instance Arbitrary Type0 where
+instance (Arbitrary (XTerm i), Monoid (XTerm i)) => Arbitrary (Type0 i) where
   arbitrary = Type0 <$> nonEmpty arbitrary
   shrink (Type0 neType1) = Type0 <$> shrinkNE neType1
 
-instance Arbitrary Type1 where
+instance (Arbitrary (XTerm i), Monoid (XTerm i)) => Arbitrary (Type1 i) where
   arbitrary = Type1 <$> arbitrary <*> arbitrary <*> arbitrary
   shrink = genericShrink
 
-instance Arbitrary Type2 where
+instance (Monoid (XTerm i), Arbitrary (XTerm i)) => Arbitrary (Type2 i) where
   arbitrary =
     recursive
       Gen.oneof
@@ -138,7 +153,6 @@ instance Arbitrary Type2 where
       [ T2Group <$> arbitrary
       , T2Tag <$> arbitrary <*> arbitrary
       ]
-  shrink = genericShrink
 
 instance Arbitrary OccurrenceIndicator where
   arbitrary =
@@ -153,15 +167,15 @@ instance Arbitrary OccurrenceIndicator where
 
   shrink = genericShrink
 
-instance Arbitrary Group where
+instance (Monoid (XTerm i), Arbitrary (XTerm i)) => Arbitrary (Group i) where
   arbitrary = Group <$> nonEmpty arbitrary
   shrink (Group gr) = Group <$> shrinkNE gr
 
-instance Arbitrary GrpChoice where
+instance (Monoid (XTerm i), Arbitrary (XTerm i)) => Arbitrary (GrpChoice i) where
   arbitrary = GrpChoice <$> listOf' arbitrary <*> pure mempty
   shrink = genericShrink
 
-instance Arbitrary GroupEntryVariant where
+instance (Monoid (XTerm i), Arbitrary (XTerm i)) => Arbitrary (GroupEntryVariant i) where
   arbitrary =
     recursive
       Gen.oneof
@@ -176,15 +190,20 @@ instance Arbitrary GroupEntryVariant where
       ]
   shrink = genericShrink
 
-instance Arbitrary GroupEntry where
+instance
+  ( Arbitrary (XTerm i)
+  , Monoid (XTerm i)
+  ) =>
+  Arbitrary (GroupEntry i)
+  where
   arbitrary =
     GroupEntry
       <$> arbitrary
-      <*> pure mempty
       <*> arbitrary
+      <*> pure mempty
   shrink = genericShrink
 
-instance Arbitrary MemberKey where
+instance (Monoid (XTerm i), Arbitrary (XTerm i)) => Arbitrary (MemberKey i) where
   arbitrary =
     recursive
       Gen.oneof
