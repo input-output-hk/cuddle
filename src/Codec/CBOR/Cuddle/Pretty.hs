@@ -1,5 +1,7 @@
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -7,7 +9,7 @@ module Codec.CBOR.Cuddle.Pretty where
 
 import Codec.CBOR.Cuddle.CDDL
 import Codec.CBOR.Cuddle.CDDL.CtlOp (CtlOp)
-import Codec.CBOR.Cuddle.Comments (CollectComments (..), Comment (..), unComment)
+import Codec.CBOR.Cuddle.Comments (CollectComments (..), Comment (..), HasComment (..), unComment)
 import Codec.CBOR.Cuddle.Pretty.Columnar (
   Cell (..),
   CellAlign (..),
@@ -24,19 +26,40 @@ import Codec.CBOR.Cuddle.Pretty.Utils (renderedLen, softspace)
 import Data.ByteString.Char8 qualified as BS
 import Data.Foldable (Foldable (..))
 import Data.List.NonEmpty qualified as NE
-import Data.String (fromString)
+import Data.String (IsString, fromString)
 import Data.Text qualified as T
+import Data.TreeDiff (ToExpr)
+import Data.Void (Void, absurd)
+import GHC.Generics (Generic)
+import Optics.Core ((^.))
 import Prettyprinter
 
-instance Pretty CDDL where
+data PrettyStage
+
+newtype instance XXTopLevel PrettyStage = PrettyXXTopLevel Comment
+  deriving (Generic, CollectComments, ToExpr, Show, Eq)
+
+newtype instance XXType2 PrettyStage = PrettyXXType2 Void
+  deriving (Generic, CollectComments, ToExpr, Show, Eq)
+
+newtype instance XTerm PrettyStage = PrettyXTerm {unPrettyXTerm :: Comment}
+  deriving (Generic, CollectComments, Semigroup, Monoid, IsString, ToExpr, Show, Eq)
+
+newtype instance XCddl PrettyStage = PrettyXCddl [Comment]
+  deriving (Generic, CollectComments, ToExpr, Show, Eq)
+
+instance HasComment (XTerm PrettyStage) where
+  commentL = #unPrettyXTerm
+
+instance Pretty (CDDL PrettyStage) where
   pretty = vsep . fmap pretty . NE.toList . cddlTopLevel
 
-instance Pretty TopLevel where
-  pretty (TopLevelComment cmt) = pretty cmt
+instance Pretty (TopLevel PrettyStage) where
+  pretty (XXTopLevel (PrettyXXTopLevel cmt)) = pretty cmt
   pretty (TopLevelRule x) = pretty x <> hardline
 
-instance Pretty Name where
-  pretty (Name name cmt) = pretty name <> prettyCommentNoBreakWS cmt
+instance Pretty (Name PrettyStage) where
+  pretty (Name name (PrettyXTerm cmt)) = pretty name <> prettyCommentNoBreakWS cmt
 
 data CommentRender
   = PreComment
@@ -54,12 +77,12 @@ instance Pretty Comment where
   pretty (Comment "") = mempty
   pretty c = prettyCommentNoBreak c <> hardline
 
-type0Def :: Type0 -> Doc ann
+type0Def :: Type0 PrettyStage -> Doc ann
 type0Def t = nest 2 $ line' <> pretty t
 
-instance Pretty Rule where
+instance Pretty (Rule PrettyStage) where
   pretty (Rule n mgen assign tog cmt) =
-    pretty cmt
+    pretty (cmt ^. commentL)
       <> groupIfNoComments
         tog
         ( pretty n <> pretty mgen <+> case tog of
@@ -74,21 +97,21 @@ instance Pretty Rule where
         AssignEq -> "="
         AssignExt -> "//="
 
-instance Pretty GenericArg where
+instance Pretty (GenericArg PrettyStage) where
   pretty (GenericArg (NE.toList -> l))
     | null (collectComments l) = group . cEncloseSep "<" ">" "," $ fmap pretty l
     | otherwise = columnarListing "<" ">" "," . Columnar $ singletonRow . pretty <$> l
 
-instance Pretty GenericParam where
+instance Pretty (GenericParam PrettyStage) where
   pretty (GenericParam (NE.toList -> l))
     | null (collectComments l) = group . cEncloseSep "<" ">" "," $ fmap pretty l
     | otherwise = columnarListing "<" ">" "," . Columnar $ singletonRow . pretty <$> l
 
-instance Pretty Type0 where
+instance Pretty (Type0 PrettyStage) where
   pretty t0@(Type0 (NE.toList -> l)) =
     groupIfNoComments t0 $ columnarSepBy "/" . Columnar $ type1ToRow <$> l
     where
-      type1ToRow (Type1 t2 tyOp cmt) =
+      type1ToRow (Type1 t2 tyOp (PrettyXTerm cmt)) =
         let
           valCell = case tyOp of
             Nothing -> cellL t2
@@ -104,15 +127,15 @@ instance Pretty TyOp where
   pretty (RangeOp Closed) = ".."
   pretty (CtrlOp n) = "." <> pretty n
 
-instance Pretty Type1 where
-  pretty (Type1 t2 Nothing cmt) = groupIfNoComments t2 (pretty t2) <> prettyCommentNoBreakWS cmt
-  pretty (Type1 t2 (Just (tyop, t2')) cmt) =
+instance Pretty (Type1 PrettyStage) where
+  pretty (Type1 t2 Nothing (PrettyXTerm cmt)) = groupIfNoComments t2 (pretty t2) <> prettyCommentNoBreakWS cmt
+  pretty (Type1 t2 (Just (tyop, t2')) (PrettyXTerm cmt)) =
     groupIfNoComments t2 (pretty t2)
       <+> pretty tyop
       <+> groupIfNoComments t2' (pretty t2')
       <> prettyCommentNoBreakWS cmt
 
-instance Pretty Type2 where
+instance Pretty (Type2 PrettyStage) where
   pretty (T2Value v) = pretty v
   pretty (T2Name n mg) = pretty n <> pretty mg
   pretty (T2Group g) = cEncloseSep "(" ")" mempty [pretty g]
@@ -131,6 +154,7 @@ instance Pretty Type2 where
       Nothing -> mempty
       Just minor -> "." <> pretty minor
   pretty T2Any = "#"
+  pretty (XXType2 (PrettyXXType2 v)) = absurd v
 
 instance Pretty OccurrenceIndicator where
   pretty OIOptional = "?"
@@ -144,7 +168,7 @@ data GroupRender
   | AsArray
   | AsGroup
 
-memberKeySep :: MemberKey -> Doc ann
+memberKeySep :: MemberKey i -> Doc ann
 memberKeySep MKType {} = " => "
 memberKeySep _ = " : "
 
@@ -165,10 +189,10 @@ groupIfNoComments x
   | not (any (mempty /=) $ collectComments x) = group
   | otherwise = id
 
-columnarGroupChoice :: GrpChoice -> Columnar ann
+columnarGroupChoice :: GrpChoice PrettyStage -> Columnar ann
 columnarGroupChoice (GrpChoice ges _cmt) = Columnar grpEntryRows
   where
-    groupEntryRow (GroupEntry oi cmt gev) =
+    groupEntryRow (GroupEntry oi gev (PrettyXTerm cmt)) =
       Row $
         [maybe emptyCell (\x -> Cell (pretty x <> space) LeftAlign) oi]
           <> groupEntryVariantCells gev
@@ -179,7 +203,7 @@ columnarGroupChoice (GrpChoice ges _cmt) = Columnar grpEntryRows
     groupEntryVariantCells (GEGroup g) = [Cell (prettyGroup AsGroup g) LeftAlign, emptyCell]
     grpEntryRows = groupEntryRow <$> ges
 
-prettyGroup :: GroupRender -> Group -> Doc ann
+prettyGroup :: GroupRender -> Group PrettyStage -> Doc ann
 prettyGroup gr g@(Group (toList -> xs)) =
   groupIfNoComments g . columnarListing (lEnc <> softspace) rEnc "// " . Columnar $
     (\x -> singletonRow . groupIfNoComments x . columnarSepBy "," $ columnarGroupChoice x) <$> xs
@@ -189,10 +213,10 @@ prettyGroup gr g@(Group (toList -> xs)) =
       AsArray -> ("[", "]")
       AsGroup -> ("(", ")")
 
-instance Pretty GroupEntry where
+instance Pretty (GroupEntry PrettyStage) where
   pretty ge = prettyColumnar . columnarGroupChoice $ GrpChoice [ge] mempty
 
-instance Pretty MemberKey where
+instance Pretty (MemberKey PrettyStage) where
   pretty (MKType t1) = pretty t1
   pretty (MKBareword n) = pretty n
   pretty (MKValue v) = pretty v

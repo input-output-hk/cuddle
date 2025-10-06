@@ -9,11 +9,17 @@ import Codec.CBOR.Cuddle.CDDL (
   OccurrenceIndicator,
   RangeBound,
   Value,
+  XCddl,
+  XTerm,
+  XXTopLevel,
+  XXType2,
  )
 import Codec.CBOR.Cuddle.CDDL.CtlOp
-import Codec.CBOR.Cuddle.CDDL.Postlude (PTerm)
+import Codec.CBOR.Cuddle.Comments (Comment)
+import Data.Hashable (Hashable)
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as Map
+import Data.Void (Void)
 import Data.Word (Word64)
 import GHC.Generics (Generic)
 
@@ -28,6 +34,20 @@ import GHC.Generics (Generic)
 --------------------------------------------------------------------------------
 
 type family CTreeExt i
+
+data CTreePhase
+
+newtype instance XTerm CTreePhase = CTreeXTerm Comment
+  deriving (Generic, Show, Eq, Ord, Hashable, Semigroup, Monoid)
+
+newtype instance XXTopLevel CTreePhase = CTreeXXTopLevel Comment
+  deriving (Generic, Show, Eq, Ord, Hashable)
+
+newtype instance XCddl CTreePhase = CTreeXCddl [Comment]
+  deriving (Generic, Show, Eq, Ord, Hashable)
+
+newtype instance XXType2 CTreePhase = CTreeXXType2 Void
+  deriving (Generic, Show, Eq, Ord, Hashable)
 
 data CTree i
   = Literal Value
@@ -77,7 +97,58 @@ traverseCTree atExt _ (CTreeE x) = atExt x
 
 type Node i = CTreeExt i
 
-newtype CTreeRoot i = CTreeRoot (Map.Map Name (CTree i))
+newtype CTreeRoot i = CTreeRoot (Map.Map (Name CTreePhase) (CTree i))
   deriving (Generic)
 
 deriving instance Show (CTree i) => Show (CTreeRoot i)
+
+-- |
+--
+--  CDDL predefines a number of names.  This subsection summarizes these
+--  names, but please see Appendix D for the exact definitions.
+--
+--  The following keywords for primitive datatypes are defined:
+--
+--  "bool"  Boolean value (major type 7, additional information 20
+--    or 21).
+--
+--  "uint"  An unsigned integer (major type 0).
+--
+--  "nint"  A negative integer (major type 1).
+--
+--  "int"  An unsigned integer or a negative integer.
+--
+--  "float16"  A number representable as a half-precision float [IEEE754]
+--    (major type 7, additional information 25).
+--
+--  "float32"  A number representable as a single-precision float
+--    [IEEE754] (major type 7, additional information 26).
+--
+--
+--  "float64"  A number representable as a double-precision float
+--    [IEEE754] (major type 7, additional information 27).
+--
+--  "float"  One of float16, float32, or float64.
+--
+--  "bstr" or "bytes"  A byte string (major type 2).
+--
+--  "tstr" or "text"  Text string (major type 3).
+--
+--  (Note that there are no predefined names for arrays or maps; these
+--  are defined with the syntax given below.)
+data PTerm
+  = PTBool
+  | PTUInt
+  | PTNInt
+  | PTInt
+  | PTHalf
+  | PTFloat
+  | PTDouble
+  | PTBytes
+  | PTText
+  | PTAny
+  | PTNil
+  | PTUndefined
+  deriving (Eq, Generic, Ord, Show)
+
+instance Hashable PTerm

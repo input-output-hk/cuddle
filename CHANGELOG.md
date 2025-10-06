@@ -2,6 +2,12 @@
 
 ## 1.1.0.0
 
+* Change the order of fields in `GroupEntry`; the extension field is now the last field
+* Add `IndexMappable` to help with traversing `CDDL` trees
+* Add an index type parameter to all `CDDL` terms
+* Remove `Codec.CBOR.Cuddle.CDDL.Prelude`
+* Replace `cddlPrelude` with `cddlPostlude`, `prependPrelude` with `appendPostlude`
+* Move `PTerm` to `Codec.CBOR.Cuddle.CDDL.CTree`
 * Remove `CTreeRoot'`
 * Changed the type in `CTreeRoot` to a map of resolved `CTree`s
 * Changed the type of the first argument for `generateCBORTerm` and 

@@ -3,14 +3,14 @@
 module Test.Codec.CBOR.Cuddle.CDDL.Examples (spec) where
 
 import Codec.CBOR.Cuddle.CDDL (Value (..), ValueVariant (..))
-import Codec.CBOR.Cuddle.CDDL.CTree (CTree (..), CTreeRoot)
-import Codec.CBOR.Cuddle.CDDL.Postlude (PTerm (..))
-import Codec.CBOR.Cuddle.CDDL.Prelude (prependPrelude)
+import Codec.CBOR.Cuddle.CDDL.CTree (CTree (..), CTreeRoot, PTerm (..))
+import Codec.CBOR.Cuddle.CDDL.Postlude (appendPostlude)
 import Codec.CBOR.Cuddle.CDDL.Resolve (
   MonoReferenced,
   NameResolutionFailure (..),
   fullResolveCDDL,
  )
+import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
 import Codec.CBOR.Cuddle.Parser (pCDDL)
 import Data.Text.IO qualified as T
 import Paths_cuddle (getDataFileName)
@@ -24,9 +24,9 @@ tryValidateFile filePath = do
   absoluteFilePath <- getDataFileName filePath
   contents <- T.readFile absoluteFilePath
   cddl <- case parse pCDDL "" contents of
-    Right x -> pure $ prependPrelude x
+    Right x -> pure $ appendPostlude x
     Left x -> fail $ "Failed to parse the file:\n" <> errorBundlePretty x
-  pure $ fullResolveCDDL cddl
+  pure . fullResolveCDDL $ mapIndex cddl
 
 validateExpectSuccess :: FilePath -> Spec
 validateExpectSuccess filePath = it ("Successfully validates " <> filePath) $ do
