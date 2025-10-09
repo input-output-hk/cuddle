@@ -340,7 +340,7 @@ instance ForAllExtensions i CollectComments => CollectComments (TypeOrGroup i)
                               field3: bytes,
                               field4: ~time,
                             ]
-
+Group
    (Note that leaving out the first unwrap operator in the latter example would
    lead to nesting the basic-header in its own array inside the advanced-header,
    while, with the unwrapped basic-header, the definition of the group inside

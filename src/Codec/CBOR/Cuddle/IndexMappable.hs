@@ -23,13 +23,6 @@ import Codec.CBOR.Cuddle.CDDL (
   XXTopLevel,
   XXType2,
  )
-import Codec.CBOR.Cuddle.CDDL.CTree (
-  CTreePhase,
-  XCddl (..),
-  XTerm (..),
-  XXTopLevel (..),
-  XXType2 (..),
- )
 import Codec.CBOR.Cuddle.Huddle (HuddleStage, XCddl (..), XTerm (..), XXTopLevel (..), XXType2 (..))
 import Codec.CBOR.Cuddle.Parser (ParserStage, XCddl (..), XTerm (..), XXTopLevel (..), XXType2 (..))
 import Codec.CBOR.Cuddle.Pretty (PrettyStage, XCddl (..), XTerm (..), XXTopLevel (..))
@@ -185,20 +178,6 @@ instance IndexMappable XXType2 ParserStage PrettyStage where
 
 instance IndexMappable XXTopLevel ParserStage PrettyStage where
   mapIndex (ParserXXTopLevel c) = PrettyXXTopLevel c
-
--- ParserStage -> CTreePhase
-
-instance IndexMappable XCddl ParserStage CTreePhase where
-  mapIndex (ParserXCddl c) = CTreeXCddl c
-
-instance IndexMappable XXTopLevel ParserStage CTreePhase where
-  mapIndex (ParserXXTopLevel c) = CTreeXXTopLevel c
-
-instance IndexMappable XXType2 ParserStage CTreePhase where
-  mapIndex (ParserXXType2 c) = CTreeXXType2 c
-
-instance IndexMappable XTerm ParserStage CTreePhase where
-  mapIndex (ParserXTerm c) = CTreeXTerm c
 
 -- ParserStage -> HuddleStage
 
