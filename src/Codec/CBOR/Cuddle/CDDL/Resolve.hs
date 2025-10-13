@@ -68,17 +68,16 @@ import Codec.CBOR.Cuddle.CDDL (
   cddlTopLevel,
  )
 import Codec.CBOR.Cuddle.CDDL.Postlude (PTerm (..))
+import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
 import Control.Monad.Except (ExceptT (..), runExceptT)
 import Control.Monad.Reader (Reader, ReaderT (..), runReader)
 import Control.Monad.State.Strict (StateT (..))
+import Data.Bifunctor (Bifunctor (..))
+import Data.Foldable (Foldable (..))
 import Data.Generics.Product
 import Data.Generics.Sum
 import Data.Hashable
-#if __GLASGOW_HASKELL__ < 910
-import Data.List (foldl')
-#endif
-import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
-import Data.Bifunctor (Bifunctor (..))
+import Data.List.NonEmpty (NonEmpty (..))
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
@@ -168,7 +167,9 @@ newtype instance XXTopLevel OrReferenced = OrReferencedXXTopLevel Void
 -- | Indicates that an item may be referenced rather than defined.
 data instance XXType2 OrReferenced
   = -- | Reference to another node with possible generic arguments supplied
-    Ref (Name OrReferenced) [TypeOrGroup OrReferenced]
+    --   The boolean field determines whether the reference should be unwrapped
+    Ref Bool (Name OrReferenced) [Type1 OrReferenced]
+  | OrPostlude PTerm
   deriving (Eq, Show)
 
 type RefCTree = PartialCTreeRoot OrReferenced
@@ -184,42 +185,45 @@ buildRefCTree rules = PartialCTreeRoot $ bimap mapIndex toCTreeRule rules
     toCTreeRule ::
       ProvidedParameters i ->
       ProvidedParameters OrReferenced
-    toCTreeRule (ProvidedParameters ns t) = ProvidedParameters (undefined <$> ns) (toCTreeTOG t)
+    toCTreeRule (ProvidedParameters ns t) = ProvidedParameters (mapIndex <$> ns) (toCTreeTOG t)
 
     toCTreeTOG :: TypeOrGroup i -> TypeOrGroup OrReferenced
     toCTreeTOG (TOGType t0) = TOGType $ toCTreeT0 t0
     toCTreeTOG (TOGGroup ge) = TOGGroup $ toCTreeGroupEntry ge
 
     toCTreeT0 :: Type0 i -> Type0 OrReferenced
-    toCTreeT0 (Type0 ts) = Type0 $ toCTreeT1 <$> ts
+    toCTreeT0 (Type0 xs) = foldMap (Type0 . toCTreeT1) xs
 
-    toCTreeT1 :: Type1 i -> Type1 OrReferenced
-    toCTreeT1 (Type1 t mr e) = Type1 (toCTreeT2 t) (second toCTreeT2 <$> mr) (mapIndex e)
+    toCTreeT1 :: Type1 i -> NonEmpty (Type1 OrReferenced)
+    toCTreeT1 (Type1 t mr _) = (\x y -> Type1 x y mempty) <$> t' <*> r'
+      where
+        t' = toCTreeT2 t
+        r' = case mr of
+          Just (op, x) -> Just . (op,) <$> toCTreeT2 x
+          Nothing -> NE.singleton Nothing
 
-    toCTreeT2 :: Type2 i -> Type2 OrReferenced
-    toCTreeT2 (T2Value v) = T2Value v
-    toCTreeT2 (T2Name n garg) = XXType2 $ Ref (mapIndex n) (fromGenArgs garg)
+    toCTreeT2 :: Type2 i -> NonEmpty (Type2 OrReferenced)
+    toCTreeT2 (T2Value v) = NE.singleton $ T2Value v
+    toCTreeT2 (T2Name n garg) = NE.singleton . XXType2 $ Ref False (mapIndex n) (fromGenArgs garg)
     toCTreeT2 (T2Group t0) =
       -- This behaviour seems questionable, but I don't really see how better to
       -- interpret the spec here.
-      T2Group $ toCTreeT0 t0
-    toCTreeT2 (T2Map g) = T2Map $ toCTreeMap g
-    toCTreeT2 (T2Array g) = T2Array $ toCTreeArray g
+      NE.singleton . T2Group $ toCTreeT0 t0
+    toCTreeT2 (T2Map g) = liftChoice T2Map g
+    toCTreeT2 (T2Array g) = liftChoice T2Map g
     toCTreeT2 (T2Unwrapped n margs) =
-      undefined
-    -- CTree.Unwrap . CTreeE $
-    --  Ref n (fromGenArgs margs)
-    toCTreeT2 (T2Enum g) = T2Enum $ toCTreeEnum g
-    toCTreeT2 (T2EnumRef n margs) = XXType2 . Ref (mapIndex n) $ fromGenArgs margs
+      NE.singleton . XXType2 $ Ref True (mapIndex n) (fromGenArgs margs)
+    toCTreeT2 (T2Enum g) = NE.singleton . T2Enum $ toCTreeEnum g
+    toCTreeT2 (T2EnumRef n margs) = NE.singleton . XXType2 . Ref False (mapIndex n) $ fromGenArgs margs
     toCTreeT2 (T2Tag mtag t0) =
       -- Currently not validating tags
-      T2Tag mtag $ toCTreeT0 t0
+      NE.singleton . T2Tag mtag $ toCTreeT0 t0
     toCTreeT2 (T2DataItem 7 (Just mmin)) =
-      toCTreeDataItem mmin
+      NE.singleton $ toCTreeDataItem mmin
     toCTreeT2 (T2DataItem _maj _mmin) =
       -- We don't validate numerical items yet
-      T2Any
-    toCTreeT2 T2Any = T2Any
+      NE.singleton T2Any
+    toCTreeT2 T2Any = NE.singleton T2Any
     toCTreeT2 (XXType2 x) = undefined
 
     toCTreeDataItem :: Word64 -> Type2 OrReferenced
@@ -228,13 +232,13 @@ buildRefCTree rules = PartialCTreeRoot $ bimap mapIndex toCTreeRule rules
     toCTreeDataItem 21 =
       T2Value $ Value (VBool True) mempty
     toCTreeDataItem 25 =
-      CTree.Postlude PTHalf
+      XXType2 $ OrPostlude PTHalf
     toCTreeDataItem 26 =
-      CTree.Postlude PTFloat
+      XXType2 $ OrPostlude PTFloat
     toCTreeDataItem 27 =
-      CTree.Postlude PTDouble
+      XXType2 $ OrPostlude PTDouble
     toCTreeDataItem 23 =
-      CTree.Postlude PTUndefined
+      XXType2 $ OrPostlude PTUndefined
     toCTreeDataItem _ =
       T2Any
 
@@ -259,25 +263,24 @@ buildRefCTree rules = PartialCTreeRoot $ bimap mapIndex toCTreeRule rules
     --    }
     -- toCTreeGroupEntry (GroupEntry Nothing (GEGroup g) _) = groupToGroup g
 
-    fromGenArgs :: Maybe (GenericArg i) -> [TypeOrGroup OrReferenced]
-    fromGenArgs = maybe [] (\(GenericArg xs) -> NE.toList $ fmap (undefined . toCTreeT1) xs)
+    fromGenArgs :: Maybe (GenericArg i) -> [Type1 OrReferenced]
+    fromGenArgs = maybe [] (\(GenericArg xs) -> NE.toList $ foldMap toCTreeT1 xs)
 
     -- Interpret a group as an enumeration. Note that we float out the
     -- choice options
     toCTreeEnum :: Group i -> Group OrReferenced
-    toCTreeEnum (Group (a NE.:| [])) =
-      undefined -- CTree.Enum . CTree.Group $ toCTreeGroupEntry <$> gcGroupEntries a
-    toCTreeEnum (Group xs) =
-      undefined -- CTree.Choice $ CTree.Enum . CTree.Group . fmap toCTreeGroupEntry <$> groupEntries
-      where
-        groupEntries = fmap gcGroupEntries xs
+    toCTreeEnum g = undefined $ liftChoice T2Enum g
+    -- CTree.Enum . CTree.Group $ toCTreeGroupEntry <$> gcGroupEntries a
+    -- CTree.Choice $ CTree.Enum . CTree.Group . fmap toCTreeGroupEntry <$> groupEntries
+    -- where
+    --   groupEntries = fmap gcGroupEntries xs
 
     -- Embed a group in another group, again floating out the choice options
     groupToGroup :: Group i -> Group OrReferenced
-    groupToGroup (Group (a NE.:| [])) =
-      undefined -- Group $ fmap toCTreeGroupEntry (gcGroupEntries a)
-    groupToGroup (Group xs) =
-      undefined -- CTree.Choice $ fmap (Group . fmap toCTreeGroupEntry) (gcGroupEntries <$> xs)
+    groupToGroup g =
+      Group . fmap (\x -> GrpChoice [GroupEntry Nothing undefined mempty] mempty) $
+        liftChoice undefined g
+
     toKVPair :: Maybe (MemberKey i) -> Type0 i -> TypeOrGroup OrReferenced
     toKVPair = undefined
     -- toKVPair Nothing t0 = toCTreeT0 t0
@@ -290,37 +293,15 @@ buildRefCTree rules = PartialCTreeRoot $ bimap mapIndex toCTreeRule rules
     --    }
 
     -- Interpret a group as a map. Note that we float out the choice options
-    toCTreeMap :: Group i -> Type0 OrReferenced
-    -- toCTreeMap (Group (a NE.:| [])) = CTree.Map $ fmap toCTreeGroupEntry (gcGroupEntries a)
-    toCTreeMap (Group xs) =
-      Type0 $
-        xs <&> \(GrpChoice ges c) ->
-          Type1
-            (T2Map . Group . NE.singleton $ GrpChoice (toCTreeGroupEntry <$> ges) (mapIndex c))
-            Nothing
-            mempty
-    -- fmap (CTree.Map . fmap toCTreeGroupEntry . gcGroupEntries) xs
+    liftChoice :: (Group OrReferenced -> Type2 OrReferenced) -> Group i -> NonEmpty (Type2 OrReferenced)
+    liftChoice f (Group xs) =
+      xs <&> \(GrpChoice ges c) ->
+        f . Group . NE.singleton $ GrpChoice (toCTreeGroupEntry <$> ges) (mapIndex c)
 
-    -- Interpret a group as an array. Note that we float out the choice
-    -- options
-    toCTreeArray :: Group i -> Type0 OrReferenced
-    toCTreeArray (Group xs) =
-      Type0 $
-        xs <&> \(GrpChoice ges c) ->
-          Type1
-            (T2Array . Group . NE.singleton $ GrpChoice (toCTreeGroupEntry <$> ges) (mapIndex c))
-            Nothing
-            mempty
-    -- toCTreeArray (Group (a NE.:| [])) =
-    --  CTree.Array $ fmap toCTreeGroupEntry (gcGroupEntries a)
-    -- toCTreeArray (Group xs) =
-    --  CTree.Choice $
-    --    fmap (CTree.Array . fmap toCTreeGroupEntry) (gcGroupEntries <$> xs)
-
-    toCTreeMemberKey :: MemberKey i -> Type2 OrReferenced
-    toCTreeMemberKey (MKValue v) = T2Value v
-    toCTreeMemberKey (MKBareword (Name n _)) = T2Value (Value (VText n) mempty)
-    toCTreeMemberKey (MKType t1) = undefined . MKType $ toCTreeT1 t1
+    toCTreeMemberKey :: MemberKey i -> MemberKey OrReferenced
+    toCTreeMemberKey (MKValue v) = MKValue v
+    toCTreeMemberKey (MKBareword n) = MKBareword $ mapIndex n
+    toCTreeMemberKey (MKType t1) = undefined $ MKType <$> toCTreeT1 t1
 
 --------------------------------------------------------------------------------
 -- 3. Name resolution
@@ -356,7 +337,7 @@ postludeBinding =
 data BindingEnv i j = BindingEnv
   { global :: Map.Map (Name i) (ProvidedParameters i)
   -- ^ Global name bindings via 'RuleDef'
-  , local :: Map.Map (Name j) (TypeOrGroup j)
+  , local :: Map.Map (Name j) (Type1 j)
   -- ^ Local bindings for generic parameters
   }
   deriving (Generic)
@@ -377,6 +358,7 @@ data instance XXType2 DistReferenced
     GenericRef (Name DistReferenced)
   | -- | Reference to a rule definition, possibly with generic arguments
     RuleRef (Name DistReferenced) [TypeOrGroup DistReferenced]
+  | DistPostlude PTerm
   deriving (Eq, Generic, Show)
 
 instance Hashable (TypeOrGroup DistReferenced)
@@ -391,29 +373,36 @@ resolveRef ::
   BindingEnv OrReferenced OrReferenced ->
   XXType2 OrReferenced ->
   Either NameResolutionFailure (TypeOrGroup DistReferenced)
-resolveRef env (Ref n args) = case Map.lookup n postludeBinding of
-  Just pterm -> case args of
-    [] -> Right $ CTree.Postlude pterm
-    xs -> Left $ ArgsToPostlude pterm xs
-  Nothing -> case Map.lookup n (global env) of
-    Just (parameters -> params') ->
-      if length params' == length args
-        then
-          let localBinds = Map.fromList $ zip params' args
-              newEnv = env & #local %~ Map.union localBinds
-           in Right . TOGType . Type0 . NE.singleton $
-                Type1
-                  (XXType2 . RuleRef (mapIndex n) <$> traverse (resolveCTree newEnv) args)
-                  undefined
-                  undefined
-        else Left $ MismatchingArgs n params'
-    Nothing -> case Map.lookup n (local env) of
-      Just _ -> Right . CTreeE $ GenericRef n
-      Nothing -> Left $ UnboundReference n
+resolveRef env = \case
+  Ref unwrap n args -> resolveRef_ unwrap n args
+  OrPostlude t -> undefined t
+  where
+    resolveRef_ ::
+      Bool ->
+      Name OrReferenced ->
+      [Type1 OrReferenced] ->
+      Either NameResolutionFailure (TypeOrGroup DistReferenced)
+    resolveRef_ unwrap n args = case Map.lookup n postludeBinding of
+      Just pterm -> case args of
+        [] -> Right . undefined . XXType2 $ DistPostlude pterm
+        xs -> Left $ ArgsToPostlude pterm $ undefined xs
+      Nothing -> case Map.lookup n (global env) of
+        Just (parameters -> params') ->
+          if length params' == length args
+            then do
+              let localBinds = Map.fromList $ zip params' args
+                  newEnv = env & #local %~ Map.union localBinds
+              ref <- XXType2 . RuleRef (mapIndex n) <$> traverse (resolveCTree newEnv) args
+              Right . TOGType . Type0 . NE.singleton $
+                Type1 ref Nothing mempty
+            else Left $ MismatchingArgs n params'
+        Nothing -> case Map.lookup n (local env) of
+          Just _ -> Right . undefined . XXType2 $ GenericRef (mapIndex n)
+          Nothing -> Left $ UnboundReference n
 
 resolveCTree ::
   BindingEnv OrReferenced OrReferenced ->
-  TypeOrGroup OrReferenced ->
+  Type1 OrReferenced ->
   Either NameResolutionFailure (TypeOrGroup DistReferenced)
 resolveCTree e = CTree.traverseCTree (resolveRef e) (resolveCTree e)
 
