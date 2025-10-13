@@ -29,7 +29,7 @@ import Data.List.NonEmpty qualified as NE
 import Data.String (IsString, fromString)
 import Data.Text qualified as T
 import Data.TreeDiff (ToExpr)
-import Data.Void (Void, absurd)
+import Data.Void (Void)
 import GHC.Generics (Generic)
 import Optics.Core ((^.))
 import Prettyprinter

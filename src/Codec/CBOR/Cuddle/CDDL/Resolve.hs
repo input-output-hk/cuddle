@@ -67,7 +67,6 @@ import Codec.CBOR.Cuddle.CDDL (
   XXType2,
   cddlTopLevel,
  )
-import Codec.CBOR.Cuddle.CDDL.Postlude (PTerm (..))
 import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
 import Control.Monad.Except (ExceptT (..), runExceptT)
 import Control.Monad.Reader (Reader, ReaderT (..), runReader)
@@ -224,7 +223,7 @@ buildRefCTree rules = PartialCTreeRoot $ bimap mapIndex toCTreeRule rules
       -- We don't validate numerical items yet
       NE.singleton T2Any
     toCTreeT2 T2Any = NE.singleton T2Any
-    toCTreeT2 (XXType2 x) = undefined
+    toCTreeT2 x@(XXType2 _) = NE.singleton $ mapIndex x
 
     toCTreeDataItem :: Word64 -> Type2 OrReferenced
     toCTreeDataItem 20 =
@@ -404,18 +403,20 @@ resolveCTree ::
   BindingEnv OrReferenced OrReferenced ->
   Type1 OrReferenced ->
   Either NameResolutionFailure (TypeOrGroup DistReferenced)
-resolveCTree e = CTree.traverseCTree (resolveRef e) (resolveCTree e)
+resolveCTree e = undefined -- CTree.traverseCTree (resolveRef e) (resolveCTree e)
 
 buildResolvedCTree ::
   PartialCTreeRoot OrReferenced ->
   Either NameResolutionFailure (PartialCTreeRoot DistReferenced)
-buildResolvedCTree (PartialCTreeRoot ct) = PartialCTreeRoot <$> traverse go ct
+buildResolvedCTree (PartialCTreeRoot ct) = undefined -- PartialCTreeRoot <$> traverse go ct
   where
     go pn =
-      let args = parameters pn
-          localBinds = Map.fromList $ zip args (CTreeE . flip Ref [] <$> args)
+      let argNames = parameters pn
+          argTerms = (\x -> Type1 x Nothing mempty) . XXType2 . (\n -> Ref False n []) <$> argNames
+          localBinds =
+            Map.fromList $ zip argNames argTerms
           env = BindingEnv @OrReferenced @OrReferenced ct localBinds
-       in traverse (resolveCTree env) pn
+       in undefined pn -- traverse (resolveCTree env) pn
 
 --------------------------------------------------------------------------------
 -- 4. Monomorphisation
@@ -458,10 +459,10 @@ newtype MonoM a = MonoM
   deriving
     ( HasSource
         "local"
-        (Map.Map (Name MonoReferenced) (TypeOrGroup MonoReferenced))
+        (Map.Map (Name MonoReferenced) (Type1 MonoReferenced))
     , HasReader
         "local"
-        (Map.Map (Name MonoReferenced) (TypeOrGroup MonoReferenced))
+        (Map.Map (Name MonoReferenced) (Type1 MonoReferenced))
     )
     via Field
           "local"
@@ -504,7 +505,7 @@ throwNR :: NameResolutionFailure -> MonoM a
 throwNR = throw @"nameResolution"
 
 -- | Synthesize a monomorphic rule definition, returning the name
-synthMono :: Name DistReferenced -> [TypeOrGroup DistReferenced] -> MonoM (Name phase)
+synthMono :: Name DistReferenced -> [TypeOrGroup DistReferenced] -> MonoM (Name MonoReferenced)
 synthMono n@(Name origName _) args =
   let fresh =
         -- % is not a valid CBOR name, so this should avoid conflict
@@ -517,32 +518,33 @@ synthMono n@(Name origName _) args =
           Just (ProvidedParameters params' r) ->
             if length params' == length args
               then do
-                rargs <- traverse resolveGenericCTree args
+                rargs <- undefined -- traverse resolveGenericCTree args
                 let localBinds = Map.fromList $ zip params' rargs
                 Reader.local @"local" (Map.union localBinds) $ do
                   foo <- resolveGenericCTree r
                   modify @"synth" $ Map.insert fresh foo
-              else throwNR $ MismatchingArgs n params'
-          Nothing -> throwNR $ UnboundReference n
+              else throwNR $ MismatchingArgs (mapIndex n) params'
+          Nothing -> throwNR $ UnboundReference (mapIndex n)
         pure fresh
 
 resolveGenericRef ::
   XXType2 DistReferenced ->
   MonoM (TypeOrGroup MonoReferenced)
-resolveGenericRef (RuleRef n []) = pure . CTreeE $ MRuleRef n
+resolveGenericRef (RuleRef n []) = pure . undefined $ MRuleRef n
 resolveGenericRef (RuleRef n args) = do
   fresh <- synthMono n args
-  pure . CTreeE $ MRuleRef fresh
+  pure . TOGType . Type0 . NE.singleton $ Type1 (XXType2 $ MRuleRef fresh) Nothing mempty
 resolveGenericRef (GenericRef n) = do
   localBinds <- ask @"local"
   case Map.lookup n localBinds of
     Just node -> pure node
     Nothing -> throwNR $ UnboundReference n
+resolveGenericRef (DistPostlude _) = undefined
 
 resolveGenericCTree ::
   TypeOrGroup DistReferenced ->
   MonoM (TypeOrGroup MonoReferenced)
-resolveGenericCTree = CTree.traverseCTree resolveGenericRef resolveGenericCTree
+resolveGenericCTree = undefined -- CTree.traverseCTree resolveGenericRef resolveGenericCTree
 
 data CTreeRoot i = CTreeRoot
 
@@ -579,3 +581,54 @@ fullResolveCDDL cddl = do
   let refCTree = buildRefCTree (asMap cddl)
   rCTree <- buildResolvedCTree refCTree
   buildMonoCTree rCTree
+
+-- |
+--
+--  CDDL predefines a number of names.  This subsection summarizes these
+--  names, but please see Appendix D for the exact definitions.
+--
+--  The following keywords for primitive datatypes are defined:
+--
+--  "bool"  Boolean value (major type 7, additional information 20
+--    or 21).
+--
+--  "uint"  An unsigned integer (major type 0).
+--
+--  "nint"  A negative integer (major type 1).
+--
+--  "int"  An unsigned integer or a negative integer.
+--
+--  "float16"  A number representable as a half-precision float [IEEE754]
+--    (major type 7, additional information 25).
+--
+--  "float32"  A number representable as a single-precision float
+--    [IEEE754] (major type 7, additional information 26).
+--
+--
+--  "float64"  A number representable as a double-precision float
+--    [IEEE754] (major type 7, additional information 27).
+--
+--  "float"  One of float16, float32, or float64.
+--
+--  "bstr" or "bytes"  A byte string (major type 2).
+--
+--  "tstr" or "text"  Text string (major type 3).
+--
+--  (Note that there are no predefined names for arrays or maps; these
+--  are defined with the syntax given below.)
+data PTerm
+  = PTBool
+  | PTUInt
+  | PTNInt
+  | PTInt
+  | PTHalf
+  | PTFloat
+  | PTDouble
+  | PTBytes
+  | PTText
+  | PTAny
+  | PTNil
+  | PTUndefined
+  deriving (Eq, Generic, Ord, Show)
+
+instance Hashable PTerm
