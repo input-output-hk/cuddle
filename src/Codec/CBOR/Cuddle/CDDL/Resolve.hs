@@ -134,13 +134,13 @@ asMap cddl = foldl' go Map.empty rules
 
 data OrReferenced
 
-type instance CTreeExt OrReferenced = OrRef (CTree OrReferenced)
+type instance CTreeExt OrReferenced = OrRef
 
 -- | Indicates that an item may be referenced rather than defined.
-data OrRef a
+data OrRef
   = -- | Reference to another node with possible generic arguments supplied
     Ref Name [CTree OrReferenced]
-  deriving (Eq, Show, Functor)
+  deriving (Eq, Show)
 
 type RefCTree = PartialCTreeRoot OrReferenced
 
@@ -305,7 +305,7 @@ data NameResolutionFailure
   | ArgsToPostlude PTerm [CTree OrReferenced]
   deriving (Show)
 
-deriving instance Eq (CTree.Node OrReferenced) => Eq NameResolutionFailure
+deriving instance Eq NameResolutionFailure
 
 postludeBinding :: Map.Map Name PTerm
 postludeBinding =
