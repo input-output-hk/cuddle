@@ -22,6 +22,9 @@ category: Codec
 build-type: Simple
 extra-doc-files: CHANGELOG.md
 tested-with: ghc ==9.6 || ==9.8 || ==9.10 || ==9.12
+data-files:
+  example/cddl-files/*.cddl
+  example/cddl-files/validator/negative/*.cddl
 
 source-repository head
   type: git
