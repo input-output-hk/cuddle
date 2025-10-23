@@ -13,6 +13,7 @@ import Codec.CBOR.Cuddle.CDDL.Resolve (
  )
 import Codec.CBOR.Cuddle.Parser (pCDDL)
 import Data.Text.IO qualified as T
+import Paths_cuddle (getDataFileName)
 import Test.HUnit (assertFailure)
 import Test.Hspec
 import Text.Megaparsec (parse)
@@ -20,7 +21,8 @@ import Text.Megaparsec.Error (errorBundlePretty)
 
 tryValidateFile :: FilePath -> IO (Either NameResolutionFailure (CTreeRoot MonoReferenced))
 tryValidateFile filePath = do
-  contents <- T.readFile filePath
+  absoluteFilePath <- getDataFileName filePath
+  contents <- T.readFile absoluteFilePath
   cddl <- case parse pCDDL "" contents of
     Right x -> pure $ prependPrelude x
     Left x -> fail $ "Failed to parse the file:\n" <> errorBundlePretty x

@@ -137,6 +137,7 @@ test-suite cuddle-test
   import: warnings
   default-language: GHC2021
   other-modules:
+    Paths_cuddle
     Test.Codec.CBOR.Cuddle.CDDL.Examples
     Test.Codec.CBOR.Cuddle.CDDL.Gen
     Test.Codec.CBOR.Cuddle.CDDL.Parser
