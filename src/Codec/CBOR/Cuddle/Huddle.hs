@@ -3,6 +3,7 @@
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeFamilies #-}
 
 -- | Module for building CDDL in Haskell
@@ -99,6 +100,7 @@ import Data.List qualified as L
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Ordered.Strict (OMap, (|<>))
 import Data.Map.Ordered.Strict qualified as OMap
+import Data.Set qualified as Set
 import Data.String (IsString (fromString))
 import Data.Text qualified as T
 import Data.Tuple.Optics (Field2 (..))
@@ -1061,24 +1063,53 @@ collectFromInit rules =
 -- Conversion to CDDL
 --------------------------------------------------------------------------------
 
+data HuddleConfig = HuddleConfig
+  { hcMakePseudoRoot :: Bool
+  , hcFailOnDuplicateDefinitions :: Bool
+  }
+
+defaultHuddleConfig :: HuddleConfig
+defaultHuddleConfig =
+  HuddleConfig
+    { hcMakePseudoRoot = True
+    , hcFailOnDuplicateDefinitions = True
+    }
+
 -- | Convert from Huddle to CDDL, generating a top level root element.
 toCDDL :: Huddle -> CDDL
-toCDDL = toCDDL' True
+toCDDL = toCDDL' defaultHuddleConfig
 
 -- | Convert from Huddle to CDDL, skipping a root element.
 toCDDLNoRoot :: Huddle -> CDDL
-toCDDLNoRoot = toCDDL' False
+toCDDLNoRoot =
+  toCDDL'
+    defaultHuddleConfig
+      { hcMakePseudoRoot = False
+      }
 
 -- | Convert from Huddle to CDDL for the purpose of pretty-printing.
-toCDDL' :: Bool -> Huddle -> CDDL
-toCDDL' mkPseudoRoot hdl =
+toCDDL' :: HuddleConfig -> Huddle -> CDDL
+toCDDL' HuddleConfig {..} hdl =
   C.fromRules
-    $ ( if mkPseudoRoot
-          then (toTopLevelPseudoRoot (roots hdl) NE.<|)
-          else id
-      )
+    . failOnDuplicate
+    . makePseudoRoot
     $ fmap toCDDLItem (NE.fromList $ fmap (view _2) $ toList $ items hdl)
   where
+    makePseudoRoot
+      | hcMakePseudoRoot = (toTopLevelPseudoRoot (roots hdl) NE.<|)
+      | otherwise = id
+
+    failOnDuplicate rs
+      | hcFailOnDuplicateDefinitions = go mempty $ toList rs
+      | otherwise = rs
+      where
+        go _ [] = rs
+        go s (x : xs)
+          | n `Set.member` s = error . T.unpack $ "Duplicate definitions found for '" <> n <> "'"
+          | otherwise = go (Set.insert n s) xs
+          where
+            n = C.name (C.ruleName x)
+
     toCDDLItem (HIRule r) = toCDDLRule r
     toCDDLItem (HIGroup g) = toCDDLGroup g
     toCDDLItem (HIGRule g) = toGenRuleDef g
