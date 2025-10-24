@@ -44,7 +44,6 @@ library
     Codec.CBOR.Cuddle.CBOR.Gen
     Codec.CBOR.Cuddle.CBOR.Validator
     Codec.CBOR.Cuddle.CDDL
-    Codec.CBOR.Cuddle.CDDL.CTree
     Codec.CBOR.Cuddle.CDDL.CtlOp
     Codec.CBOR.Cuddle.CDDL.Postlude
     Codec.CBOR.Cuddle.CDDL.Resolve
