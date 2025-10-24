@@ -2,11 +2,13 @@
 
 Cuddle is a library for generating and manipulating [CDDL](https://datatracker.ietf.org/doc/html/rfc8610).
 
-<p align="center">
-  <a href="https://github.com/input-output-hk/cuddle/actions/workflows/ci.yml">
-    <img alt="GitHub Workflow Status (master)" src="https://img.shields.io/github/actions/workflow/status/input-output-hk/cuddle/ci.yml?branch=master&style=for-the-badge" />
-  </a>
-</p>
+| Language | Github Actions | Coveralls |
+|:--------:|:--------------:|:---------:|
+| ![GitHub top language](https://img.shields.io/github/languages/top/input-output-hk/cuddle.svg) | [![Build Status](https://github.com/input-output-hk/cuddle/actions/workflows/ci.yaml/badge.svg?branch=master)](https://github.com/input-output-hk/cuddle/actions/workflows/ci.yaml) | [![Coverage Status](https://coveralls.io/repos/github/input-output-hk/cuddle/badge.svg?branch=master)](https://coveralls.io/github/input-output-hk/cuddle?branch=master)
+
+|    Github Repo     | Hackage | Nightly | LTS |
+|:-------------------|:-------:|:-------:|:---:|
+|  [`cuddle`](https://github.com/input-output-hk/cuddle)| [![Hackage](https://img.shields.io/hackage/v/cuddle.svg)](https://hackage.haskell.org/package/cuddle)| [![Nightly](https://www.stackage.org/package/cuddle/badge/nightly)](https://www.stackage.org/nightly/package/cuddle)| [![LTS](https://www.stackage.org/package/cuddle/badge/lts)](https://www.stackage.org/lts/package/cuddle)
 
 ## Supported features
 

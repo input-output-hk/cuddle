@@ -1,6 +1,6 @@
 cabal-version: 3.4
 name: cuddle
-version: 1.0.0.0
+version: 1.1.0.0
 synopsis: CDDL Generator and test utilities
 description:
   Cuddle is a library for generating and manipulating [CDDL](https://datatracker.ietf.org/doc/html/rfc8610).
@@ -22,15 +22,13 @@ category: Codec
 build-type: Simple
 extra-doc-files: CHANGELOG.md
 tested-with: ghc ==9.6 || ==9.8 || ==9.10 || ==9.12
+data-files:
+  example/cddl-files/*.cddl
+  example/cddl-files/validator/negative/*.cddl
 
 source-repository head
   type: git
   location: https://github.com/input-output-hk/cuddle
-
-source-repository this
-  type: git
-  location: https://github.com/input-output-hk/cuddle
-  tag: cuddle-0.5.0.0
 
 flag example
   description: Enable the example executable
@@ -134,6 +132,7 @@ test-suite cuddle-test
   import: warnings
   default-language: GHC2021
   other-modules:
+    Paths_cuddle
     Test.Codec.CBOR.Cuddle.CDDL.Examples
     Test.Codec.CBOR.Cuddle.CDDL.Gen
     Test.Codec.CBOR.Cuddle.CDDL.Parser
