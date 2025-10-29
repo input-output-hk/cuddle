@@ -5,6 +5,8 @@
 module Codec.CBOR.Cuddle.CBOR.Validator (
   validateCBOR,
   validateCBOR',
+  CDDLResult (..),
+  CBORTermResult (..),
 ) where
 
 import Codec.CBOR.Cuddle.CDDL hiding (CDDL, Group, Rule)
