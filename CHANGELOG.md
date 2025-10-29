@@ -13,7 +13,7 @@
 * Changed the type of the first argument for `generateCBORTerm` and 
   `generateCBORTerm'` to `CTreeRoot`
 * Removed all exports in `Codec.CBOR.Cuddle.CBOR.Validator` except for 
-  `validateCBOR` and `validateCBOR'`
+  `validateCBOR`, `validateCBOR'`, `CBORTermResult` and `CDDLResult`
 
 ## 1.0.0.0
 
