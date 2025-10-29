@@ -2,7 +2,9 @@
 
 ## 1.1.0.0
 
-* Implement `IndexMappable` instance for `HuddleStage` to `CTreePhase`
+* Implement `IndexMappable` instance for
+  - `HuddleStage` to `CTreePhase`
+  - `HuddleStage` to `PrettyStage`
 * Change the order of fields in `GroupEntry`; the extension field is now the last field
 * Add `IndexMappable` to help with traversing `CDDL` trees
 * Add an index type parameter to all `CDDL` terms
