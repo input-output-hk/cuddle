@@ -214,6 +214,20 @@ instance IndexMappable XXType2 ParserStage HuddleStage where
 instance IndexMappable XTerm ParserStage HuddleStage where
   mapIndex (ParserXTerm c) = HuddleXTerm c
 
+-- HuddleStage -> CTreePhase
+
+instance IndexMappable XCddl HuddleStage CTreePhase where
+  mapIndex (HuddleXCddl c) = CTreeXCddl c
+
+instance IndexMappable XXTopLevel HuddleStage CTreePhase where
+  mapIndex (HuddleXXTopLevel c) = CTreeXXTopLevel c
+
+instance IndexMappable XXType2 HuddleStage CTreePhase where
+  mapIndex (HuddleXXType2 c) = CTreeXXType2 c
+
+instance IndexMappable XTerm HuddleStage CTreePhase where
+  mapIndex (HuddleXTerm c) = CTreeXTerm c
+
 -- ParserStage -> ParserStage
 
 instance IndexMappable XCddl ParserStage ParserStage
