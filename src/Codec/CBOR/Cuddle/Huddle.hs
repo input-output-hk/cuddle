@@ -97,7 +97,6 @@ import Codec.CBOR.Cuddle.CDDL (CDDL)
 import Codec.CBOR.Cuddle.CDDL qualified as C
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
 import Codec.CBOR.Cuddle.Comments qualified as C
-import Control.Monad (when)
 import Control.Monad.State (MonadState (get), execState, modify)
 import Data.ByteString (ByteString)
 import Data.Default.Class (Default (..))
@@ -1017,6 +1016,12 @@ collectFrom topRs =
       (traverse goHuddleItem topRs)
       OMap.empty
   where
+    whenNotDefined n m = do
+      items <- get
+      if OMap.notMember n items
+        then m
+        else error $ "Duplicate definitions found: " <> show n
+
     toHuddle items =
       Huddle
         { roots = concatMap hiRule topRs
@@ -1026,16 +1031,14 @@ collectFrom topRs =
     goHuddleItem (HIGroup g) = goNamedGroup g
     goHuddleItem (HIGRule (Named _ (GRule _ t0) _)) = goT0 t0
     goRule r@(Named n t0 _) = do
-      items <- get
-      when (OMap.notMember n items) $ do
+      whenNotDefined n $ do
         modify (OMap.|> (n, HIRule r))
         goT0 t0
     goChoice f (NoChoice x) = f x
     goChoice f (ChoiceOf x xs) = f x >> goChoice f xs
     goT0 = goChoice goT2
     goNamedGroup r@(Named n g _) = do
-      items <- get
-      when (OMap.notMember n items) $ do
+      whenNotDefined n $ do
         modify (OMap.|> (n, HIGroup r))
         goGroup g
     goGRule r@(Named n g _) = do
