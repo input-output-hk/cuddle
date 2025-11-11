@@ -1,5 +1,6 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedLabels #-}
@@ -46,6 +47,7 @@ import Capability.State (HasState, MonadState (..), modify)
 import Codec.CBOR.Cuddle.CDDL (
   Assign (..),
   CDDL,
+  ForAllExtensions,
   GenericArg (..),
   GenericParam (..),
   Group (..),
@@ -71,8 +73,8 @@ import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
 import Control.Monad.Except (ExceptT (..), runExceptT)
 import Control.Monad.Reader (Reader, ReaderT (..), runReader)
 import Control.Monad.State.Strict (StateT (..))
-import Data.Bifunctor (Bifunctor (..))
 import Data.Foldable (Foldable (..))
+import Data.Foldable1 (Foldable1 (..))
 import Data.Generics.Product
 import Data.Generics.Sum
 import Data.Hashable
@@ -86,12 +88,16 @@ import GHC.Generics (Generic)
 import Optics.Core
 
 data ProvidedParameters i = ProvidedParameters
-  { parameters :: [Name i]
+  { parameters :: [Name]
   , underlying :: TypeOrGroup i
   }
   deriving (Generic)
 
-instance Hashable (ProvidedParameters i)
+deriving instance ForAllExtensions i Eq => Eq (ProvidedParameters i)
+
+deriving instance ForAllExtensions i Show => Show (ProvidedParameters i)
+
+instance ForAllExtensions i Hashable => Hashable (ProvidedParameters i)
 
 data Parametrised
 
@@ -103,10 +109,10 @@ newtype instance XXType2 Parametrised
 --------------------------------------------------------------------------------
 
 newtype PartialCTreeRoot i
-  = PartialCTreeRoot (Map.Map (Name i) (ProvidedParameters i))
+  = PartialCTreeRoot (Map.Map Name (ProvidedParameters i))
   deriving (Generic)
 
-type CDDLMap i = Map.Map (Name i) (ProvidedParameters i)
+type CDDLMap i = Map.Map Name (ProvidedParameters i)
 
 toParametrised :: TypeOrGroup i -> Maybe (GenericParam i) -> ProvidedParameters i
 toParametrised a Nothing = ProvidedParameters [] a
@@ -167,7 +173,7 @@ newtype instance XXTopLevel OrReferenced = OrReferencedXXTopLevel Void
 data instance XXType2 OrReferenced
   = -- | Reference to another node with possible generic arguments supplied
     --   The boolean field determines whether the reference should be unwrapped
-    Ref Bool (Name OrReferenced) [Type1 OrReferenced]
+    Ref Bool Name [Type1 OrReferenced]
   | OrPostlude PTerm
   deriving (Eq, Show)
 
@@ -178,23 +184,27 @@ deriving instance Show (PartialCTreeRoot OrReferenced)
 -- | Build a CTree incorporating references.
 --
 -- This translation cannot fail.
-buildRefCTree :: CDDLMap i -> RefCTree
-buildRefCTree rules = PartialCTreeRoot $ bimap mapIndex toCTreeRule rules
+buildRefCTree ::
+  forall i.
+  ( IndexMappable XTerm i OrReferenced
+  , IndexMappable XXType2 i OrReferenced
+  ) =>
+  CDDLMap i -> RefCTree
+buildRefCTree rules = PartialCTreeRoot $ toCTreeRule <$> rules
   where
     toCTreeRule ::
       ProvidedParameters i ->
       ProvidedParameters OrReferenced
-    toCTreeRule (ProvidedParameters ns t) = ProvidedParameters (mapIndex <$> ns) (toCTreeTOG t)
+    toCTreeRule (ProvidedParameters ns t) = ProvidedParameters ns (toCTreeTOG t)
 
     toCTreeTOG :: TypeOrGroup i -> TypeOrGroup OrReferenced
     toCTreeTOG (TOGType t0) = TOGType $ toCTreeT0 t0
     toCTreeTOG (TOGGroup ge) = TOGGroup $ toCTreeGroupEntry ge
 
     toCTreeT0 :: Type0 i -> Type0 OrReferenced
-    toCTreeT0 (Type0 xs) = foldMap (Type0 . toCTreeT1) xs
-
+    toCTreeT0 (Type0 xs) = Type0 $ foldMap1 toCTreeT1 xs
     toCTreeT1 :: Type1 i -> NonEmpty (Type1 OrReferenced)
-    toCTreeT1 (Type1 t mr _) = (\x y -> Type1 x y mempty) <$> t' <*> r'
+    toCTreeT1 (Type1 t mr ex) = (\x y -> Type1 x y (mapIndex @_ @i ex)) <$> t' <*> r'
       where
         t' = toCTreeT2 t
         r' = case mr of
@@ -203,7 +213,7 @@ buildRefCTree rules = PartialCTreeRoot $ bimap mapIndex toCTreeRule rules
 
     toCTreeT2 :: Type2 i -> NonEmpty (Type2 OrReferenced)
     toCTreeT2 (T2Value v) = NE.singleton $ T2Value v
-    toCTreeT2 (T2Name n garg) = NE.singleton . XXType2 $ Ref False (mapIndex n) (fromGenArgs garg)
+    toCTreeT2 (T2Name n garg) = NE.singleton . XXType2 $ Ref False n (fromGenArgs garg)
     toCTreeT2 (T2Group t0) =
       -- This behaviour seems questionable, but I don't really see how better to
       -- interpret the spec here.
@@ -211,9 +221,9 @@ buildRefCTree rules = PartialCTreeRoot $ bimap mapIndex toCTreeRule rules
     toCTreeT2 (T2Map g) = liftChoice T2Map g
     toCTreeT2 (T2Array g) = liftChoice T2Map g
     toCTreeT2 (T2Unwrapped n margs) =
-      NE.singleton . XXType2 $ Ref True (mapIndex n) (fromGenArgs margs)
+      NE.singleton . XXType2 $ Ref True n (fromGenArgs margs)
     toCTreeT2 (T2Enum g) = NE.singleton . T2Enum $ toCTreeEnum g
-    toCTreeT2 (T2EnumRef n margs) = NE.singleton . XXType2 . Ref False (mapIndex n) $ fromGenArgs margs
+    toCTreeT2 (T2EnumRef n margs) = NE.singleton . XXType2 . Ref False n $ fromGenArgs margs
     toCTreeT2 (T2Tag mtag t0) =
       -- Currently not validating tags
       NE.singleton . T2Tag mtag $ toCTreeT0 t0
@@ -263,7 +273,7 @@ buildRefCTree rules = PartialCTreeRoot $ bimap mapIndex toCTreeRule rules
     -- toCTreeGroupEntry (GroupEntry Nothing (GEGroup g) _) = groupToGroup g
 
     fromGenArgs :: Maybe (GenericArg i) -> [Type1 OrReferenced]
-    fromGenArgs = maybe [] (\(GenericArg xs) -> NE.toList $ foldMap toCTreeT1 xs)
+    fromGenArgs = maybe [] (\(GenericArg xs) -> NE.toList $ foldMap1 toCTreeT1 xs)
 
     -- Interpret a group as an enumeration. Note that we float out the
     -- choice options
@@ -277,7 +287,7 @@ buildRefCTree rules = PartialCTreeRoot $ bimap mapIndex toCTreeRule rules
     -- Embed a group in another group, again floating out the choice options
     groupToGroup :: Group i -> Group OrReferenced
     groupToGroup g =
-      Group . fmap (\x -> GrpChoice [GroupEntry Nothing undefined mempty] mempty) $
+      Group . fmap (\x -> GrpChoice [GroupEntry Nothing undefined undefined] undefined) $
         liftChoice undefined g
 
     toKVPair :: Maybe (MemberKey i) -> Type0 i -> TypeOrGroup OrReferenced
@@ -299,7 +309,7 @@ buildRefCTree rules = PartialCTreeRoot $ bimap mapIndex toCTreeRule rules
 
     toCTreeMemberKey :: MemberKey i -> MemberKey OrReferenced
     toCTreeMemberKey (MKValue v) = MKValue v
-    toCTreeMemberKey (MKBareword n) = MKBareword $ mapIndex n
+    toCTreeMemberKey (MKBareword n) = MKBareword n
     toCTreeMemberKey (MKType t1) = undefined $ MKType <$> toCTreeT1 t1
 
 --------------------------------------------------------------------------------
@@ -307,36 +317,36 @@ buildRefCTree rules = PartialCTreeRoot $ bimap mapIndex toCTreeRule rules
 --------------------------------------------------------------------------------
 
 data NameResolutionFailure
-  = UnboundReference (Name OrReferenced)
-  | MismatchingArgs (Name OrReferenced) [Name OrReferenced]
+  = UnboundReference Name
+  | MismatchingArgs Name [Name]
   | ArgsToPostlude PTerm [TypeOrGroup OrReferenced]
   deriving (Show)
 
 deriving instance Eq NameResolutionFailure
 
-postludeBinding :: Map.Map (Name phase) PTerm
+postludeBinding :: Map.Map Name PTerm
 postludeBinding =
   Map.fromList
-    [ (Name "bool" mempty, PTBool)
-    , (Name "uint" mempty, PTUInt)
-    , (Name "nint" mempty, PTNInt)
-    , (Name "int" mempty, PTInt)
-    , (Name "half" mempty, PTHalf)
-    , (Name "float" mempty, PTFloat)
-    , (Name "double" mempty, PTDouble)
-    , (Name "bytes" mempty, PTBytes)
-    , (Name "bstr" mempty, PTBytes)
-    , (Name "text" mempty, PTText)
-    , (Name "tstr" mempty, PTText)
-    , (Name "any" mempty, PTAny)
-    , (Name "nil" mempty, PTNil)
-    , (Name "null" mempty, PTNil)
+    [ (Name "bool", PTBool)
+    , (Name "uint", PTUInt)
+    , (Name "nint", PTNInt)
+    , (Name "int", PTInt)
+    , (Name "half", PTHalf)
+    , (Name "float", PTFloat)
+    , (Name "double", PTDouble)
+    , (Name "bytes", PTBytes)
+    , (Name "bstr", PTBytes)
+    , (Name "text", PTText)
+    , (Name "tstr", PTText)
+    , (Name "any", PTAny)
+    , (Name "nil", PTNil)
+    , (Name "null", PTNil)
     ]
 
 data BindingEnv i j = BindingEnv
-  { global :: Map.Map (Name i) (ProvidedParameters i)
+  { global :: Map.Map Name (ProvidedParameters i)
   -- ^ Global name bindings via 'RuleDef'
-  , local :: Map.Map (Name j) (Type1 j)
+  , local :: Map.Map Name (Type1 j)
   -- ^ Local bindings for generic parameters
   }
   deriving (Generic)
@@ -344,23 +354,21 @@ data BindingEnv i j = BindingEnv
 data DistReferenced
 
 data instance XTerm DistReferenced = DistReferencedXTerm
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic, Hashable)
 
 data instance XCddl DistReferenced = DistReferencedXCddl
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic, Hashable)
 
 data instance XXTopLevel DistReferenced = DistReferencedXXTopLevel
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic, Hashable)
 
 data instance XXType2 DistReferenced
   = -- | Reference to a generic parameter
-    GenericRef (Name DistReferenced)
+    GenericRef Name
   | -- | Reference to a rule definition, possibly with generic arguments
-    RuleRef (Name DistReferenced) [TypeOrGroup DistReferenced]
+    RuleRef Name [TypeOrGroup DistReferenced]
   | DistPostlude PTerm
-  deriving (Eq, Generic, Show)
-
-instance Hashable (TypeOrGroup DistReferenced)
+  deriving (Eq, Generic, Show, Hashable)
 
 deriving instance Show (PartialCTreeRoot DistReferenced)
 
@@ -378,7 +386,7 @@ resolveRef env = \case
   where
     resolveRef_ ::
       Bool ->
-      Name OrReferenced ->
+      Name ->
       [Type1 OrReferenced] ->
       Either NameResolutionFailure (TypeOrGroup DistReferenced)
     resolveRef_ unwrap n args = case Map.lookup n postludeBinding of
@@ -391,12 +399,12 @@ resolveRef env = \case
             then do
               let localBinds = Map.fromList $ zip params' args
                   newEnv = env & #local %~ Map.union localBinds
-              ref <- XXType2 . RuleRef (mapIndex n) <$> traverse (resolveCTree newEnv) args
+              ref <- XXType2 . RuleRef n <$> traverse (resolveCTree newEnv) args
               Right . TOGType . Type0 . NE.singleton $
-                Type1 ref Nothing mempty
+                Type1 ref Nothing undefined
             else Left $ MismatchingArgs n params'
         Nothing -> case Map.lookup n (local env) of
-          Just _ -> Right . undefined . XXType2 $ GenericRef (mapIndex n)
+          Just _ -> Right . undefined . XXType2 $ GenericRef n
           Nothing -> Left $ UnboundReference n
 
 resolveCTree ::
@@ -412,7 +420,7 @@ buildResolvedCTree (PartialCTreeRoot ct) = undefined -- PartialCTreeRoot <$> tra
   where
     go pn =
       let argNames = parameters pn
-          argTerms = (\x -> Type1 x Nothing mempty) . XXType2 . (\n -> Ref False n []) <$> argNames
+          argTerms = (\x -> Type1 x Nothing undefined) . XXType2 . (\n -> Ref False n []) <$> argNames
           localBinds =
             Map.fromList $ zip argNames argTerms
           env = BindingEnv @OrReferenced @OrReferenced ct localBinds
@@ -427,17 +435,19 @@ data MonoReferenced
 data instance XTerm MonoReferenced = MonoReferencedXTerm
   deriving (Show)
 
-newtype instance XXType2 MonoReferenced = MRuleRef (Name MonoReferenced)
+data instance XCddl MonoReferenced = MonoReferencedXCddl
   deriving (Show)
 
-deriving instance Show (TypeOrGroup MonoReferenced)
+newtype instance XXType2 MonoReferenced = MRuleRef Name
+  deriving (Show)
 
-deriving instance Show (PartialCTreeRoot MonoReferenced)
+newtype instance XXTopLevel MonoReferenced = MonoReferencedXXTopLevel Void
+  deriving (Show)
 
 type MonoEnv = BindingEnv DistReferenced MonoReferenced
 
 -- | We introduce additional bindings in the state
-type MonoState = Map.Map (Name MonoReferenced) (TypeOrGroup MonoReferenced)
+type MonoState = Map.Map Name (TypeOrGroup MonoReferenced)
 
 -- | Monad to run the monomorphisation process. We need some additional
 -- capabilities for this, so 'Either' doesn't fully cut it anymore.
@@ -459,10 +469,10 @@ newtype MonoM a = MonoM
   deriving
     ( HasSource
         "local"
-        (Map.Map (Name MonoReferenced) (Type1 MonoReferenced))
+        (Map.Map Name (Type1 MonoReferenced))
     , HasReader
         "local"
-        (Map.Map (Name MonoReferenced) (Type1 MonoReferenced))
+        (Map.Map Name (Type1 MonoReferenced))
     )
     via Field
           "local"
@@ -476,10 +486,10 @@ newtype MonoM a = MonoM
   deriving
     ( HasSource
         "global"
-        (Map.Map (Name DistReferenced) (ProvidedParameters DistReferenced))
+        (Map.Map Name (ProvidedParameters DistReferenced))
     , HasReader
         "global"
-        (Map.Map (Name DistReferenced) (ProvidedParameters DistReferenced))
+        (Map.Map Name (ProvidedParameters DistReferenced))
     )
     via Field
           "global"
@@ -505,16 +515,16 @@ throwNR :: NameResolutionFailure -> MonoM a
 throwNR = throw @"nameResolution"
 
 -- | Synthesize a monomorphic rule definition, returning the name
-synthMono :: Name DistReferenced -> [TypeOrGroup DistReferenced] -> MonoM (Name MonoReferenced)
-synthMono n@(Name origName _) args =
+synthMono :: Name -> [TypeOrGroup DistReferenced] -> MonoM Name
+synthMono n@(Name origName) args =
   let fresh =
         -- % is not a valid CBOR name, so this should avoid conflict
-        Name (origName <> "%" <> T.pack (show $ hash args)) mempty
+        Name $ origName <> "%" <> T.pack (show $ hash args)
    in do
         -- Lookup the original name in the global bindings
         globalBinds <- ask @"global"
         case Map.lookup n globalBinds of
-          Just (ProvidedParameters [] _) -> throwNR $ MismatchingArgs (mapIndex n) []
+          Just (ProvidedParameters [] _) -> throwNR $ MismatchingArgs n []
           Just (ProvidedParameters params' r) ->
             if length params' == length args
               then do
@@ -523,8 +533,8 @@ synthMono n@(Name origName _) args =
                 Reader.local @"local" (Map.union localBinds) $ do
                   foo <- resolveGenericCTree r
                   modify @"synth" $ Map.insert fresh foo
-              else throwNR $ MismatchingArgs (mapIndex n) params'
-          Nothing -> throwNR $ UnboundReference (mapIndex n)
+              else throwNR $ MismatchingArgs n params'
+          Nothing -> throwNR $ UnboundReference n
         pure fresh
 
 resolveGenericRef ::
@@ -533,9 +543,9 @@ resolveGenericRef ::
 resolveGenericRef (RuleRef n []) = pure . undefined $ MRuleRef n
 resolveGenericRef (RuleRef n args) = do
   fresh <- synthMono n args
-  pure . TOGType . Type0 . NE.singleton $ Type1 (XXType2 $ MRuleRef fresh) Nothing mempty
+  pure . TOGType . Type0 . NE.singleton $ Type1 (XXType2 $ MRuleRef fresh) Nothing undefined
 resolveGenericRef (GenericRef n) = do
-  localBinds <- ask @"local"
+  localBinds <- undefined -- ask @"local"
   case Map.lookup n localBinds of
     Just node -> pure node
     Nothing -> throwNR $ UnboundReference n
@@ -560,7 +570,7 @@ buildMonoCTree (PartialCTreeRoot ct) = do
   let a1 = runExceptT $ runMonoM (traverse resolveGenericCTree monoC)
       a2 = runStateT a1 mempty
       (r, newBindings) = runReader a2 initBindingEnv
-  CTreeRoot . (`Map.union` newBindings) <$> r
+  undefined -- CTreeRoot . (`Map.union` newBindings) <$> r
   where
     initBindingEnv = BindingEnv ct mempty
     monoC =
@@ -576,6 +586,9 @@ buildMonoCTree (PartialCTreeRoot ct) = do
 --------------------------------------------------------------------------------
 
 fullResolveCDDL ::
+  ( IndexMappable XTerm phase OrReferenced
+  , IndexMappable XXType2 phase OrReferenced
+  ) =>
   CDDL phase -> Either NameResolutionFailure (CTreeRoot MonoReferenced)
 fullResolveCDDL cddl = do
   let refCTree = buildRefCTree (asMap cddl)

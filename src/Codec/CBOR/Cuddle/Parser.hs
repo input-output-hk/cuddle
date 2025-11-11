@@ -93,11 +93,11 @@ pRule = do
       ]
   pure $ Rule name genericParam assign typeOrGrp (ParserXTerm cmt)
 
-pName :: Parser (Name ParserStage)
+pName :: Parser Name
 pName = label "name" $ do
   fc <- firstChar
   rest <- many midChar
-  pure $ (`Name` mempty) . T.pack $ (fc : rest)
+  pure $ Name . T.pack $ (fc : rest)
   where
     firstChar = letterChar <|> char '@' <|> char '_' <|> char '$'
     midChar =
@@ -124,7 +124,7 @@ pAssignG =
 pGenericParam :: Parser (GenericParam ParserStage)
 pGenericParam =
   GenericParam
-    <$> between "<" ">" (NE.sepBy1 (space !*> pName <*! space) ",")
+    <$> between "<" ">" (NE.sepBy1 (space *> pName <* space) ",")
 
 pGenericArg :: Parser (GenericArg ParserStage)
 pGenericArg =
@@ -158,7 +158,7 @@ pType2 =
     , T2Group <$> label "group" ("(" *> pType0Cmt <* ")")
     , T2Map <$> label "map" ("{" *> pGroup <* "}")
     , T2Array <$> label "array" ("[" *> space !*> pGroup <*! space <* "]")
-    , T2Unwrapped <$> ("~" *> space !*> pName) <*> optional pGenericArg
+    , T2Unwrapped <$> ("~" *> space *> pName) <*> optional pGenericArg
     , do
         _ <- "&"
         cmt <- space

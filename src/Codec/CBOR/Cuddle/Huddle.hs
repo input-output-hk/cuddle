@@ -546,7 +546,7 @@ cbor v r@(Named n _ _) =
       { applyConstraint = \t2 ->
           C.Type1
             t2
-            (Just (C.CtrlOp CtlOp.Cbor, C.T2Name (C.Name n mempty) Nothing))
+            (Just (C.CtrlOp CtlOp.Cbor, C.T2Name (C.Name n) Nothing))
             mempty
       , showConstraint = ".cbor " <> T.unpack n
       }
@@ -1141,7 +1141,7 @@ toCDDL' HuddleConfig {..} hdl =
           "huddle_root_defs" =:= arr (fromList (fmap a topRs))
     toCDDLRule :: Rule -> C.Rule HuddleStage
     toCDDLRule (Named n t0 c) =
-      (\x -> C.Rule (C.Name n mempty) Nothing C.AssignEq x (foldMap (HuddleXTerm . C.Comment) c))
+      (\x -> C.Rule (C.Name n) Nothing C.AssignEq x (foldMap (HuddleXTerm . C.Comment) c))
         . C.TOGType
         . C.Type0
         $ toCDDLType1 <$> choiceToNE t0
@@ -1189,13 +1189,13 @@ toCDDL' HuddleConfig {..} hdl =
       T2Array x -> C.Type1 (C.T2Array $ arrayToCDDLGroup x) Nothing mempty
       T2Tagged (Tagged mmin x) ->
         C.Type1 (C.T2Tag mmin $ toCDDLType0 x) Nothing mempty
-      T2Ref (Named n _ _) -> C.Type1 (C.T2Name (C.Name n mempty) Nothing) Nothing mempty
-      T2Group (Named n _ _) -> C.Type1 (C.T2Name (C.Name n mempty) Nothing) Nothing mempty
+      T2Ref (Named n _ _) -> C.Type1 (C.T2Name (C.Name n) Nothing) Nothing mempty
+      T2Group (Named n _ _) -> C.Type1 (C.T2Name (C.Name n) Nothing) Nothing mempty
       T2Generic g -> C.Type1 (toGenericCall g) Nothing mempty
-      T2GenericRef (GRef n) -> C.Type1 (C.T2Name (C.Name n mempty) Nothing) Nothing mempty
+      T2GenericRef (GRef n) -> C.Type1 (C.T2Name (C.Name n) Nothing) Nothing mempty
 
     toMemberKey :: Key -> C.MemberKey HuddleStage
-    toMemberKey (LiteralKey (Literal (LText t) _)) = C.MKBareword (C.Name t mempty)
+    toMemberKey (LiteralKey (Literal (LText t) _)) = C.MKBareword (C.Name t)
     toMemberKey (LiteralKey v) = C.MKValue $ toCDDLValue v
     toMemberKey (TypeKey t) = C.MKType (toCDDLType1 t)
 
@@ -1215,23 +1215,23 @@ toCDDL' HuddleConfig {..} hdl =
         (C.GEType (fmap toMemberKey k) (toCDDLType0 v))
         (HuddleXTerm cmnt)
 
-    toCDDLPostlude :: Value a -> C.Name HuddleStage
-    toCDDLPostlude VBool = C.Name "bool" mempty
-    toCDDLPostlude VUInt = C.Name "uint" mempty
-    toCDDLPostlude VNInt = C.Name "nint" mempty
-    toCDDLPostlude VInt = C.Name "int" mempty
-    toCDDLPostlude VHalf = C.Name "half" mempty
-    toCDDLPostlude VFloat = C.Name "float" mempty
-    toCDDLPostlude VDouble = C.Name "double" mempty
-    toCDDLPostlude VBytes = C.Name "bytes" mempty
-    toCDDLPostlude VText = C.Name "text" mempty
-    toCDDLPostlude VAny = C.Name "any" mempty
-    toCDDLPostlude VNil = C.Name "nil" mempty
+    toCDDLPostlude :: Value a -> C.Name
+    toCDDLPostlude VBool = C.Name "bool"
+    toCDDLPostlude VUInt = C.Name "uint"
+    toCDDLPostlude VNInt = C.Name "nint"
+    toCDDLPostlude VInt = C.Name "int"
+    toCDDLPostlude VHalf = C.Name "half"
+    toCDDLPostlude VFloat = C.Name "float"
+    toCDDLPostlude VDouble = C.Name "double"
+    toCDDLPostlude VBytes = C.Name "bytes"
+    toCDDLPostlude VText = C.Name "text"
+    toCDDLPostlude VAny = C.Name "any"
+    toCDDLPostlude VNil = C.Name "nil"
 
     toCDDLConstrainable c = case c of
       CValue v -> toCDDLPostlude v
-      CRef r -> C.Name (name r) mempty
-      CGRef (GRef n) -> C.Name n mempty
+      CRef r -> C.Name (name r)
+      CGRef (GRef n) -> C.Name n
 
     toCDDLRanged :: Ranged -> C.Type1 HuddleStage
     toCDDLRanged (Unranged x) =
@@ -1244,12 +1244,12 @@ toCDDL' HuddleConfig {..} hdl =
 
     toCDDLRangeBound :: RangeBound -> C.Type2 HuddleStage
     toCDDLRangeBound (RangeBoundLiteral l) = C.T2Value $ toCDDLValue l
-    toCDDLRangeBound (RangeBoundRef (Named n _ _)) = C.T2Name (C.Name n mempty) Nothing
+    toCDDLRangeBound (RangeBoundRef (Named n _ _)) = C.T2Name (C.Name n) Nothing
 
     toCDDLGroup :: Named Group -> C.Rule HuddleStage
     toCDDLGroup (Named n (Group t0s) c) =
       C.Rule
-        (C.Name n mempty)
+        (C.Name n)
         Nothing
         C.AssignEq
         ( C.TOGGroup
@@ -1267,13 +1267,13 @@ toCDDL' HuddleConfig {..} hdl =
     toGenericCall :: GRuleCall -> C.Type2 HuddleStage
     toGenericCall (Named n gr _) =
       C.T2Name
-        (C.Name n mempty)
+        (C.Name n)
         (Just . C.GenericArg $ fmap toCDDLType1 (args gr))
 
     toGenRuleDef :: GRuleDef -> C.Rule HuddleStage
     toGenRuleDef (Named n gr c) =
       C.Rule
-        (C.Name n mempty)
+        (C.Name n)
         (Just gps)
         C.AssignEq
         ( C.TOGType
@@ -1283,4 +1283,4 @@ toCDDL' HuddleConfig {..} hdl =
         (foldMap (HuddleXTerm . C.Comment) c)
       where
         gps =
-          C.GenericParam $ fmap (\(GRef t) -> C.Name t mempty) (args gr)
+          C.GenericParam $ fmap (\(GRef t) -> C.Name t) (args gr)

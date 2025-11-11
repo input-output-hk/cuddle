@@ -150,30 +150,24 @@ deriving instance ForAllExtensions i ToExpr => ToExpr (TopLevel i)
 --
 --  *  Rule names (types or groups) do not appear in the actual CBOR
 --      encoding, but names used as "barewords" in member keys do.
-data Name i = Name
-  { name :: T.Text
-  , nameExt :: XTerm i
-  }
+data Name = Name {name :: T.Text}
   deriving (Generic)
 
-deriving instance Eq (XTerm i) => Eq (Name i)
+deriving instance Eq Name
 
-deriving instance Ord (XTerm i) => Ord (Name i)
+deriving instance Ord Name
 
-deriving instance Show (XTerm i) => Show (Name i)
+deriving instance Show Name
 
-deriving instance ToExpr (XTerm i) => ToExpr (Name i)
+deriving instance ToExpr Name
 
-instance Monoid (XTerm i) => IsString (Name i) where
-  fromString x = Name (T.pack x) mempty
+instance Monoid (XTerm i) => IsString Name where
+  fromString = Name . T.pack
 
-instance HasComment (XTerm i) => HasComment (Name i) where
-  commentL = #nameExt % commentL
+instance CollectComments Name where
+  collectComments = const []
 
-instance CollectComments (XTerm i) => CollectComments (Name i) where
-  collectComments (Name _ c) = collectComments c
-
-instance Hashable (XTerm i) => Hashable (Name i)
+instance Hashable Name
 
 -- |
 --   assignt = "=" / "/="
@@ -208,7 +202,7 @@ data Assign = AssignEq | AssignExt
 --
 --   Generic rules can be used for establishing names for both types and
 --   groups.
-newtype GenericParam i = GenericParam (NE.NonEmpty (Name i))
+newtype GenericParam i = GenericParam (NE.NonEmpty Name)
   deriving (Generic)
   deriving newtype (Semigroup)
 
@@ -221,6 +215,8 @@ deriving anyclass instance ToExpr (XTerm i) => ToExpr (GenericParam i)
 newtype GenericArg i = GenericArg (NE.NonEmpty (Type1 i))
   deriving (Generic)
   deriving newtype (Semigroup)
+
+deriving newtype instance ForAllExtensions i Hashable => Hashable (GenericArg i)
 
 deriving instance ForAllExtensions i Eq => Eq (GenericArg i)
 
@@ -254,7 +250,7 @@ instance ForAllExtensions i CollectComments => CollectComments (GenericArg i)
 --   this semantic processing may need to span several levels of rule
 --   definitions before a determination can be made.)
 data Rule i = Rule
-  { ruleName :: Name i
+  { ruleName :: Name
   , ruleGenParam :: Maybe (GenericParam i)
   , ruleAssign :: Assign
   , ruleTerm :: TypeOrGroup i
@@ -287,11 +283,13 @@ data RangeBound = ClOpen | Closed
 instance Hashable RangeBound
 
 data TyOp = RangeOp RangeBound | CtrlOp CtlOp
-  deriving (Eq, Generic, Show)
+  deriving (Eq, Generic, Show, Hashable)
   deriving anyclass (ToExpr)
 
 data TypeOrGroup i = TOGType (Type0 i) | TOGGroup (GroupEntry i)
   deriving (Generic)
+
+instance ForAllExtensions i Hashable => Hashable (TypeOrGroup i)
 
 deriving instance ForAllExtensions i Eq => Eq (TypeOrGroup i)
 
@@ -365,6 +363,8 @@ newtype Type0 i = Type0 {t0Type1 :: NE.NonEmpty (Type1 i)}
   deriving (Generic)
   deriving newtype (Semigroup)
 
+deriving newtype instance ForAllExtensions i Hashable => Hashable (Type0 i)
+
 deriving instance ForAllExtensions i Eq => Eq (Type0 i)
 
 deriving instance ForAllExtensions i Show => Show (Type0 i)
@@ -381,6 +381,8 @@ data Type1 i = Type1
   , t1Comment :: XTerm i
   }
   deriving (Generic)
+
+deriving instance ForAllExtensions i Hashable => Hashable (Type1 i)
 
 deriving instance ForAllExtensions i Eq => Eq (Type1 i)
 
@@ -401,7 +403,7 @@ data Type2 i
     T2Value Value
   | -- | or be defined by a rule giving a meaning to a name (possibly after
     --   supplying generic arguments as required by the generic parameters)
-    T2Name (Name i) (Maybe (GenericArg i))
+    T2Name Name (Maybe (GenericArg i))
   | -- | or be defined in a parenthesized type expression (parentheses may be
     --   necessary to override some operator precedence),
     T2Group (Type0 i)
@@ -415,11 +417,11 @@ data Type2 i
     T2Array (Group i)
   | -- | an "unwrapped" group (see Section 3.7), which matches the group
     --  inside a type defined as a map or an array by wrapping the group, or
-    T2Unwrapped (Name i) (Maybe (GenericArg i))
+    T2Unwrapped Name (Maybe (GenericArg i))
   | -- | an enumeration expression, which matches any value that is within the
     --  set of values that the values of the group given can take, or
     T2Enum (Group i)
-  | T2EnumRef (Name i) (Maybe (GenericArg i))
+  | T2EnumRef Name (Maybe (GenericArg i))
   | -- | a tagged data item, tagged with the "uint" given and containing the
     --  type given as the tagged value, or
     T2Tag (Maybe Word64) (Type0 i)
@@ -430,6 +432,8 @@ data Type2 i
     T2Any
   | XXType2 (XXType2 i)
   deriving (Generic)
+
+deriving instance ForAllExtensions i Hashable => Hashable (Type2 i)
 
 deriving instance ForAllExtensions i Eq => Eq (Type2 i)
 
@@ -470,6 +474,8 @@ newtype Group i = Group {unGroup :: NE.NonEmpty (GrpChoice i)}
   deriving (Generic)
   deriving newtype (Semigroup)
 
+deriving newtype instance ForAllExtensions i Hashable => Hashable (Group i)
+
 deriving instance ForAllExtensions i Eq => Eq (Group i)
 
 deriving instance ForAllExtensions i Show => Show (Group i)
@@ -487,6 +493,8 @@ data GrpChoice i = GrpChoice
   , gcComment :: XTerm i
   }
   deriving (Generic)
+
+deriving instance ForAllExtensions i Hashable => Hashable (GrpChoice i)
 
 deriving instance ForAllExtensions i Eq => Eq (GrpChoice i)
 
@@ -514,6 +522,8 @@ data GroupEntry i = GroupEntry
   }
   deriving (Generic)
 
+deriving instance ForAllExtensions i Hashable => Hashable (GroupEntry i)
+
 deriving instance ForAllExtensions i Eq => Eq (GroupEntry i)
 
 deriving instance ForAllExtensions i Show => Show (GroupEntry i)
@@ -525,9 +535,11 @@ instance ForAllExtensions i CollectComments => CollectComments (GroupEntry i) wh
 
 data GroupEntryVariant i
   = GEType (Maybe (MemberKey i)) (Type0 i)
-  | GERef (Name i) (Maybe (GenericArg i))
+  | GERef Name (Maybe (GenericArg i))
   | GEGroup (Group i)
   deriving (Generic)
+
+deriving instance ForAllExtensions i Hashable => Hashable (GroupEntryVariant i)
 
 deriving instance ForAllExtensions i Eq => Eq (GroupEntryVariant i)
 
@@ -553,9 +565,11 @@ instance ForAllExtensions i CollectComments => CollectComments (GroupEntryVarian
 --  presence of the cuts denoted by "^" or ":" in previous entries).
 data MemberKey i
   = MKType (Type1 i)
-  | MKBareword (Name i)
+  | MKBareword Name
   | MKValue Value
   deriving (Generic)
+
+deriving instance ForAllExtensions i Hashable => Hashable (MemberKey i)
 
 deriving instance ForAllExtensions i Eq => Eq (MemberKey i)
 
