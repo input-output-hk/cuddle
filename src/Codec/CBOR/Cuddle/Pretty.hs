@@ -58,8 +58,8 @@ instance Pretty (TopLevel PrettyStage) where
   pretty (XXTopLevel (PrettyXXTopLevel cmt)) = pretty cmt
   pretty (TopLevelRule x) = pretty x <> hardline
 
-instance Pretty (Name PrettyStage) where
-  pretty (Name name (PrettyXTerm cmt)) = pretty name <> prettyCommentNoBreakWS cmt
+instance Pretty Name where
+  pretty (Name name) = pretty name
 
 data CommentRender
   = PreComment
