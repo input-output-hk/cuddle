@@ -65,8 +65,8 @@ class Includable a where
   include :: a -> HuddleM a
 
 instance Includable Rule where
-  include r =
-    modify (field @"items" %~ (OMap.|> (r ^. field @"name", HIRule r)))
+  include r@(Rule x _) =
+    modify (field @"items" %~ (OMap.|> (name x, HIRule r)))
       >> pure r
 
 instance Includable (Named Group) where

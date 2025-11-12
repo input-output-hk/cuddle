@@ -48,8 +48,14 @@ newtype instance XTerm PrettyStage = PrettyXTerm {unPrettyXTerm :: Comment}
 newtype instance XCddl PrettyStage = PrettyXCddl [Comment]
   deriving (Generic, CollectComments, ToExpr, Show, Eq)
 
+newtype instance XRule PrettyStage = PrettyXRule {unPrettyXRule :: Comment}
+  deriving (Generic, CollectComments, ToExpr, Show, Eq)
+
 instance HasComment (XTerm PrettyStage) where
   commentL = #unPrettyXTerm
+
+instance HasComment (XRule PrettyStage) where
+  commentL = #unPrettyXRule
 
 instance Pretty (CDDL PrettyStage) where
   pretty = vsep . fmap pretty . NE.toList . cddlTopLevel
