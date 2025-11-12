@@ -52,6 +52,7 @@ import Codec.CBOR.Cuddle.CDDL (
   GenericParam (..),
   Group (..),
   GroupEntry (..),
+  GroupEntryVariant (..),
   GrpChoice (..),
   MemberKey (..),
   Name (..),
@@ -69,7 +70,7 @@ import Codec.CBOR.Cuddle.CDDL (
   XXType2,
   cddlTopLevel,
  )
-import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
+import Codec.CBOR.Cuddle.IndexMappable (EmptyField (..), IndexMappable (..))
 import Control.Monad.Except (ExceptT (..), runExceptT)
 import Control.Monad.Reader (Reader, ReaderT (..), runReader)
 import Control.Monad.State.Strict (StateT (..))
@@ -181,6 +182,9 @@ type RefCTree = PartialCTreeRoot OrReferenced
 
 deriving instance Show (PartialCTreeRoot OrReferenced)
 
+instance EmptyField (XTerm OrReferenced) where
+  emptyField = OrReferencedXTerm
+
 -- | Build a CTree incorporating references.
 --
 -- This translation cannot fail.
@@ -199,10 +203,10 @@ buildRefCTree rules = PartialCTreeRoot $ toCTreeRule <$> rules
 
     toCTreeTOG :: TypeOrGroup i -> TypeOrGroup OrReferenced
     toCTreeTOG (TOGType t0) = TOGType $ toCTreeT0 t0
-    toCTreeTOG (TOGGroup ge) = TOGGroup $ toCTreeGroupEntry ge
-
+    toCTreeTOG (TOGGroup ge) = TOGGroup $ undefined -- toCTreeGroupEntry ge
     toCTreeT0 :: Type0 i -> Type0 OrReferenced
     toCTreeT0 (Type0 xs) = Type0 $ foldMap1 toCTreeT1 xs
+
     toCTreeT1 :: Type1 i -> NonEmpty (Type1 OrReferenced)
     toCTreeT1 (Type1 t mr ex) = (\x y -> Type1 x y (mapIndex @_ @i ex)) <$> t' <*> r'
       where
@@ -251,26 +255,31 @@ buildRefCTree rules = PartialCTreeRoot $ toCTreeRule <$> rules
     toCTreeDataItem _ =
       T2Any
 
-    toCTreeGroupEntry :: GroupEntry i -> GroupEntry OrReferenced
-    toCTreeGroupEntry = undefined
-    -- toCTreeGroupEntry (GroupEntry (Just occi) (GEType mmkey t0) _) =
+    toCTreeGroupEntry :: GroupEntry i -> Group OrReferenced
+    toCTreeGroupEntry (GroupEntry (Just occi) (GEType mmkey t0) _) = undefined
     --  CTree.Occur
     --    { CTree.item = toKVPair mmkey t0
     --    , CTree.occurs = occi
     --    }
-    -- toCTreeGroupEntry (GroupEntry Nothing (GEType mmkey t0) _) = toKVPair mmkey t0
-    -- toCTreeGroupEntry (GroupEntry (Just occi) (GERef n margs) _) =
-    --  CTree.Occur
-    --    { CTree.item = CTreeE $ Ref n (fromGenArgs margs)
-    --    , CTree.occurs = occi
-    --    }
-    -- toCTreeGroupEntry (GroupEntry Nothing (GERef n margs) _) = CTreeE $ Ref n (fromGenArgs margs)
-    -- toCTreeGroupEntry (GroupEntry (Just occi) (GEGroup g) _) =
-    --  CTree.Occur
-    --    { CTree.item = groupToGroup g
-    --    , CTree.occurs = occi
-    --    }
-    -- toCTreeGroupEntry (GroupEntry Nothing (GEGroup g) _) = groupToGroup g
+    toCTreeGroupEntry (GroupEntry Nothing (GEType mmkey t0) ex) =
+      Group . NE.singleton $
+        GrpChoice
+          [GroupEntry Nothing (GEType (toCTreeMemberKey <$> mmkey) (toCTreeT0 t0)) $ mapIndex ex]
+          undefined
+    toCTreeGroupEntry (GroupEntry (Just occi) (GERef n margs) _) = undefined
+    -- CTree.Occur
+    --   { CTree.item = CTreeE $ Ref n (fromGenArgs margs)
+    --   , CTree.occurs = occi
+    --   }
+    toCTreeGroupEntry (GroupEntry Nothing (GERef n margs) _) = undefined
+    -- CTreeE $ Ref n (fromGenArgs margs)
+    toCTreeGroupEntry (GroupEntry (Just occi) (GEGroup g) _) = undefined
+    -- CTree.Occur
+    --   { CTree.item = groupToGroup g
+    --   , CTree.occurs = occi
+    --   }
+    toCTreeGroupEntry (GroupEntry Nothing (GEGroup g) _) = undefined
+    -- groupToGroup g
 
     fromGenArgs :: Maybe (GenericArg i) -> [Type1 OrReferenced]
     fromGenArgs = maybe [] (\(GenericArg xs) -> NE.toList $ foldMap1 toCTreeT1 xs)
@@ -287,25 +296,14 @@ buildRefCTree rules = PartialCTreeRoot $ toCTreeRule <$> rules
     -- Embed a group in another group, again floating out the choice options
     groupToGroup :: Group i -> Group OrReferenced
     groupToGroup g =
-      Group . fmap (\x -> GrpChoice [GroupEntry Nothing undefined undefined] undefined) $
+      Group . fmap (\x -> GrpChoice [GroupEntry Nothing undefined undefined] emptyField) $
         liftChoice undefined g
-
-    toKVPair :: Maybe (MemberKey i) -> Type0 i -> TypeOrGroup OrReferenced
-    toKVPair = undefined
-    -- toKVPair Nothing t0 = toCTreeT0 t0
-    -- toKVPair (Just mkey) t0 =
-    --  CTree.KV
-    --    { CTree.key = toCTreeMemberKey mkey
-    --    , CTree.value = toCTreeT0 t0
-    --    , -- TODO Handle cut semantics
-    --      CTree.cut = False
-    --    }
 
     -- Interpret a group as a map. Note that we float out the choice options
     liftChoice :: (Group OrReferenced -> Type2 OrReferenced) -> Group i -> NonEmpty (Type2 OrReferenced)
     liftChoice f (Group xs) =
       xs <&> \(GrpChoice ges c) ->
-        f . Group . NE.singleton $ GrpChoice (toCTreeGroupEntry <$> ges) (mapIndex c)
+        f . Group . NE.singleton $ GrpChoice (undefined <$> ges) (mapIndex c)
 
     toCTreeMemberKey :: MemberKey i -> MemberKey OrReferenced
     toCTreeMemberKey (MKValue v) = MKValue v

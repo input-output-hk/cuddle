@@ -1,6 +1,9 @@
 {-# LANGUAGE DefaultSignatures #-}
 
-module Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..)) where
+module Codec.CBOR.Cuddle.IndexMappable (
+  IndexMappable (..),
+  EmptyField (..),
+) where
 
 import Codec.CBOR.Cuddle.CDDL (
   CDDL (..),
@@ -28,6 +31,9 @@ import Codec.CBOR.Cuddle.Pretty (PrettyStage, XCddl (..), XTerm (..), XXTopLevel
 import Data.Bifunctor (Bifunctor (..))
 import Data.Coerce (Coercible, coerce)
 import Data.Void (absurd)
+
+class EmptyField a where
+  emptyField :: a
 
 class IndexMappable f i j where
   mapIndex :: f i -> f j
