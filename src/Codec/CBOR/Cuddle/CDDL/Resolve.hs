@@ -47,10 +47,10 @@ import Capability.State (HasState, MonadState (..), modify)
 import Codec.CBOR.Cuddle.CDDL as CDDL
 import Codec.CBOR.Cuddle.CDDL.CTree (
   CTree (..),
-  CTreeExt,
   CTreePhase,
   CTreeRoot (..),
   PTerm (..),
+  XXCTree,
   XXType2 (..),
  )
 import Codec.CBOR.Cuddle.CDDL.CTree qualified as CTree
@@ -80,7 +80,7 @@ instance Hashable a => Hashable (ProvidedParameters a)
 
 data Parametrised
 
-type instance CTreeExt Parametrised = ProvidedParameters (CTree Parametrised)
+type instance XXCTree Parametrised = ProvidedParameters (CTree Parametrised)
 
 --------------------------------------------------------------------------------
 -- 1. Rule extensions
@@ -137,7 +137,7 @@ asMap cddl = foldl' go Map.empty rules
 
 data OrReferenced
 
-type instance CTreeExt OrReferenced = OrRef
+type instance XXCTree OrReferenced = OrRef
 
 -- | Indicates that an item may be referenced rather than defined.
 data OrRef
@@ -340,7 +340,7 @@ data BindingEnv i j = BindingEnv
 
 data DistReferenced
 
-type instance CTreeExt DistReferenced = DistRef
+type instance XXCTree DistReferenced = DistRef
 
 data DistRef
   = -- | Reference to a generic parameter
@@ -404,7 +404,7 @@ buildResolvedCTree (PartialCTreeRoot ct) = PartialCTreeRoot <$> traverse go ct
 
 data MonoReferenced
 
-type instance CTreeExt MonoReferenced = MonoRef (CTree MonoReferenced)
+type instance XXCTree MonoReferenced = MonoRef (CTree MonoReferenced)
 
 newtype MonoRef a
   = MRuleRef (Name CTreePhase)
