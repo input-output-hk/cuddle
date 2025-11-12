@@ -23,6 +23,7 @@ import Codec.CBOR.Cuddle.CDDL (
   value,
  )
 import Codec.CBOR.Cuddle.Pretty (PrettyStage)
+import Data.Default.Class (Default (..))
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Text qualified as T
 import Data.TreeDiff (ToExpr (..), prettyExpr)
@@ -120,7 +121,7 @@ drep =
             )
         )
     )
-    mempty
+    def
 
 unitSpec :: Spec
 unitSpec = describe "HUnit" $ do
@@ -185,7 +186,7 @@ unitSpec = describe "HUnit" $ do
         Nothing
         AssignEq
         (TOGType (Type0 (Type1 (T2Name (Name "b" mempty) mempty) Nothing mempty :| [])))
-        mempty
+        def
         `prettyPrintsTo` "a = b"
     xit "drep" $
       drep

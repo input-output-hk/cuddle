@@ -10,7 +10,7 @@ import Codec.CBOR.Cuddle.CDDL
 import Codec.CBOR.Cuddle.CDDL.CtlOp
 import Codec.CBOR.Cuddle.Comments (Comment (..))
 import Codec.CBOR.Cuddle.Parser (ParserStage, XTerm (..))
-import Codec.CBOR.Cuddle.Pretty (PrettyStage, XTerm (..), XXTopLevel (..))
+import Codec.CBOR.Cuddle.Pretty (PrettyStage, XRule (..), XTerm (..), XXTopLevel (..))
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
 import Data.List.NonEmpty qualified as NE
@@ -26,6 +26,8 @@ instance Arbitrary (CDDL PrettyStage) where
 deriving newtype instance Arbitrary (XXTopLevel PrettyStage)
 
 deriving newtype instance Arbitrary (XTerm PrettyStage)
+
+deriving newtype instance Arbitrary (XRule PrettyStage)
 
 instance Arbitrary (TopLevel PrettyStage) where
   arbitrary =
@@ -91,7 +93,13 @@ instance (Arbitrary (XTerm i), Monoid (XTerm i)) => Arbitrary (GenericArg i) whe
   arbitrary = GenericArg <$> nonEmpty arbitrary
   shrink (GenericArg neArg) = GenericArg <$> shrinkNE neArg
 
-instance (Monoid (XTerm i), Arbitrary (XTerm i)) => Arbitrary (Rule i) where
+instance
+  ( Monoid (XTerm i)
+  , Arbitrary (XTerm i)
+  , Arbitrary (XRule i)
+  ) =>
+  Arbitrary (Rule i)
+  where
   arbitrary =
     Rule
       <$> arbitrary

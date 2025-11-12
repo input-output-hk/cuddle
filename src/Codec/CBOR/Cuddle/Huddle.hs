@@ -27,6 +27,7 @@ module Codec.CBOR.Cuddle.Huddle (
   HuddleStage,
   C.XCddl (..),
   C.XTerm (..),
+  C.XRule (..),
   C.XXTopLevel (..),
   C.XXType2 (..),
 
@@ -138,6 +139,8 @@ data instance C.XRule HuddleStage = HuddleXRule
   , hxrGenerator :: Maybe CBORGenerator
   }
   deriving (Generic)
+
+instance Default (XRule HuddleStage)
 
 newtype instance C.XXTopLevel HuddleStage = HuddleXXTopLevel C.Comment
   deriving (Generic, Semigroup, Monoid, Show, Eq)
@@ -604,6 +607,9 @@ instance IsRangeBound Integer where
 instance IsRangeBound (Named Type0) where
   toRangeBound = RangeBoundRef
 
+instance IsRangeBound Rule where
+  toRangeBound (Rule x _) = toRangeBound x
+
 data Ranged where
   Ranged ::
     { lb :: RangeBound
@@ -757,7 +763,7 @@ infixl 8 ==>
 
 -- | Assign a rule
 (=:=) :: IsType0 a => T.Text -> a -> Rule
-n =:= b = Rule (Named n (toType0 b) Nothing) (HuddleXRule undefined undefined)
+n =:= b = Rule (Named n (toType0 b) Nothing) def
 
 infixl 1 =:=
 
@@ -1069,7 +1075,7 @@ collectFrom topRs =
     goT2 (T2Constrained (Constrained c _ refs)) =
       ( case c of
           CValue _ -> pure ()
-          CRef r -> goRule $ Rule r undefined
+          CRef r -> goRule $ Rule r def
           CGRef _ -> pure ()
       )
         >> mapM_ goRule refs
