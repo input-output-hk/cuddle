@@ -53,11 +53,17 @@ newtype instance XXType2 ParserStage = ParserXXType2 Void
 newtype instance XTerm ParserStage = ParserXTerm {unParserXTerm :: Comment}
   deriving (Generic, Semigroup, Monoid, Show, Eq, ToExpr)
 
+newtype instance XRule ParserStage = ParserXRule {unParserXRule :: Comment}
+  deriving (Generic, Semigroup, Monoid, Show, Eq, ToExpr)
+
 newtype instance XCddl ParserStage = ParserXCddl [Comment]
   deriving (Generic, Semigroup, Monoid, Show, Eq, ToExpr)
 
 instance HasComment (XTerm ParserStage) where
   commentL = #unParserXTerm
+
+instance HasComment (XRule ParserStage) where
+  commentL = #unParserXRule
 
 pCDDL :: Parser (CDDL ParserStage)
 pCDDL = do
@@ -91,7 +97,7 @@ pRule = do
             <*> (TOGType <$> pType0 <* notFollowedBy (space >> (":" <|> "=>")))
       , (,) <$> pAssignG <* space <*> (TOGGroup <$> pGrpEntry)
       ]
-  pure $ Rule name genericParam assign typeOrGrp (ParserXTerm cmt)
+  pure $ Rule name genericParam assign typeOrGrp (ParserXRule cmt)
 
 pName :: Parser (Name ParserStage)
 pName = label "name" $ do

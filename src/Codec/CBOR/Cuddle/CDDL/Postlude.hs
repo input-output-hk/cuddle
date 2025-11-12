@@ -2,7 +2,7 @@
 
 module Codec.CBOR.Cuddle.CDDL.Postlude where
 
-import Codec.CBOR.Cuddle.CDDL (CDDL (..), TopLevel (..), XTerm, XXType2, appendRules)
+import Codec.CBOR.Cuddle.CDDL (CDDL (..), TopLevel (..), XRule, XTerm, XXType2, appendRules)
 import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
 import Codec.CBOR.Cuddle.Parser (ParserStage, pCDDL)
 import Data.Maybe (mapMaybe)
@@ -62,6 +62,7 @@ cddlPostlude =
 appendPostlude ::
   ( IndexMappable XXType2 ParserStage i
   , IndexMappable XTerm ParserStage i
+  , IndexMappable XRule ParserStage i
   ) =>
   CDDL i -> CDDL i
 appendPostlude cddl = appendRules cddl $ mapIndex <$> (r : rs)

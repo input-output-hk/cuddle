@@ -19,6 +19,7 @@ import Codec.CBOR.Cuddle.CDDL (
   Type2 (..),
   TypeOrGroup (..),
   XCddl,
+  XRule,
   XTerm,
   XXTopLevel,
   XXType2,
@@ -26,13 +27,21 @@ import Codec.CBOR.Cuddle.CDDL (
 import Codec.CBOR.Cuddle.CDDL.CTree (
   CTreePhase,
   XCddl (..),
+  XRule (..),
   XTerm (..),
   XXTopLevel (..),
   XXType2 (..),
  )
 import Codec.CBOR.Cuddle.Huddle (HuddleStage, XCddl (..), XTerm (..), XXTopLevel (..), XXType2 (..))
-import Codec.CBOR.Cuddle.Parser (ParserStage, XCddl (..), XTerm (..), XXTopLevel (..), XXType2 (..))
-import Codec.CBOR.Cuddle.Pretty (PrettyStage, XCddl (..), XTerm (..), XXTopLevel (..))
+import Codec.CBOR.Cuddle.Parser (
+  ParserStage,
+  XCddl (..),
+  XRule (..),
+  XTerm (..),
+  XXTopLevel (..),
+  XXType2 (..),
+ )
+import Codec.CBOR.Cuddle.Pretty (PrettyStage, XCddl (..), XRule (..), XTerm (..), XXTopLevel (..))
 import Data.Bifunctor (Bifunctor (..))
 import Data.Coerce (Coercible, coerce)
 import Data.Void (absurd)
@@ -47,6 +56,7 @@ instance
   , IndexMappable XXTopLevel i j
   , IndexMappable XXType2 i j
   , IndexMappable XTerm i j
+  , IndexMappable XRule i j
   ) =>
   IndexMappable CDDL i j
   where
@@ -55,6 +65,7 @@ instance
 instance
   ( IndexMappable XXType2 i j
   , IndexMappable XTerm i j
+  , IndexMappable XRule i j
   ) =>
   IndexMappable Rule i j
   where
@@ -64,6 +75,7 @@ instance
   ( IndexMappable XXTopLevel i j
   , IndexMappable XXType2 i j
   , IndexMappable XTerm i j
+  , IndexMappable XRule i j
   ) =>
   IndexMappable TopLevel i j
   where
@@ -180,6 +192,9 @@ instance IndexMappable XCddl ParserStage PrettyStage where
 instance IndexMappable XTerm ParserStage PrettyStage where
   mapIndex (ParserXTerm c) = PrettyXTerm c
 
+instance IndexMappable XRule ParserStage PrettyStage where
+  mapIndex (ParserXRule c) = PrettyXRule c
+
 instance IndexMappable XXType2 ParserStage PrettyStage where
   mapIndex (ParserXXType2 v) = absurd v
 
@@ -199,6 +214,9 @@ instance IndexMappable XXType2 ParserStage CTreePhase where
 
 instance IndexMappable XTerm ParserStage CTreePhase where
   mapIndex (ParserXTerm c) = CTreeXTerm c
+
+instance IndexMappable XRule ParserStage CTreePhase where
+  mapIndex (ParserXRule c) = CTreeXRule c
 
 -- ParserStage -> HuddleStage
 
@@ -251,3 +269,5 @@ instance IndexMappable XXTopLevel ParserStage ParserStage
 instance IndexMappable XXType2 ParserStage ParserStage
 
 instance IndexMappable XTerm ParserStage ParserStage
+
+instance IndexMappable XRule ParserStage ParserStage

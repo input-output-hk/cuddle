@@ -39,10 +39,11 @@ module Codec.CBOR.Cuddle.CDDL (
   compareRuleName,
   -- Extension
   ForAllExtensions,
-  XXTopLevel,
-  XXType2,
   XCddl,
   XTerm,
+  XRule,
+  XXTopLevel,
+  XXType2,
 ) where
 
 import Codec.CBOR.Cuddle.CDDL.CtlOp (CtlOp)
@@ -68,12 +69,15 @@ data family XCddl i
 
 data family XTerm i
 
+data family XRule i
+
 data family XXType2 i
 
 type ForAllExtensions i (c :: Type -> Constraint) =
   ( c (XCddl i)
-  , c (XXTopLevel i)
   , c (XTerm i)
+  , c (XRule i)
+  , c (XXTopLevel i)
   , c (XXType2 i)
   )
 
@@ -258,7 +262,7 @@ data Rule i = Rule
   , ruleGenParam :: Maybe (GenericParam i)
   , ruleAssign :: Assign
   , ruleTerm :: TypeOrGroup i
-  , ruleExt :: XTerm i
+  , ruleExt :: XRule i
   }
   deriving (Generic)
 
@@ -268,7 +272,7 @@ deriving instance ForAllExtensions i Show => Show (Rule i)
 
 deriving instance ForAllExtensions i ToExpr => ToExpr (Rule i)
 
-instance HasComment (XTerm i) => HasComment (Rule i) where
+instance HasComment (XRule i) => HasComment (Rule i) where
   commentL = #ruleExt % commentL
 
 compareRuleName :: Ord (XTerm i) => Rule i -> Rule i -> Ordering

@@ -2,6 +2,7 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -17,8 +18,8 @@ module Codec.CBOR.Cuddle.Huddle (
   Huddle,
   HuddleItem (..),
   huddleAugment,
-  Rule,
-  Named,
+  Rule (..),
+  Named (..),
   IsType0 (..),
   Value (..),
 
@@ -85,6 +86,9 @@ module Codec.CBOR.Cuddle.Huddle (
   binding2,
   callToDef,
 
+  -- * Generators
+  withGenerator,
+
   -- * Conversion to CDDL
   collectFrom,
   collectFromInit,
@@ -93,16 +97,18 @@ module Codec.CBOR.Cuddle.Huddle (
 )
 where
 
-import Codec.CBOR.Cuddle.CDDL (CDDL)
+import Codec.CBOR.Cuddle.CDDL (CDDL, XRule)
 import Codec.CBOR.Cuddle.CDDL qualified as C
+import Codec.CBOR.Cuddle.CDDL.CBORGenerator (CBORGenerator, HasGenerator (..))
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
+import Codec.CBOR.Cuddle.Comments (Comment (..), HasComment (..))
 import Codec.CBOR.Cuddle.Comments qualified as C
 import Control.Monad (when)
 import Control.Monad.State (MonadState (get), execState, modify)
 import Data.ByteString (ByteString)
 import Data.Default.Class (Default (..))
 import Data.Function (on)
-import Data.Generics.Product (HasField' (field'), field, getField)
+import Data.Generics.Product (field, getField)
 import Data.List qualified as L
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Ordered.Strict (OMap, (|<>))
@@ -115,7 +121,8 @@ import Data.Void (Void)
 import Data.Word (Word64)
 import GHC.Exts (IsList (Item, fromList, toList))
 import GHC.Generics (Generic)
-import Optics.Core (lens, view, (%~), (&), (.~), (^.))
+import Optics.Core (lens, view, (%), (%~), (&), (^.))
+import Optics.Core qualified as L
 import Prelude hiding ((/))
 
 data HuddleStage
@@ -125,6 +132,12 @@ newtype instance C.XTerm HuddleStage = HuddleXTerm C.Comment
 
 newtype instance C.XCddl HuddleStage = HuddleXCddl [C.Comment]
   deriving (Generic, Semigroup, Monoid, Show, Eq)
+
+data instance C.XRule HuddleStage = HuddleXRule
+  { hxrComment :: C.Comment
+  , hxrGenerator :: Maybe CBORGenerator
+  }
+  deriving (Generic)
 
 newtype instance C.XXTopLevel HuddleStage = HuddleXXTopLevel C.Comment
   deriving (Generic, Semigroup, Monoid, Show, Eq)
@@ -140,19 +153,26 @@ data Named a = Named
   deriving (Functor, Generic)
 
 -- | Add a description to a rule or group entry, to be included as a comment.
-comment :: HasField' "description" a (Maybe T.Text) => T.Text -> a -> a
-comment desc n = n & field' @"description" .~ Just desc
+comment :: HasComment a => T.Text -> a -> a
+comment desc n = n & commentL %~ (<> Comment desc)
 
 instance Show (Named a) where
   show (Named n _ _) = T.unpack n
 
-type Rule = Named Type0
+data Rule = Rule
+  { ruleDefinition :: Named Type0
+  , ruleExtra :: XRule HuddleStage
+  }
+  deriving (Generic)
+
+instance HasComment Rule where
+  commentL = #ruleExtra % #hxrComment
 
 data HuddleItem
   = HIRule Rule
   | HIGRule GRuleDef
   | HIGroup (Named Group)
-  deriving (Generic, Show)
+  deriving (Generic)
 
 -- | Top-level Huddle type is a list of rules.
 data Huddle = Huddle
@@ -160,14 +180,14 @@ data Huddle = Huddle
   -- ^ Root elements
   , items :: OMap T.Text HuddleItem
   }
-  deriving (Generic, Show)
+  deriving (Generic)
 
 -- | Joins two `Huddle` values with a left-bias. This means that this function
 -- is not symmetric and that any rules that are present in both prefer the
 -- definition from the `Huddle` value on the left.
 huddleAugment :: Huddle -> Huddle -> Huddle
 huddleAugment (Huddle rootsL itemsL) (Huddle rootsR itemsR) =
-  Huddle (L.nubBy ((==) `on` name) $ rootsL <> rootsR) (itemsL |<> itemsR)
+  Huddle (L.nubBy ((==) `on` name . ruleDefinition) $ rootsL <> rootsR) (itemsL |<> itemsR)
 
 -- | This semigroup instance:
 --   - Takes takes the roots from the RHS unless they are empty, in which case
@@ -192,8 +212,8 @@ instance Semigroup Huddle where
 instance IsList Huddle where
   type Item Huddle = Rule
   fromList [] = Huddle mempty OMap.empty
-  fromList (x : xs) =
-    (field @"items" %~ (OMap.|> (x ^. field @"name", HIRule x))) $ fromList xs
+  fromList (r@(Rule x _) : xs) =
+    (field @"items" %~ (OMap.|> (x ^. field @"name", HIRule r))) $ fromList xs
 
   toList = const []
 
@@ -216,7 +236,6 @@ choiceToNE (ChoiceOf c cs) = c NE.:| choiceToList cs
 data Key
   = LiteralKey Literal
   | TypeKey Type2
-  deriving (Show)
 
 -- | Instance for the very general case where we use text keys
 instance IsString Key where
@@ -237,13 +256,12 @@ data MapEntry = MapEntry
   , quantifier :: Occurs
   , meDescription :: C.Comment
   }
-  deriving (Generic, Show)
+  deriving (Generic)
 
 instance C.HasComment MapEntry where
   commentL = lens meDescription (\x y -> x {meDescription = y})
 
 newtype MapChoice = MapChoice {unMapChoice :: [MapEntry]}
-  deriving (Show)
 
 instance IsList MapChoice where
   type Item MapChoice = MapEntry
@@ -261,7 +279,7 @@ data ArrayEntry = ArrayEntry
   , quantifier :: Occurs
   , aeDescription :: C.Comment
   }
-  deriving (Generic, Show)
+  deriving (Generic)
 
 instance C.HasComment ArrayEntry where
   commentL = lens aeDescription (\x y -> x {aeDescription = y})
@@ -283,7 +301,6 @@ data ArrayChoice = ArrayChoice
   { unArrayChoice :: [ArrayEntry]
   , acComment :: C.Comment
   }
-  deriving (Show)
 
 instance Semigroup ArrayChoice where
   ArrayChoice x xc <> ArrayChoice y yc = ArrayChoice (x <> y) (xc <> yc)
@@ -302,8 +319,8 @@ instance IsList ArrayChoice where
 
 type Array = Choice ArrayChoice
 
-newtype Group = Group {unGroup :: [ArrayEntry]}
-  deriving (Show, Monoid, Semigroup)
+newtype Group = Group {_unGroup :: [ArrayEntry]}
+  deriving (Monoid, Semigroup)
 
 instance IsList Group where
   type Item Group = ArrayEntry
@@ -323,7 +340,6 @@ data Type2
     T2Generic GRuleCall
   | -- | Reference to a generic parameter within the body of the definition
     T2GenericRef GRef
-  deriving (Show)
 
 type Type0 = Choice Type2
 
@@ -426,16 +442,14 @@ data CGRefType
 data Constrained where
   Constrained ::
     forall a.
-    { value :: Constrainable a
-    , constraint :: ValueConstraint a
-    , refs :: [Rule]
+    { _value :: Constrainable a
+    , _constraint :: ValueConstraint a
+    , _refs :: [Rule]
     -- ^ Sometimes constraints reference rules. In this case we need to
     -- collect the references in order to traverse them when collecting all
     -- relevant rules.
     } ->
     Constrained
-
-deriving instance Show Constrained
 
 class IsConstrainable a x | a -> x where
   toConstrainable :: a -> Constrainable x
@@ -539,7 +553,7 @@ instance IsCborable (AnyRef a)
 instance IsCborable GRef
 
 cbor :: (IsCborable b, IsConstrainable c b) => c -> Rule -> Constrained
-cbor v r@(Named n _ _) =
+cbor v r@(Rule (Named n _ _) _) =
   Constrained
     (toConstrainable v)
     ValueConstraint
@@ -614,7 +628,7 @@ class IsType0 a where
   toType0 :: a -> Type0
 
 instance IsType0 Rule where
-  toType0 = NoChoice . T2Ref
+  toType0 = NoChoice . T2Ref . ruleDefinition
 
 instance IsType0 (Choice Type2) where
   toType0 = id
@@ -743,7 +757,7 @@ infixl 8 ==>
 
 -- | Assign a rule
 (=:=) :: IsType0 a => T.Text -> a -> Rule
-n =:= b = Named n (toType0 b) Nothing
+n =:= b = Rule (Named n (toType0 b) Nothing) (HuddleXRule undefined undefined)
 
 infixl 1 =:=
 
@@ -790,7 +804,7 @@ instance IsChoosable Type2 Type2 where
   toChoice = NoChoice
 
 instance IsChoosable Rule Type2 where
-  toChoice = toChoice . T2Ref
+  toChoice = toChoice . T2Ref . ruleDefinition
 
 instance IsChoosable GRuleCall Type2 where
   toChoice = toChoice . T2Generic
@@ -941,7 +955,6 @@ data GRule a = GRule
   { args :: NE.NonEmpty a
   , body :: Type0
   }
-  deriving (Show)
 
 type GRuleCall = Named (GRule Type2)
 
@@ -963,10 +976,10 @@ callToDef gr = gr {args = refs}
 binding :: IsType0 t0 => (GRef -> Rule) -> t0 -> GRuleCall
 binding fRule t0 =
   Named
-    (name rule)
+    (name $ ruleDefinition rule)
     GRule
       { args = t2 NE.:| []
-      , body = getField @"value" rule
+      , body = getField @"value" $ ruleDefinition rule
       }
     Nothing
   where
@@ -979,10 +992,10 @@ binding fRule t0 =
 binding2 :: (IsType0 t0, IsType0 t1) => (GRef -> GRef -> Rule) -> t0 -> t1 -> GRuleCall
 binding2 fRule t0 t1 =
   Named
-    (name rule)
+    (name $ ruleDefinition rule)
     GRule
       { args = t02 NE.:| [t12]
-      , body = getField @"value" rule
+      , body = getField @"value" $ ruleDefinition rule
       }
     Nothing
   where
@@ -1003,7 +1016,7 @@ hiRule (HIRule r) = [r]
 hiRule _ = []
 
 hiName :: HuddleItem -> T.Text
-hiName (HIRule (Named n _ _)) = n
+hiName (HIRule (Rule (Named n _ _) _)) = n
 hiName (HIGroup (Named n _ _)) = n
 hiName (HIGRule (Named n _ _)) = n
 
@@ -1025,7 +1038,7 @@ collectFrom topRs =
     goHuddleItem (HIRule r) = goRule r
     goHuddleItem (HIGroup g) = goNamedGroup g
     goHuddleItem (HIGRule (Named _ (GRule _ t0) _)) = goT0 t0
-    goRule r@(Named n t0 _) = do
+    goRule r@(Rule (Named n t0 _) _) = do
       items <- get
       when (OMap.notMember n items) $ do
         modify (OMap.|> (n, HIRule r))
@@ -1050,13 +1063,13 @@ collectFrom topRs =
     goT2 (T2Map m) = goChoice (mapM_ goMapEntry . unMapChoice) m
     goT2 (T2Array m) = goChoice (mapM_ goArrayEntry . unArrayChoice) m
     goT2 (T2Tagged (Tagged _ t0)) = goT0 t0
-    goT2 (T2Ref n) = goRule n
+    goT2 (T2Ref n) = goRule (Rule n undefined)
     goT2 (T2Group r) = goNamedGroup r
     goT2 (T2Generic x) = goGRule x
     goT2 (T2Constrained (Constrained c _ refs)) =
       ( case c of
           CValue _ -> pure ()
-          CRef r -> goRule r
+          CRef r -> goRule $ Rule r undefined
           CGRef _ -> pure ()
       )
         >> mapM_ goRule refs
@@ -1070,7 +1083,7 @@ collectFrom topRs =
     goRanged (Unranged _) = pure ()
     goRanged (Ranged lb ub _) = goRangeBound lb >> goRangeBound ub
     goRangeBound (RangeBoundLiteral _) = pure ()
-    goRangeBound (RangeBoundRef r) = goRule r
+    goRangeBound (RangeBoundRef r) = goRule $ Rule r undefined
 
 -- | Same as `collectFrom`, but the rules passed into this function will be put
 --   at the top of the Huddle, and all of their dependencies will be added at
@@ -1140,8 +1153,10 @@ toCDDL' HuddleConfig {..} hdl =
         comment "Pseudo-rule introduced by Cuddle to collect root elements" $
           "huddle_root_defs" =:= arr (fromList (fmap a topRs))
     toCDDLRule :: Rule -> C.Rule HuddleStage
-    toCDDLRule (Named n t0 c) =
-      (\x -> C.Rule (C.Name n mempty) Nothing C.AssignEq x (foldMap (HuddleXTerm . C.Comment) c))
+    toCDDLRule (Rule (Named n t0 c) extra) =
+      ( \x ->
+          C.Rule (C.Name n mempty) Nothing C.AssignEq x (extra & #hxrComment %~ (<> foldMap Comment c))
+      )
         . C.TOGType
         . C.Type0
         $ toCDDLType1 <$> choiceToNE t0
@@ -1262,7 +1277,7 @@ toCDDL' HuddleConfig {..} hdl =
               arrayEntryToCDDL
               t0s
         )
-        (foldMap (HuddleXTerm . C.Comment) c)
+        (HuddleXRule (foldMap Comment c) Nothing)
 
     toGenericCall :: GRuleCall -> C.Type2 HuddleStage
     toGenericCall (Named n gr _) =
@@ -1280,7 +1295,10 @@ toCDDL' HuddleConfig {..} hdl =
             . C.Type0
             $ toCDDLType1 <$> choiceToNE (body gr)
         )
-        (foldMap (HuddleXTerm . C.Comment) c)
+        (HuddleXRule (foldMap Comment c) Nothing)
       where
         gps =
           C.GenericParam $ fmap (\(GRef t) -> C.Name t mempty) (args gr)
+
+withGenerator :: HasGenerator a => CBORGenerator -> a -> a
+withGenerator = L.set generatorL

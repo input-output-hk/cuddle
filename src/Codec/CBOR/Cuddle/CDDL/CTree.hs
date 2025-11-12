@@ -10,6 +10,7 @@ import Codec.CBOR.Cuddle.CDDL (
   RangeBound,
   Value,
   XCddl,
+  XRule,
   XTerm,
   XXTopLevel,
   XXType2,
@@ -44,6 +45,9 @@ newtype instance XXTopLevel CTreePhase = CTreeXXTopLevel Comment
   deriving (Generic, Show, Eq, Ord, Hashable)
 
 newtype instance XCddl CTreePhase = CTreeXCddl [Comment]
+  deriving (Generic, Show, Eq, Ord, Hashable)
+
+newtype instance XRule CTreePhase = CTreeXRule Comment
   deriving (Generic, Show, Eq, Ord, Hashable)
 
 newtype instance XXType2 CTreePhase = CTreeXXType2 Void

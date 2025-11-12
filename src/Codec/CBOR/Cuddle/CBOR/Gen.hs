@@ -59,6 +59,7 @@ import System.Random.Stateful (
 import System.Random.Stateful (
   SplitGen (..)
   )
+import Codec.CBOR.Cuddle.CDDL.CBORGenerator (WrappedTerm (..))
 #endif
 
 --------------------------------------------------------------------------------
@@ -209,22 +210,13 @@ genPostlude pt = case pt of
 -- Kinds of terms
 --------------------------------------------------------------------------------
 
-data WrappedTerm
-  = SingleTerm Term
-  | PairTerm Term Term
-  | GroupTerm [WrappedTerm]
-  deriving (Eq, Show)
-
 -- | Recursively flatten wrapped list. That is, expand any groups out to their
 -- individual entries.
 flattenWrappedList :: [WrappedTerm] -> [WrappedTerm]
 flattenWrappedList [] = []
-flattenWrappedList (GroupTerm xxs : xs) =
+flattenWrappedList (G xxs : xs) =
   flattenWrappedList xxs <> flattenWrappedList xs
 flattenWrappedList (y : xs) = y : flattenWrappedList xs
-
-pattern S :: Term -> WrappedTerm
-pattern S t = SingleTerm t
 
 -- | Convert a list of wrapped terms to a list of terms. If any 'PairTerm's are
 -- present, we just take their "value" part.
@@ -234,18 +226,12 @@ singleTermList (S x : xs) = (x :) <$> singleTermList xs
 singleTermList (P _ y : xs) = (y :) <$> singleTermList xs
 singleTermList _ = Nothing
 
-pattern P :: Term -> Term -> WrappedTerm
-pattern P t1 t2 = PairTerm t1 t2
-
 -- | Convert a list of wrapped terms to a list of pairs of terms, or fail if any
 -- 'SingleTerm's are present.
 pairTermList :: [WrappedTerm] -> Maybe [(Term, Term)]
 pairTermList [] = Just []
 pairTermList (P x y : xs) = ((x, y) :) <$> pairTermList xs
 pairTermList _ = Nothing
-
-pattern G :: [WrappedTerm] -> WrappedTerm
-pattern G xs = GroupTerm xs
 
 --------------------------------------------------------------------------------
 -- Generator functions
