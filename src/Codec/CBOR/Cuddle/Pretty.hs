@@ -24,6 +24,7 @@ import Codec.CBOR.Cuddle.Pretty.Columnar (
  )
 import Codec.CBOR.Cuddle.Pretty.Utils (renderedLen, softspace)
 import Data.ByteString.Char8 qualified as BS
+import Data.Default.Class (Default)
 import Data.Foldable (Foldable (..))
 import Data.List.NonEmpty qualified as NE
 import Data.String (IsString, fromString)
@@ -50,6 +51,7 @@ newtype instance XCddl PrettyStage = PrettyXCddl [Comment]
 
 newtype instance XRule PrettyStage = PrettyXRule {unPrettyXRule :: Comment}
   deriving (Generic, CollectComments, ToExpr, Show, Eq)
+  deriving newtype (Default)
 
 instance HasComment (XTerm PrettyStage) where
   commentL = #unPrettyXTerm
