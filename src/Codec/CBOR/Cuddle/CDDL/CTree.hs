@@ -34,7 +34,7 @@ import GHC.Generics (Generic)
 -- to manipulate.
 --------------------------------------------------------------------------------
 
-type family CTreeExt i
+type family XXCTree i
 
 data CTreePhase
 
@@ -67,14 +67,14 @@ data CTree i
   | Enum (CTree i)
   | Unwrap (CTree i)
   | Tag Word64 (CTree i)
-  | CTreeE (CTreeExt i)
+  | CTreeE (XXCTree i)
   deriving (Generic)
 
 deriving instance Eq (Node f) => Eq (CTree f)
 
 -- | Traverse the CTree, carrying out the given operation at each node
 traverseCTree ::
-  Monad m => (CTreeExt i -> m (CTree j)) -> (CTree i -> m (CTree j)) -> CTree i -> m (CTree j)
+  Monad m => (XXCTree i -> m (CTree j)) -> (CTree i -> m (CTree j)) -> CTree i -> m (CTree j)
 traverseCTree _ _ (Literal a) = pure $ Literal a
 traverseCTree _ _ (Postlude a) = pure $ Postlude a
 traverseCTree _ atNode (Map xs) = Map <$> traverse atNode xs
@@ -99,7 +99,7 @@ traverseCTree _ atNode (Unwrap ref) = Unwrap <$> atNode ref
 traverseCTree _ atNode (Tag i ref) = Tag i <$> atNode ref
 traverseCTree atExt _ (CTreeE x) = atExt x
 
-type Node i = CTreeExt i
+type Node i = XXCTree i
 
 newtype CTreeRoot i = CTreeRoot (Map.Map (Name CTreePhase) (CTree i))
   deriving (Generic)
