@@ -1,5 +1,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeData #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ViewPatterns #-}
 
 module Codec.CBOR.Cuddle.CBOR.Validator (
@@ -12,7 +14,8 @@ module Codec.CBOR.Cuddle.CBOR.Validator (
 import Codec.CBOR.Cuddle.CDDL hiding (CDDL, Group, Rule)
 import Codec.CBOR.Cuddle.CDDL.CTree
 import Codec.CBOR.Cuddle.CDDL.CtlOp
-import Codec.CBOR.Cuddle.CDDL.Resolve
+import Codec.CBOR.Cuddle.CDDL.Resolve (MonoReferenced, XXCTree (..))
+import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
 import Codec.CBOR.Read
 import Codec.CBOR.Term
 import Control.Exception
@@ -37,8 +40,25 @@ import System.Exit
 import System.IO
 import Text.Regex.TDFA
 
-type CDDL = CTreeRoot MonoReferenced
-type Rule = CTree MonoReferenced
+type data ValidatorStage
+
+data instance XTerm ValidatorStage = ValidatorXTerm
+  deriving (Show)
+
+newtype instance XXCTree ValidatorStage = VRuleRef Name
+  deriving (Show)
+
+instance IndexMappable CTreeRoot MonoReferenced ValidatorStage where
+  mapIndex (CTreeRoot m) = CTreeRoot $ mapIndex <$> m
+
+instance IndexMappable CTree MonoReferenced ValidatorStage where
+  mapIndex = foldCTree mapExt mapIndex
+    where
+      mapExt (MRuleRef n) = CTreeE $ VRuleRef n
+      mapExt (MGenerator _ x) = mapIndex x
+
+type CDDL = CTreeRoot ValidatorStage
+type Rule = CTree ValidatorStage
 
 data CBORTermResult = CBORTermResult Term CDDLResult
   deriving (Show)
@@ -114,7 +134,7 @@ data AMatchedItem = AMatchedItem
 --------------------------------------------------------------------------------
 -- Main entry point
 
-validateCBOR :: BS.ByteString -> Name CTreePhase -> CDDL -> IO ()
+validateCBOR :: BS.ByteString -> Name -> CDDL -> IO ()
 validateCBOR bs rule cddl =
   ( case validateCBOR' bs rule cddl of
       ok@(CBORTermResult _ (Valid _)) -> do
@@ -131,7 +151,7 @@ validateCBOR bs rule cddl =
             )
 
 validateCBOR' ::
-  BS.ByteString -> Name CTreePhase -> CDDL -> CBORTermResult
+  BS.ByteString -> Name -> CDDL -> CBORTermResult
 validateCBOR' bs rule cddl@(CTreeRoot tree) =
   case deserialiseFromBytes decodeTerm (BSL.fromStrict bs) of
     Left e -> error $ show e
@@ -1016,7 +1036,7 @@ validateChoice v rules = go rules
                 . ($ dummyRule)
 
 dummyRule :: Rule
-dummyRule = CTreeE $ MRuleRef (Name "dummy" mempty)
+dummyRule = CTreeE $ VRuleRef "dummy"
 
 --------------------------------------------------------------------------------
 -- Control helpers
@@ -1108,7 +1128,7 @@ getIndicesOfEnum g =
 -- Resolving rules from the CDDL spec
 
 resolveIfRef :: CDDL -> Rule -> Rule
-resolveIfRef ct@(CTreeRoot cddl) (CTreeE (MRuleRef n)) = do
+resolveIfRef ct@(CTreeRoot cddl) (CTreeE (VRuleRef n)) = do
   case Map.lookup n cddl of
     Nothing -> error $ "Unbound reference: " <> show n
     Just val -> resolveIfRef ct val

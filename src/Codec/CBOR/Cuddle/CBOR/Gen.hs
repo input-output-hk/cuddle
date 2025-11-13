@@ -11,6 +11,8 @@
 
 #if MIN_VERSION_random(1,3,0)
 {-# OPTIONS_GHC -Wno-deprecations #-} -- Due to usage of `split`
+{-# LANGUAGE TypeData #-}
+{-# LANGUAGE TypeFamilies #-}
 #endif
 -- | Generate example CBOR given a CDDL specification
 module Codec.CBOR.Cuddle.CBOR.Gen (generateCBORTerm, generateCBORTerm') where
@@ -25,10 +27,10 @@ import Codec.CBOR.Cuddle.CDDL (
   Value (..),
   ValueVariant (..),
  )
-import Codec.CBOR.Cuddle.CDDL.CTree (CTree, CTreePhase, CTreeRoot (..), PTerm (..))
+import Codec.CBOR.Cuddle.CDDL.CTree (CTree (..), CTreeRoot (..), PTerm (..), foldCTree)
 import Codec.CBOR.Cuddle.CDDL.CTree qualified as CTree
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
-import Codec.CBOR.Cuddle.CDDL.Resolve (MonoRef (..), MonoReferenced)
+import Codec.CBOR.Cuddle.CDDL.Resolve (MonoReferenced, XXCTree (..))
 import Codec.CBOR.Term (Term (..))
 import Codec.CBOR.Term qualified as CBOR
 import Codec.CBOR.Write qualified as CBOR
@@ -60,7 +62,19 @@ import System.Random.Stateful (
   SplitGen (..)
   )
 import Codec.CBOR.Cuddle.CDDL.CBORGenerator (WrappedTerm (..))
+import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
 #endif
+
+type data MonoDropGen
+
+newtype instance XXCTree MonoDropGen = MDGRef Name
+  deriving (Show)
+
+instance IndexMappable CTree MonoReferenced MonoDropGen where
+  mapIndex = foldCTree mapExt mapIndex
+    where
+      mapExt (MRuleRef n) = CTreeE $ MDGRef n
+      mapExt (MGenerator _ x) = mapIndex x
 
 --------------------------------------------------------------------------------
 -- Generator infrastructure
@@ -233,6 +247,9 @@ pairTermList [] = Just []
 pairTermList (P x y : xs) = ((x, y) :) <$> pairTermList xs
 pairTermList _ = Nothing
 
+showDropGen :: CTree MonoReferenced -> String
+showDropGen = show . mapIndex @_ @_ @MonoDropGen
+
 --------------------------------------------------------------------------------
 -- Generator functions
 --------------------------------------------------------------------------------
@@ -270,9 +287,9 @@ genForCTree (CTree.KV key value _cut) = do
     _ ->
       error $
         "Non single-term generated outside of group context: "
-          <> show key
+          <> showDropGen key
           <> " => "
-          <> show value
+          <> showDropGen value
 genForCTree (CTree.Occur item occurs) =
   applyOccurenceIndicator occurs (genForCTree item)
 genForCTree (CTree.Range from to _bounds) = do
@@ -292,11 +309,11 @@ genForCTree (CTree.Control op target controller) = do
     (CtlOp.Le, CTree.Literal (Value (VUInt n) _)) -> case target of
       CTree.Postlude PTUInt -> S . TInteger <$> genUniformRM (0, fromIntegral n)
       _ -> error "Cannot apply le operator to target"
-    (CtlOp.Le, _) -> error $ "Invalid controller for .le operator: " <> show controller
+    (CtlOp.Le, _) -> error $ "Invalid controller for .le operator: " <> showDropGen controller
     (CtlOp.Lt, CTree.Literal (Value (VUInt n) _)) -> case target of
       CTree.Postlude PTUInt -> S . TInteger <$> genUniformRM (0, fromIntegral n - 1)
       _ -> error "Cannot apply lt operator to target"
-    (CtlOp.Lt, _) -> error $ "Invalid controller for .lt operator: " <> show controller
+    (CtlOp.Lt, _) -> error $ "Invalid controller for .lt operator: " <> showDropGen controller
     (CtlOp.Size, CTree.Literal (Value (VUInt n) _)) -> case target of
       CTree.Postlude PTText -> S . TString <$> genText (fromIntegral n)
       CTree.Postlude PTBytes -> S . TBytes <$> genBytes (fromIntegral n)
@@ -314,15 +331,15 @@ genForCTree (CTree.Control op target controller) = do
           CTree.Postlude PTUInt ->
             S . TInteger
               <$> genUniformRM (fromIntegral f1, fromIntegral t1)
-          _ -> error $ "Cannot apply size operator to target: " <> show target
+          _ -> error $ "Cannot apply size operator to target: " <> showDropGen target
         _ ->
           error $
             "Invalid controller for .size operator: "
-              <> show controller
+              <> showDropGen controller
     (CtlOp.Size, _) ->
       error $
         "Invalid controller for .size operator: "
-          <> show controller
+          <> showDropGen controller
     (CtlOp.Cbor, _) -> do
       enc <- genForCTree controller
       case enc of
@@ -356,6 +373,7 @@ resolveRef (MRuleRef n) = do
   case Map.lookup n cddl of
     Nothing -> error $ "Unbound reference: " <> show n
     Just val -> pure val
+resolveRef (MGenerator _ _) = undefined
 
 -- | Generate a CBOR Term corresponding to a top-level name.
 --
@@ -365,7 +383,7 @@ resolveRef (MRuleRef n) = do
 -- This will throw an error if the generated item does not correspond to a
 -- single CBOR term (e.g. if the name resolves to a group, which cannot be
 -- generated outside a context).
-genForName :: RandomGen g => Name CTreePhase -> M g Term
+genForName :: RandomGen g => Name -> M g Term
 genForName n = do
   (CTreeRoot cddl) <- ask @"cddl"
   case Map.lookup n cddl of
@@ -419,13 +437,13 @@ genValueVariant (VBool b) = pure $ TBool b
 -- Generator functions
 --------------------------------------------------------------------------------
 
-generateCBORTerm :: RandomGen g => CTreeRoot MonoReferenced -> Name CTreePhase -> g -> Term
+generateCBORTerm :: RandomGen g => CTreeRoot MonoReferenced -> Name -> g -> Term
 generateCBORTerm cddl n stdGen =
   let genEnv = GenEnv {cddl}
       genState = GenState {randomSeed = stdGen, depth = 1}
    in evalGen (genForName n) genEnv genState
 
-generateCBORTerm' :: RandomGen g => CTreeRoot MonoReferenced -> Name CTreePhase -> g -> (Term, g)
+generateCBORTerm' :: RandomGen g => CTreeRoot MonoReferenced -> Name -> g -> (Term, g)
 generateCBORTerm' cddl n stdGen =
   let genEnv = GenEnv {cddl}
       genState = GenState {randomSeed = stdGen, depth = 1}

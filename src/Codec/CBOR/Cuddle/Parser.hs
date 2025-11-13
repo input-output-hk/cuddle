@@ -1,6 +1,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeData #-}
 {-# LANGUAGE TypeFamilies #-}
 
 module Codec.CBOR.Cuddle.Parser where
@@ -42,7 +43,7 @@ import Text.Megaparsec.Char hiding (space)
 import Text.Megaparsec.Char qualified as C
 import Text.Megaparsec.Char.Lexer qualified as L
 
-data ParserStage
+type data ParserStage
 
 newtype instance XXTopLevel ParserStage = ParserXXTopLevel Comment
   deriving (Generic, Show, Eq, ToExpr)
@@ -99,11 +100,11 @@ pRule = do
       ]
   pure $ Rule name genericParam assign typeOrGrp (ParserXRule cmt)
 
-pName :: Parser (Name ParserStage)
+pName :: Parser Name
 pName = label "name" $ do
   fc <- firstChar
   rest <- many midChar
-  pure $ (`Name` mempty) . T.pack $ (fc : rest)
+  pure $ Name . T.pack $ (fc : rest)
   where
     firstChar = letterChar <|> char '@' <|> char '_' <|> char '$'
     midChar =
@@ -130,7 +131,7 @@ pAssignG =
 pGenericParam :: Parser (GenericParam ParserStage)
 pGenericParam =
   GenericParam
-    <$> between "<" ">" (NE.sepBy1 (space !*> pName <*! space) ",")
+    <$> between "<" ">" (NE.sepBy1 (space *> pName <* space) ",")
 
 pGenericArg :: Parser (GenericArg ParserStage)
 pGenericArg =
@@ -164,7 +165,7 @@ pType2 =
     , T2Group <$> label "group" ("(" *> pType0Cmt <* ")")
     , T2Map <$> label "map" ("{" *> pGroup <* "}")
     , T2Array <$> label "array" ("[" *> space !*> pGroup <*! space <* "]")
-    , T2Unwrapped <$> ("~" *> space !*> pName) <*> optional pGenericArg
+    , T2Unwrapped <$> ("~" *> space *> pName) <*> optional pGenericArg
     , do
         _ <- "&"
         cmt <- space

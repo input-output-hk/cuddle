@@ -42,7 +42,7 @@ prettyPrintsTo x s = assertEqual (show . prettyExpr $ toExpr x) s rendered
     rendered = renderString (layoutPretty defaultLayoutOptions (pretty x))
 
 t2Name :: Type2 PrettyStage
-t2Name = T2Name (Name "a" mempty) mempty
+t2Name = T2Name (Name "a") mempty
 
 t1Name :: Type1 PrettyStage
 t1Name = Type1 t2Name Nothing mempty
@@ -126,7 +126,7 @@ drep =
 unitSpec :: Spec
 unitSpec = describe "HUnit" $ do
   describe "Name" $ do
-    it "names" $ Name @PrettyStage "a" "" `prettyPrintsTo` "a"
+    it "names" $ Name "a" `prettyPrintsTo` "a"
   describe "Type0" $ do
     it "name" $ Type0 @PrettyStage (t1Name :| []) `prettyPrintsTo` "a"
   describe "Type1" $ do
@@ -134,7 +134,7 @@ unitSpec = describe "HUnit" $ do
   describe "Type2" $ do
     it "T2Name" $ t2Name `prettyPrintsTo` "a"
     describe "T2Array" $ do
-      let groupEntryName = GroupEntry Nothing (GERef (Name "a" mempty) Nothing) ""
+      let groupEntryName = GroupEntry Nothing (GERef (Name "a") Nothing) ""
       it "one element" $
         T2Array (Group (GrpChoice [groupEntryName] mempty :| [])) `prettyPrintsTo` "[a]"
       it "two elements" $
@@ -182,10 +182,10 @@ unitSpec = describe "HUnit" $ do
   describe "Rule" $ do
     it "simple assignment" $
       Rule @PrettyStage
-        (Name "a" mempty)
+        (Name "a")
         Nothing
         AssignEq
-        (TOGType (Type0 (Type1 (T2Name (Name "b" mempty) mempty) Nothing mempty :| [])))
+        (TOGType (Type0 (Type1 (T2Name (Name "b") mempty) Nothing mempty :| [])))
         def
         `prettyPrintsTo` "a = b"
     xit "drep" $

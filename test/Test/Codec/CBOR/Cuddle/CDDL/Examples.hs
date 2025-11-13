@@ -10,7 +10,7 @@ import Codec.CBOR.Cuddle.CDDL.Resolve (
   NameResolutionFailure (..),
   fullResolveCDDL,
  )
-import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
+import Codec.CBOR.Cuddle.IndexMappable (mapCDDLDropExt)
 import Codec.CBOR.Cuddle.Parser (pCDDL)
 import Data.Text.IO qualified as T
 import Paths_cuddle (getDataFileName)
@@ -26,7 +26,7 @@ tryValidateFile filePath = do
   cddl <- case parse pCDDL "" contents of
     Right x -> pure $ appendPostlude x
     Left x -> fail $ "Failed to parse the file:\n" <> errorBundlePretty x
-  pure . fullResolveCDDL $ mapIndex cddl
+  pure . fullResolveCDDL $ mapCDDLDropExt cddl
 
 validateExpectSuccess :: FilePath -> Spec
 validateExpectSuccess filePath = it ("Successfully validates " <> filePath) $ do
