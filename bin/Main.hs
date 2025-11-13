@@ -4,21 +4,12 @@ module Main (main) where
 
 import Codec.CBOR.Cuddle.CBOR.Gen (generateCBORTerm)
 import Codec.CBOR.Cuddle.CBOR.Validator
-import Codec.CBOR.Cuddle.CDDL (
-  CDDL (..),
-  Name (..),
-  TopLevel (..),
-  XRule,
-  XTerm,
-  XXType2,
-  fromRules,
-  sortCDDL,
- )
+import Codec.CBOR.Cuddle.CDDL (Name (..), fromRules, sortCDDL)
 import Codec.CBOR.Cuddle.CDDL.Postlude (appendPostlude)
 import Codec.CBOR.Cuddle.CDDL.Resolve (
   fullResolveCDDL,
  )
-import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
+import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..), mapCDDLDropExt)
 import Codec.CBOR.Cuddle.Parser (pCDDL)
 import Codec.CBOR.Cuddle.Pretty (PrettyStage)
 import Codec.CBOR.FlatTerm (toFlatTerm)
@@ -186,15 +177,6 @@ main = do
 
 run :: Opts -> IO ()
 run (Opts cmd cddlFile) = do
-  let
-    mapRule ::
-      ( IndexMappable XXType2 i j
-      , IndexMappable XTerm i j
-      , IndexMappable XRule i j
-      ) =>
-      TopLevel i -> [TopLevel j]
-    mapRule (TopLevelRule r) = [TopLevelRule $ mapIndex r]
-    mapRule (XXTopLevel _) = []
   parseFromFile pCDDL cddlFile >>= \case
     Left err -> do
       putStrLnErr $ errorBundlePretty err
@@ -210,20 +192,20 @@ run (Opts cmd cddlFile) = do
             putDocW 80 . pretty $ mapIndex @_ @_ @PrettyStage defs
         Validate vOpts ->
           let
-            CDDL r tls _
+            cddl
               | vNoPrelude vOpts = res
               | otherwise = appendPostlude res
            in
-            case fullResolveCDDL $ CDDL (mapIndex r) (foldMap mapRule tls) mempty of
+            case fullResolveCDDL $ mapCDDLDropExt cddl of
               Left err -> putStrLnErr (show err) >> exitFailure
               Right _ -> exitSuccess
         (GenerateCBOR gOpts) ->
           let
-            CDDL r tls _
+            cddl
               | gNoPrelude gOpts = res
               | otherwise = appendPostlude res
            in
-            case fullResolveCDDL $ CDDL (mapIndex r) (foldMap mapRule tls) mempty of
+            case fullResolveCDDL $ mapCDDLDropExt cddl of
               Left err -> putStrLnErr (show err) >> exitFailure
               Right mt -> do
                 stdGen <- getStdGen
@@ -237,11 +219,11 @@ run (Opts cmd cddlFile) = do
                       AsPrettyCBOR -> putStrLn . prettyHexEnc $ encodeTerm term
         ValidateCBOR vcOpts ->
           let
-            CDDL r tls _
+            cddl
               | vcNoPrelude vcOpts = res
               | otherwise = res
            in
-            case fullResolveCDDL $ CDDL (mapIndex r) (foldMap mapRule tls) mempty of
+            case fullResolveCDDL $ mapCDDLDropExt cddl of
               Left err -> putStrLnErr (show err) >> exitFailure
               Right mt -> do
                 cbor <- BSC.readFile (vcInput vcOpts)

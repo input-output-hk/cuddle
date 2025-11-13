@@ -101,7 +101,7 @@ where
 
 import Codec.CBOR.Cuddle.CDDL (CDDL, XRule)
 import Codec.CBOR.Cuddle.CDDL qualified as C
-import Codec.CBOR.Cuddle.CDDL.CBORGenerator (CBORGenerator, HasGenerator (..))
+import Codec.CBOR.Cuddle.CDDL.CBORGenerator (CBORGenerator (..), HasGenerator (..), WrappedTerm)
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
 import Codec.CBOR.Cuddle.Comments (Comment (..), HasComment (..))
 import Codec.CBOR.Cuddle.Comments qualified as C
@@ -125,6 +125,7 @@ import GHC.Exts (IsList (Item, fromList, toList))
 import GHC.Generics (Generic)
 import Optics.Core (lens, view, (%), (%~), (&), (^.))
 import Optics.Core qualified as L
+import System.Random.Stateful (StatefulGen)
 import Prelude hiding ((/))
 
 type data HuddleStage
@@ -168,6 +169,9 @@ data Rule = Rule
   , ruleExtra :: XRule HuddleStage
   }
   deriving (Generic)
+
+instance HasGenerator Rule where
+  generatorL = #ruleExtra % #hxrGenerator
 
 instance HasComment Rule where
   commentL = #ruleExtra % #hxrComment
@@ -1307,5 +1311,5 @@ toCDDL' HuddleConfig {..} hdl =
         gps =
           C.GenericParam $ fmap (\(GRef t) -> C.Name t) (args gr)
 
-withGenerator :: HasGenerator a => CBORGenerator -> a -> a
-withGenerator = L.set generatorL
+withGenerator :: HasGenerator a => (forall g m. StatefulGen g m => g -> m WrappedTerm) -> a -> a
+withGenerator f = L.set generatorL (Just $ CBORGenerator f)

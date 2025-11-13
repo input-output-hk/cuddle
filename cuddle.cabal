@@ -136,6 +136,7 @@ test-suite cuddle-test
     Paths_cuddle
     Test.Codec.CBOR.Cuddle.CDDL.Examples
     Test.Codec.CBOR.Cuddle.CDDL.Gen
+    Test.Codec.CBOR.Cuddle.CDDL.GeneratorSpec
     Test.Codec.CBOR.Cuddle.CDDL.Parser
     Test.Codec.CBOR.Cuddle.CDDL.Pretty
     Test.Codec.CBOR.Cuddle.Huddle
@@ -148,6 +149,8 @@ test-suite cuddle-test
     QuickCheck >=2.14,
     base,
     bytestring,
+    cborg,
+    containers,
     cuddle,
     data-default-class,
     generic-random,
@@ -155,6 +158,7 @@ test-suite cuddle-test
     hspec-megaparsec >=2.2,
     megaparsec,
     prettyprinter,
+    random,
     string-qq >=0.0.6,
     text,
     tree-diff,
