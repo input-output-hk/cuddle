@@ -61,7 +61,7 @@ import System.Random.Stateful (
 import System.Random.Stateful (
   SplitGen (..)
   )
-import Codec.CBOR.Cuddle.CDDL.CBORGenerator (WrappedTerm (..))
+import Codec.CBOR.Cuddle.CDDL.CBORGenerator (WrappedTerm (..), CBORGenerator (..))
 import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
 #endif
 
@@ -358,22 +358,22 @@ genForCTree (CTree.Tag tag node) = do
   case enc of
     S x -> pure $ S $ TTagged tag x
     _ -> error "Tag controller does not correspond to a single term"
-genForCTree (CTree.CTreeE x) = genForNode x
+genForCTree (CTree.CTreeE (MRuleRef n)) = genForNode n
+genForCTree (CTree.CTreeE (MGenerator (CBORGenerator gen) _)) = gen StateGenM
 
-genForNode :: RandomGen g => CTree.Node MonoReferenced -> M g WrappedTerm
+genForNode :: RandomGen g => Name -> M g WrappedTerm
 genForNode = genForCTree <=< resolveRef
 
 -- | Take a reference and resolve it to the relevant Tree, following multiple
 -- links if necessary.
-resolveRef :: RandomGen g => CTree.Node MonoReferenced -> M g (CTree MonoReferenced)
-resolveRef (MRuleRef n) = do
+resolveRef :: RandomGen g => Name -> M g (CTree MonoReferenced)
+resolveRef n = do
   (CTreeRoot cddl) <- ask @"cddl"
   -- Since we follow a reference, we increase the 'depth' of the gen monad.
   modify @"depth" (+ 1)
   case Map.lookup n cddl of
     Nothing -> error $ "Unbound reference: " <> show n
     Just val -> pure val
-resolveRef (MGenerator _ _) = undefined
 
 -- | Generate a CBOR Term corresponding to a top-level name.
 --
