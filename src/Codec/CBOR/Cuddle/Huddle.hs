@@ -105,7 +105,7 @@ import Data.Function (on)
 import Data.Generics.Product (HasField' (field'), field, getField)
 import Data.List qualified as L
 import Data.List.NonEmpty qualified as NE
-import Data.Map.Ordered.Strict (OMap, (|<>))
+import Data.Map.Ordered.Strict (OMap)
 import Data.Map.Ordered.Strict qualified as OMap
 import Data.Set qualified as Set
 import Data.String (IsString (fromString))
@@ -167,7 +167,9 @@ data Huddle = Huddle
 -- definition from the `Huddle` value on the left.
 huddleAugment :: Huddle -> Huddle -> Huddle
 huddleAugment (Huddle rootsL itemsL) (Huddle rootsR itemsR) =
-  Huddle (L.nubBy ((==) `on` name) $ rootsL <> rootsR) (itemsL |<> itemsR)
+  Huddle
+    (L.nubBy ((==) `on` name) $ rootsL <> rootsR)
+    (OMap.unionWithL (\t _ _ -> error $ "Duplicate definitions: " <> show t) itemsL itemsR)
 
 -- | This semigroup instance:
 --   - Takes takes the roots from the RHS unless they are empty, in which case
@@ -185,7 +187,8 @@ instance Semigroup Huddle where
       { roots = case roots h2 of
           [] -> roots h1
           xs -> xs
-      , items = OMap.unionWithL (\_ _ v2 -> v2) (items h1) (items h2)
+      , items =
+          OMap.unionWithL (\t _ _ -> error $ "Duplicate definitions found: " <> show t) (items h1) (items h2)
       }
 
 -- | This instance is mostly used for testing
