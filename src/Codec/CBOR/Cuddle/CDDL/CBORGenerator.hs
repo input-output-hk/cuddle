@@ -20,4 +20,4 @@ data WrappedTerm
 newtype CBORGenerator = CBORGenerator (forall g m. StatefulGen g m => g -> m WrappedTerm)
 
 class HasGenerator a where
-  generatorL :: Lens' a CBORGenerator
+  generatorL :: Lens' a (Maybe CBORGenerator)
