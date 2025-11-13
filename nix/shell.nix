@@ -36,10 +36,6 @@ let
         enable = true;
         package = tools.fourmolu;
       };
-      hlint = {
-        enable = true;
-        package = tools.hlint;
-      };
       nixpkgs-fmt = {
         enable = true;
         package = pkgs.nixpkgs-fmt;

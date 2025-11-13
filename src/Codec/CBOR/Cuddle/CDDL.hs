@@ -154,30 +154,20 @@ deriving instance ForAllExtensions i ToExpr => ToExpr (TopLevel i)
 --
 --  *  Rule names (types or groups) do not appear in the actual CBOR
 --      encoding, but names used as "barewords" in member keys do.
-data Name i = Name
-  { name :: T.Text
-  , nameExt :: XTerm i
-  }
+newtype Name = Name {name :: T.Text}
   deriving (Generic)
+  deriving (Eq, Ord, Show)
+  deriving newtype (Semigroup, Monoid)
 
-deriving instance Eq (XTerm i) => Eq (Name i)
+deriving anyclass instance ToExpr Name
 
-deriving instance Ord (XTerm i) => Ord (Name i)
+instance IsString Name where
+  fromString = Name . T.pack
 
-deriving instance Show (XTerm i) => Show (Name i)
+instance CollectComments Name where
+  collectComments _ = []
 
-deriving instance ToExpr (XTerm i) => ToExpr (Name i)
-
-instance Monoid (XTerm i) => IsString (Name i) where
-  fromString x = Name (T.pack x) mempty
-
-instance HasComment (XTerm i) => HasComment (Name i) where
-  commentL = #nameExt % commentL
-
-instance CollectComments (XTerm i) => CollectComments (Name i) where
-  collectComments (Name _ c) = collectComments c
-
-instance Hashable (XTerm i) => Hashable (Name i)
+instance Hashable Name
 
 -- |
 --   assignt = "=" / "/="
@@ -212,7 +202,7 @@ data Assign = AssignEq | AssignExt
 --
 --   Generic rules can be used for establishing names for both types and
 --   groups.
-newtype GenericParam i = GenericParam (NE.NonEmpty (Name i))
+newtype GenericParam i = GenericParam (NE.NonEmpty Name)
   deriving (Generic)
   deriving newtype (Semigroup)
 
@@ -258,7 +248,7 @@ instance ForAllExtensions i CollectComments => CollectComments (GenericArg i)
 --   this semantic processing may need to span several levels of rule
 --   definitions before a determination can be made.)
 data Rule i = Rule
-  { ruleName :: Name i
+  { ruleName :: Name
   , ruleGenParam :: Maybe (GenericParam i)
   , ruleAssign :: Assign
   , ruleTerm :: TypeOrGroup i
@@ -405,7 +395,7 @@ data Type2 i
     T2Value Value
   | -- | or be defined by a rule giving a meaning to a name (possibly after
     --   supplying generic arguments as required by the generic parameters)
-    T2Name (Name i) (Maybe (GenericArg i))
+    T2Name Name (Maybe (GenericArg i))
   | -- | or be defined in a parenthesized type expression (parentheses may be
     --   necessary to override some operator precedence),
     T2Group (Type0 i)
@@ -419,11 +409,11 @@ data Type2 i
     T2Array (Group i)
   | -- | an "unwrapped" group (see Section 3.7), which matches the group
     --  inside a type defined as a map or an array by wrapping the group, or
-    T2Unwrapped (Name i) (Maybe (GenericArg i))
+    T2Unwrapped Name (Maybe (GenericArg i))
   | -- | an enumeration expression, which matches any value that is within the
     --  set of values that the values of the group given can take, or
     T2Enum (Group i)
-  | T2EnumRef (Name i) (Maybe (GenericArg i))
+  | T2EnumRef Name (Maybe (GenericArg i))
   | -- | a tagged data item, tagged with the "uint" given and containing the
     --  type given as the tagged value, or
     T2Tag (Maybe Word64) (Type0 i)
@@ -529,7 +519,7 @@ instance ForAllExtensions i CollectComments => CollectComments (GroupEntry i) wh
 
 data GroupEntryVariant i
   = GEType (Maybe (MemberKey i)) (Type0 i)
-  | GERef (Name i) (Maybe (GenericArg i))
+  | GERef Name (Maybe (GenericArg i))
   | GEGroup (Group i)
   deriving (Generic)
 
@@ -557,7 +547,7 @@ instance ForAllExtensions i CollectComments => CollectComments (GroupEntryVarian
 --  presence of the cuts denoted by "^" or ":" in previous entries).
 data MemberKey i
   = MKType (Type1 i)
-  | MKBareword (Name i)
+  | MKBareword Name
   | MKValue Value
   deriving (Generic)
 

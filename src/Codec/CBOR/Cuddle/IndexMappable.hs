@@ -1,6 +1,6 @@
 {-# LANGUAGE DefaultSignatures #-}
 
-module Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..)) where
+module Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..), mapCDDLDropExt) where
 
 import Codec.CBOR.Cuddle.CDDL (
   CDDL (..),
@@ -11,7 +11,6 @@ import Codec.CBOR.Cuddle.CDDL (
   GroupEntryVariant (..),
   GrpChoice (..),
   MemberKey (..),
-  Name (..),
   Rule (..),
   TopLevel (..),
   Type0 (..),
@@ -29,7 +28,6 @@ import Codec.CBOR.Cuddle.CDDL.CTree (
   XCddl (..),
   XRule (..),
   XTerm (..),
-  XXTopLevel (..),
   XXType2 (..),
  )
 import Codec.CBOR.Cuddle.Huddle (HuddleStage, XCddl (..), XTerm (..), XXTopLevel (..), XXType2 (..))
@@ -51,6 +49,18 @@ class IndexMappable f i j where
   default mapIndex :: Coercible (f i) (f j) => f i -> f j
   mapIndex = coerce
 
+mapCDDLDropExt ::
+  ( IndexMappable XXType2 i j
+  , IndexMappable XTerm i j
+  , IndexMappable XRule i j
+  ) =>
+  CDDL i ->
+  CDDL j
+mapCDDLDropExt (CDDL r tls _) = CDDL (mapIndex r) (foldMap mapTopLevelDropExt tls) []
+  where
+    mapTopLevelDropExt (TopLevelRule x) = [TopLevelRule $ mapIndex x]
+    mapTopLevelDropExt (XXTopLevel _) = []
+
 instance
   ( IndexMappable XCddl i j
   , IndexMappable XXTopLevel i j
@@ -69,7 +79,7 @@ instance
   ) =>
   IndexMappable Rule i j
   where
-  mapIndex (Rule n mg a t c) = Rule (mapIndex n) (mapIndex <$> mg) a (mapIndex t) (mapIndex c)
+  mapIndex (Rule n mg a t c) = Rule n (mapIndex <$> mg) a (mapIndex t) (mapIndex c)
 
 instance
   ( IndexMappable XXTopLevel i j
@@ -82,11 +92,8 @@ instance
   mapIndex (TopLevelRule r) = TopLevelRule $ mapIndex r
   mapIndex (XXTopLevel e) = XXTopLevel $ mapIndex e
 
-instance IndexMappable XTerm i j => IndexMappable Name i j where
-  mapIndex (Name n e) = Name n $ mapIndex e
-
 instance IndexMappable XTerm i j => IndexMappable GenericParam i j where
-  mapIndex (GenericParam ns) = GenericParam $ mapIndex <$> ns
+  mapIndex (GenericParam ns) = GenericParam ns
 
 instance
   ( IndexMappable XXType2 i j
@@ -112,7 +119,7 @@ instance
   IndexMappable GroupEntryVariant i j
   where
   mapIndex (GEType mk t) = GEType (mapIndex <$> mk) $ mapIndex t
-  mapIndex (GERef n ma) = GERef (mapIndex n) (mapIndex <$> ma)
+  mapIndex (GERef n ma) = GERef n (mapIndex <$> ma)
   mapIndex (GEGroup g) = GEGroup (mapIndex g)
 
 instance
@@ -122,7 +129,7 @@ instance
   IndexMappable MemberKey i j
   where
   mapIndex (MKType t) = MKType $ mapIndex t
-  mapIndex (MKBareword n) = MKBareword $ mapIndex n
+  mapIndex (MKBareword n) = MKBareword n
   mapIndex (MKValue x) = MKValue x
 
 instance
@@ -148,13 +155,13 @@ instance
   IndexMappable Type2 i j
   where
   mapIndex (T2Value v) = T2Value v
-  mapIndex (T2Name n mg) = T2Name (mapIndex n) (mapIndex <$> mg)
+  mapIndex (T2Name n mg) = T2Name n (mapIndex <$> mg)
   mapIndex (T2Group t) = T2Group $ mapIndex t
   mapIndex (T2Map g) = T2Map $ mapIndex g
   mapIndex (T2Array a) = T2Array $ mapIndex a
-  mapIndex (T2Unwrapped n mg) = T2Unwrapped (mapIndex n) (mapIndex <$> mg)
+  mapIndex (T2Unwrapped n mg) = T2Unwrapped n (mapIndex <$> mg)
   mapIndex (T2Enum g) = T2Enum $ mapIndex g
-  mapIndex (T2EnumRef n mg) = T2EnumRef (mapIndex n) (mapIndex <$> mg)
+  mapIndex (T2EnumRef n mg) = T2EnumRef n (mapIndex <$> mg)
   mapIndex (T2Tag mt t) = T2Tag mt $ mapIndex t
   mapIndex (T2DataItem t mt) = T2DataItem t mt
   mapIndex T2Any = T2Any
@@ -204,19 +211,16 @@ instance IndexMappable XXTopLevel ParserStage PrettyStage where
 -- ParserStage -> CTreePhase
 
 instance IndexMappable XCddl ParserStage CTreePhase where
-  mapIndex (ParserXCddl c) = CTreeXCddl c
-
-instance IndexMappable XXTopLevel ParserStage CTreePhase where
-  mapIndex (ParserXXTopLevel c) = CTreeXXTopLevel c
+  mapIndex _ = CTreeXCddl
 
 instance IndexMappable XXType2 ParserStage CTreePhase where
   mapIndex (ParserXXType2 c) = CTreeXXType2 c
 
 instance IndexMappable XTerm ParserStage CTreePhase where
-  mapIndex (ParserXTerm c) = CTreeXTerm c
+  mapIndex _ = CTreeXTerm
 
 instance IndexMappable XRule ParserStage CTreePhase where
-  mapIndex (ParserXRule c) = CTreeXRule c
+  mapIndex _ = CTreeXRule Nothing
 
 -- ParserStage -> HuddleStage
 
@@ -235,16 +239,13 @@ instance IndexMappable XTerm ParserStage HuddleStage where
 -- HuddleStage -> CTreePhase
 
 instance IndexMappable XCddl HuddleStage CTreePhase where
-  mapIndex (HuddleXCddl c) = CTreeXCddl c
-
-instance IndexMappable XXTopLevel HuddleStage CTreePhase where
-  mapIndex (HuddleXXTopLevel c) = CTreeXXTopLevel c
+  mapIndex _ = CTreeXCddl
 
 instance IndexMappable XXType2 HuddleStage CTreePhase where
   mapIndex (HuddleXXType2 c) = CTreeXXType2 c
 
 instance IndexMappable XTerm HuddleStage CTreePhase where
-  mapIndex (HuddleXTerm c) = CTreeXTerm c
+  mapIndex _ = CTreeXTerm
 
 -- HuddleStage -> PrettyStage
 

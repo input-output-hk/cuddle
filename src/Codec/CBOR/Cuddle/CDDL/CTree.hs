@@ -1,4 +1,7 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE TypeData #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
@@ -15,8 +18,10 @@ import Codec.CBOR.Cuddle.CDDL (
   XXTopLevel,
   XXType2,
  )
+import Codec.CBOR.Cuddle.CDDL.CBORGenerator (CBORGenerator)
 import Codec.CBOR.Cuddle.CDDL.CtlOp
-import Codec.CBOR.Cuddle.Comments (Comment)
+import Control.Monad.Identity (Identity (..))
+import Data.Default.Class (Default)
 import Data.Hashable (Hashable)
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as Map
@@ -34,24 +39,26 @@ import GHC.Generics (Generic)
 -- to manipulate.
 --------------------------------------------------------------------------------
 
-type family XXCTree i
+data family XXCTree i
 
-data CTreePhase
+type data CTreePhase
 
-newtype instance XTerm CTreePhase = CTreeXTerm Comment
-  deriving (Generic, Show, Eq, Ord, Hashable, Semigroup, Monoid)
+data instance XTerm CTreePhase = CTreeXTerm
+  deriving (Generic, Show, Eq, Ord)
+  deriving anyclass (Hashable, Default)
 
-newtype instance XXTopLevel CTreePhase = CTreeXXTopLevel Comment
-  deriving (Generic, Show, Eq, Ord, Hashable)
+newtype instance XXTopLevel CTreePhase = CTreeXXTopLevel Void
+  deriving (Generic, Show, Eq, Ord)
 
-newtype instance XCddl CTreePhase = CTreeXCddl [Comment]
-  deriving (Generic, Show, Eq, Ord, Hashable)
+data instance XCddl CTreePhase = CTreeXCddl
+  deriving (Generic, Show, Eq, Ord)
 
-newtype instance XRule CTreePhase = CTreeXRule Comment
-  deriving (Generic, Show, Eq, Ord, Hashable)
+newtype instance XRule CTreePhase = CTreeXRule (Maybe CBORGenerator)
+  deriving (Generic)
 
 newtype instance XXType2 CTreePhase = CTreeXXType2 Void
-  deriving (Generic, Show, Eq, Ord, Hashable)
+  deriving (Generic, Show, Eq, Ord)
+  deriving anyclass (Hashable)
 
 data CTree i
   = Literal Value
@@ -71,6 +78,10 @@ data CTree i
   deriving (Generic)
 
 deriving instance Eq (Node f) => Eq (CTree f)
+
+deriving instance Show (Node f) => Show (CTree f)
+
+instance Hashable (Node f) => Hashable (CTree f)
 
 -- | Traverse the CTree, carrying out the given operation at each node
 traverseCTree ::
@@ -99,9 +110,16 @@ traverseCTree _ atNode (Unwrap ref) = Unwrap <$> atNode ref
 traverseCTree _ atNode (Tag i ref) = Tag i <$> atNode ref
 traverseCTree atExt _ (CTreeE x) = atExt x
 
+foldCTree ::
+  (XXCTree i -> CTree j) ->
+  (CTree i -> CTree j) ->
+  CTree i ->
+  CTree j
+foldCTree atExt atNode x = runIdentity $ traverseCTree (pure . atExt) (pure . atNode) x
+
 type Node i = XXCTree i
 
-newtype CTreeRoot i = CTreeRoot (Map.Map (Name CTreePhase) (CTree i))
+newtype CTreeRoot i = CTreeRoot (Map.Map Name (CTree i))
   deriving (Generic)
 
 deriving instance Show (CTree i) => Show (CTreeRoot i)

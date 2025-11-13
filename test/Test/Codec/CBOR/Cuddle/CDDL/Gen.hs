@@ -60,19 +60,17 @@ nameMidChars = nameFstChars <> ['1' .. '9'] <> ['-', '.']
 nameEndChars :: [Char]
 nameEndChars = nameFstChars <> ['1' .. '9']
 
-instance (Monoid (XTerm i), Arbitrary (XTerm i)) => Arbitrary (Name i) where
+instance Arbitrary Name where
   arbitrary =
     let veryShortListOf = resize 3 . listOf
      in do
           fstChar <- elements nameFstChars
           midChar <- veryShortListOf . elements $ nameMidChars
           lastChar <- elements nameEndChars
-          pure $ Name (T.pack $ fstChar : midChar <> [lastChar]) mempty
+          pure $ Name (T.pack $ fstChar : midChar <> [lastChar])
 
-  shrink (Name xs cmt) =
-    Name
-      <$> fmap T.pack (filter isValidName (shrink $ T.unpack xs))
-      <*> shrink cmt
+  shrink (Name xs) =
+    Name <$> fmap T.pack (filter isValidName (shrink $ T.unpack xs))
     where
       isValidName [] = False
       isValidName (h : tl) = h `elem` nameFstChars && isValidNameTail tl

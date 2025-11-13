@@ -1,6 +1,7 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeData #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
@@ -35,7 +36,7 @@ import GHC.Generics (Generic)
 import Optics.Core ((^.))
 import Prettyprinter
 
-data PrettyStage
+type data PrettyStage
 
 newtype instance XXTopLevel PrettyStage = PrettyXXTopLevel Comment
   deriving (Generic, CollectComments, ToExpr, Show, Eq)
@@ -66,8 +67,8 @@ instance Pretty (TopLevel PrettyStage) where
   pretty (XXTopLevel (PrettyXXTopLevel cmt)) = pretty cmt
   pretty (TopLevelRule x) = pretty x <> hardline
 
-instance Pretty (Name PrettyStage) where
-  pretty (Name name (PrettyXTerm cmt)) = pretty name <> prettyCommentNoBreakWS cmt
+instance Pretty Name where
+  pretty (Name name) = pretty name
 
 data CommentRender
   = PreComment
