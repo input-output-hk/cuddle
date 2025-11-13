@@ -566,4 +566,11 @@ fullResolveCDDL cddl = do
   buildMonoCTree rCTree
 
 instance IndexMappable CTree DistReferenced DistReferencedNoGen where
-  mapIndex = undefined
+  mapIndex = foldCTree mapExt mapIndex
+    where
+      mapExt (DRef x) = CTreeE . DHRef $ mapIndex x
+      mapExt (DGenerator _ x) = mapIndex x
+
+instance IndexMappable DistRef DistReferenced DistReferencedNoGen where
+  mapIndex (GenericRef n) = GenericRef n
+  mapIndex (RuleRef n args) = RuleRef n $ mapIndex <$> args
