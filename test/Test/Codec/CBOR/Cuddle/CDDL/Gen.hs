@@ -83,9 +83,9 @@ instance Arbitrary Assign where
   arbitrary = Gen.elements [AssignEq, AssignExt]
   shrink = genericShrink
 
-instance (Monoid (XTerm i), Arbitrary (XTerm i)) => Arbitrary (GenericParam i) where
-  arbitrary = GenericParam <$> nonEmpty arbitrary
-  shrink (GenericParam neName) = GenericParam <$> shrinkNE neName
+instance (Monoid (XTerm i), Arbitrary (XTerm i)) => Arbitrary (GenericParameters i) where
+  arbitrary = GenericParameters <$> nonEmpty arbitrary
+  shrink (GenericParameters neName) = GenericParameters <$> shrinkNE neName
 
 instance (Arbitrary (XTerm i), Monoid (XTerm i)) => Arbitrary (GenericArg i) where
   arbitrary = GenericArg <$> nonEmpty arbitrary

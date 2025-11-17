@@ -95,10 +95,10 @@ type CDDLMap =
 
 toParametrised ::
   TypeOrGroup CTreePhase ->
-  Maybe (GenericParam CTreePhase) ->
+  Maybe (GenericParameters CTreePhase) ->
   ProvidedParameters (TypeOrGroup CTreePhase)
 toParametrised a Nothing = ProvidedParameters [] a
-toParametrised a (Just (GenericParam gps)) = ProvidedParameters (NE.toList gps) a
+toParametrised a (Just (GenericParameters gps)) = ProvidedParameters (NE.toList gps) a
 
 asMap :: CDDL CTreePhase -> CDDLMap
 asMap cddl = foldl' go Map.empty rules
@@ -116,7 +116,7 @@ asMap cddl = foldl' go Map.empty rules
 
     extend ::
       TypeOrGroup CTreePhase ->
-      Maybe (GenericParam CTreePhase) ->
+      Maybe (GenericParameters CTreePhase) ->
       Maybe (ProvidedParameters (TypeOrGroup CTreePhase), Maybe CBORGenerator) ->
       Maybe (ProvidedParameters (TypeOrGroup CTreePhase), Maybe CBORGenerator)
     extend tog _gps (Just (existing, gen)) = case (underlying existing, tog) of

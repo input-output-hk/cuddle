@@ -87,7 +87,7 @@ pTopLevel = try tlRule <|> tlComment
 pRule :: Parser (Rule ParserStage)
 pRule = do
   name <- pName
-  genericParam <- optcomp pGenericParam
+  genericParam <- optcomp pGenericParameters
   cmt <- space
   (assign, typeOrGrp) <-
     choice
@@ -128,10 +128,13 @@ pAssignG =
     , AssignExt <$ "//="
     ]
 
-pGenericParam :: Parser (GenericParam ParserStage)
-pGenericParam =
-  GenericParam
-    <$> between "<" ">" (NE.sepBy1 (space *> pName <* space) ",")
+pGenericParameter :: Parser (GenericParameter ParserStage)
+pGenericParameter = GenericParameter <$> pName <*> pure mempty
+
+pGenericParameters :: Parser (GenericParameters ParserStage)
+pGenericParameters =
+  GenericParameters
+    <$> between "<" ">" (NE.sepBy1 (space !*> pGenericParameter <*! space) ",")
 
 pGenericArg :: Parser (GenericArg ParserStage)
 pGenericArg =

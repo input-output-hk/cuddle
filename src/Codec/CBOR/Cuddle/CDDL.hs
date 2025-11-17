@@ -20,7 +20,8 @@ module Codec.CBOR.Cuddle.CDDL (
   TypeOrGroup (..),
   Assign (..),
   GenericArg (..),
-  GenericParam (..),
+  GenericParameters (..),
+  GenericParameter (..),
   Type0 (..),
   Type1 (..),
   Type2 (..),
@@ -202,15 +203,32 @@ data Assign = AssignEq | AssignExt
 --
 --   Generic rules can be used for establishing names for both types and
 --   groups.
-newtype GenericParam i = GenericParam (NE.NonEmpty Name)
+newtype GenericParameters i = GenericParameters (NE.NonEmpty (GenericParameter i))
   deriving (Generic)
   deriving newtype (Semigroup)
 
-deriving instance Eq (XTerm i) => Eq (GenericParam i)
+deriving instance Eq (XTerm i) => Eq (GenericParameters i)
 
-deriving instance Show (XTerm i) => Show (GenericParam i)
+deriving instance Show (XTerm i) => Show (GenericParameters i)
 
-deriving anyclass instance ToExpr (XTerm i) => ToExpr (GenericParam i)
+deriving anyclass instance ToExpr (XTerm i) => ToExpr (GenericParameters i)
+
+data GenericParameter i = GenericParameter
+  { gpName :: Name
+  , gpExt :: XTerm i
+  }
+  deriving (Generic)
+
+deriving instance Eq (XTerm i) => Eq (GenericParameter i)
+
+deriving instance Show (XTerm i) => Show (GenericParameter i)
+
+deriving anyclass instance ToExpr (XTerm i) => ToExpr (GenericParameter i)
+
+instance CollectComments (XTerm i) => CollectComments (GenericParameter i)
+
+instance HasComment (XTerm i) => HasComment (GenericParameter i) where
+  commentL = #gpExt % commentL
 
 newtype GenericArg i = GenericArg (NE.NonEmpty (Type1 i))
   deriving (Generic)
@@ -249,7 +267,7 @@ instance ForAllExtensions i CollectComments => CollectComments (GenericArg i)
 --   definitions before a determination can be made.)
 data Rule i = Rule
   { ruleName :: Name
-  , ruleGenParam :: Maybe (GenericParam i)
+  , ruleGenParam :: Maybe (GenericParameters i)
   , ruleAssign :: Assign
   , ruleTerm :: TypeOrGroup i
   , ruleExt :: XRule i

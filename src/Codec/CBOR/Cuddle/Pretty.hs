@@ -111,8 +111,8 @@ instance Pretty (GenericArg PrettyStage) where
     | null (collectComments l) = group . cEncloseSep "<" ">" "," $ fmap pretty l
     | otherwise = columnarListing "<" ">" "," . Columnar $ singletonRow . pretty <$> l
 
-instance Pretty (GenericParam PrettyStage) where
-  pretty (GenericParam (NE.toList -> l))
+instance Pretty (GenericParameters PrettyStage) where
+  pretty (GenericParameters (NE.toList -> l))
     | null (collectComments l) = group . cEncloseSep "<" ">" "," $ fmap pretty l
     | otherwise = columnarListing "<" ">" "," . Columnar $ singletonRow . pretty <$> l
 
