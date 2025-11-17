@@ -99,7 +99,7 @@ module Codec.CBOR.Cuddle.Huddle (
 )
 where
 
-import Codec.CBOR.Cuddle.CDDL (CDDL, XRule)
+import Codec.CBOR.Cuddle.CDDL (CDDL, GenericParameter (..), XRule)
 import Codec.CBOR.Cuddle.CDDL qualified as C
 import Codec.CBOR.Cuddle.CDDL.CBORGenerator (CBORGenerator (..), HasGenerator (..), WrappedTerm)
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
@@ -1309,7 +1309,8 @@ toCDDL' HuddleConfig {..} hdl =
         (HuddleXRule (foldMap Comment c) Nothing)
       where
         gps =
-          C.GenericParam $ fmap (\(GRef t) -> C.Name t) (args gr)
+          C.GenericParameters $
+            fmap (\(GRef t) -> GenericParameter (C.Name t) $ HuddleXTerm undefined) (args gr)
 
 withGenerator :: HasGenerator a => (forall g m. StatefulGen g m => g -> m WrappedTerm) -> a -> a
 withGenerator f = L.set generatorL (Just $ CBORGenerator f)
