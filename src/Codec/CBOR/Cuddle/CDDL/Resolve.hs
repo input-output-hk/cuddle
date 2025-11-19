@@ -98,7 +98,7 @@ toParametrised ::
   Maybe (GenericParameters CTreePhase) ->
   ProvidedParameters (TypeOrGroup CTreePhase)
 toParametrised a Nothing = ProvidedParameters [] a
-toParametrised a (Just (GenericParameters gps)) = ProvidedParameters (NE.toList gps) a
+toParametrised a (Just (GenericParameters gps)) = ProvidedParameters (gpName <$> NE.toList gps) a
 
 asMap :: CDDL CTreePhase -> CDDLMap
 asMap cddl = foldl' go Map.empty rules
