@@ -20,11 +20,12 @@ import Codec.CBOR.Cuddle.Huddle qualified as H
 import Codec.CBOR.Cuddle.IndexMappable (mapCDDLDropExt)
 import Codec.CBOR.Term (Term)
 import Codec.CBOR.Term qualified as C
-import System.Random (newStdGen)
+import System.Random (mkStdGen)
+import System.Random.Stateful (UniformRange (..))
 import Test.Hspec (Expectation, Spec, describe, it, shouldBe)
 
 foo :: H.Rule
-foo = withGenerator (\_ -> pure . S $ C.TString "bar") $ "foo" =:= arr [1, 2, 3]
+foo = withGenerator (fmap (S . C.TInt) . uniformRM (4, 6)) $ "foo" =:= arr [1, 2, 3]
 
 simpleTermExample :: Huddle
 simpleTermExample =
@@ -41,7 +42,7 @@ refTermExample =
 
 huddleShouldGenerate :: Huddle -> Term -> Expectation
 huddleShouldGenerate huddle term = do
-  g <- newStdGen
+  let g = mkStdGen 12345
   ct <- case fullResolveCDDL . mapCDDLDropExt $ toCDDL huddle of
     Right x -> pure x
     Left err -> fail $ "Failed to resolve CDDL: " <> show err
@@ -52,6 +53,6 @@ spec = do
   describe "Custom generators" $ do
     describe "Huddle" $ do
       it "If a term has a custom generator then it is used" $
-        simpleTermExample `huddleShouldGenerate` C.TString "bar"
+        simpleTermExample `huddleShouldGenerate` C.TInt 5
       it "Custom generator works when called via reference" $
-        refTermExample `huddleShouldGenerate` C.TString "bar"
+        refTermExample `huddleShouldGenerate` C.TInt 5

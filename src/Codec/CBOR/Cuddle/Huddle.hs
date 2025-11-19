@@ -1074,7 +1074,7 @@ collectFrom topRs =
     goT2 (T2Map m) = goChoice (mapM_ goMapEntry . unMapChoice) m
     goT2 (T2Array m) = goChoice (mapM_ goArrayEntry . unArrayChoice) m
     goT2 (T2Tagged (Tagged _ t0)) = goT0 t0
-    goT2 (T2Ref n) = goRule (Rule n undefined)
+    goT2 (T2Ref n) = goRule (Rule n $ HuddleXRule mempty Nothing)
     goT2 (T2Group r) = goNamedGroup r
     goT2 (T2Generic x) = goGRule x
     goT2 (T2Constrained (Constrained c _ refs)) =
@@ -1094,7 +1094,7 @@ collectFrom topRs =
     goRanged (Unranged _) = pure ()
     goRanged (Ranged lb ub _) = goRangeBound lb >> goRangeBound ub
     goRangeBound (RangeBoundLiteral _) = pure ()
-    goRangeBound (RangeBoundRef r) = goRule $ Rule r undefined
+    goRangeBound (RangeBoundRef r) = goRule . Rule r $ HuddleXRule mempty Nothing
 
 -- | Same as `collectFrom`, but the rules passed into this function will be put
 --   at the top of the Huddle, and all of their dependencies will be added at
@@ -1310,7 +1310,7 @@ toCDDL' HuddleConfig {..} hdl =
       where
         gps =
           C.GenericParameters $
-            fmap (\(GRef t) -> GenericParameter (C.Name t) $ HuddleXTerm undefined) (args gr)
+            fmap (\(GRef t) -> GenericParameter (C.Name t) $ HuddleXTerm mempty) (args gr)
 
 withGenerator :: HasGenerator a => (forall g m. StatefulGen g m => g -> m WrappedTerm) -> a -> a
 withGenerator f = L.set generatorL (Just $ CBORGenerator f)

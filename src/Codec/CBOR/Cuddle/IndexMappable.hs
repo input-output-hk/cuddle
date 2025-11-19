@@ -5,6 +5,7 @@ module Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..), mapCDDLDropExt) wher
 import Codec.CBOR.Cuddle.CDDL (
   CDDL (..),
   GenericArg (..),
+  GenericParameter (..),
   GenericParameters (..),
   Group (..),
   GroupEntry (..),
@@ -99,8 +100,11 @@ instance
   mapIndex (TopLevelRule r) = TopLevelRule $ mapIndex r
   mapIndex (XXTopLevel e) = XXTopLevel $ mapIndex e
 
+instance IndexMappable XTerm i j => IndexMappable GenericParameter i j where
+  mapIndex (GenericParameter n e) = GenericParameter n $ mapIndex e
+
 instance IndexMappable XTerm i j => IndexMappable GenericParameters i j where
-  mapIndex (GenericParameters ns) = GenericParameters ns
+  mapIndex (GenericParameters ns) = GenericParameters $ mapIndex <$> ns
 
 instance
   ( IndexMappable XXType2 i j

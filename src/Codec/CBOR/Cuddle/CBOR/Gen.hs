@@ -7,6 +7,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeData #-}
 {-# LANGUAGE ViewPatterns #-}
 
 #if MIN_VERSION_random(1,3,0)
