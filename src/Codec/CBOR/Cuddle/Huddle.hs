@@ -91,6 +91,9 @@ module Codec.CBOR.Cuddle.Huddle (
   -- * Generators
   withGenerator,
 
+  -- * Name
+  HasName (..),
+
   -- * Conversion to CDDL
   collectFrom,
   collectFromInit,
@@ -99,14 +102,14 @@ module Codec.CBOR.Cuddle.Huddle (
 )
 where
 
-import Codec.CBOR.Cuddle.CDDL (CDDL, GenericParameter (..), XRule)
+import Codec.CBOR.Cuddle.CDDL (CDDL, GenericParameter (..), HasName, Name (..), XRule, nameL)
 import Codec.CBOR.Cuddle.CDDL qualified as C
 import Codec.CBOR.Cuddle.CDDL.CBORGenerator (CBORGenerator (..), HasGenerator (..), WrappedTerm)
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
 import Codec.CBOR.Cuddle.Comments (Comment (..), HasComment (..))
 import Codec.CBOR.Cuddle.Comments qualified as C
 import Control.Monad (when)
-import Control.Monad.State (MonadState (get), execState, modify)
+import Control.Monad.State (MonadState (get), State, execState, modify)
 import Data.ByteString (ByteString)
 import Data.Default.Class (Default (..))
 import Data.Function (on)
@@ -151,18 +154,15 @@ newtype instance C.XXType2 HuddleStage = HuddleXXType2 Void
   deriving (Generic, Semigroup, Show, Eq)
 
 data Named a = Named
-  { name :: T.Text
+  { name :: Name
   , value :: a
   , description :: Maybe T.Text
   }
-  deriving (Functor, Generic)
+  deriving (Functor, Generic, Show)
 
 -- | Add a description to a rule or group entry, to be included as a comment.
-comment :: HasComment a => T.Text -> a -> a
-comment desc n = n & commentL %~ (<> Comment desc)
-
-instance Show (Named a) where
-  show (Named n _ _) = T.unpack n
+comment :: HasComment a => Comment -> a -> a
+comment desc n = n & commentL %~ (<> desc)
 
 data Rule = Rule
   { ruleDefinition :: Named Type0
@@ -176,6 +176,9 @@ instance HasGenerator Rule where
 instance HasComment Rule where
   commentL = #ruleExtra % #hxrComment
 
+instance HasName Rule where
+  nameL = #ruleDefinition % nameL
+
 data HuddleItem
   = HIRule Rule
   | HIGRule GRuleDef
@@ -186,7 +189,7 @@ data HuddleItem
 data Huddle = Huddle
   { roots :: [Rule]
   -- ^ Root elements
-  , items :: OMap T.Text HuddleItem
+  , items :: OMap Name HuddleItem
   }
   deriving (Generic)
 
@@ -221,7 +224,7 @@ instance IsList Huddle where
   type Item Huddle = Rule
   fromList [] = Huddle mempty OMap.empty
   fromList (r@(Rule x _) : xs) =
-    (field @"items" %~ (OMap.|> (x ^. field @"name", HIRule r))) $ fromList xs
+    (#items %~ (OMap.|> (x ^. nameL, HIRule r))) $ fromList xs
 
   toList = const []
 
@@ -437,7 +440,6 @@ data Constrainable a
   = CValue (Value a)
   | CRef (AnyRef a)
   | CGRef GRef
-  deriving (Show)
 
 -- | Uninhabited type used as marker for the type of thing a CRef sizes
 data CRefType
@@ -568,9 +570,9 @@ cbor v r@(Rule (Named n _ _) _) =
       { applyConstraint = \t2 ->
           C.Type1
             t2
-            (Just (C.CtrlOp CtlOp.Cbor, C.T2Name (C.Name n) Nothing))
+            (Just (C.CtrlOp CtlOp.Cbor, C.T2Name n Nothing))
             mempty
-      , showConstraint = ".cbor " <> T.unpack n
+      , showConstraint = ".cbor " <> T.unpack (unName n)
       }
     [r]
 
@@ -598,7 +600,6 @@ le v bound =
 data RangeBound
   = RangeBoundLiteral Literal
   | RangeBoundRef (Named Type0)
-  deriving (Show)
 
 class IsRangeBound a where
   toRangeBound :: a -> RangeBound
@@ -617,13 +618,12 @@ instance IsRangeBound Rule where
 
 data Ranged where
   Ranged ::
-    { lb :: RangeBound
-    , ub :: RangeBound
-    , bounds :: C.RangeBound
+    { _lb :: RangeBound
+    , _ub :: RangeBound
+    , _bounds :: C.RangeBound
     } ->
     Ranged
   Unranged :: Literal -> Ranged
-  deriving (Show)
 
 -- | Establish a closed range bound.
 (...) :: (IsRangeBound a, IsRangeBound b) => a -> b -> Ranged
@@ -702,7 +702,8 @@ instance IsType0 HuddleItem where
   toType0 (HIGroup g) = toType0 g
   toType0 (HIGRule g) =
     error $
-      "Attempt to reference generic rule from HuddleItem not supported: " <> show g
+      "Attempt to reference generic rule from HuddleItem not supported: "
+        <> T.unpack (unName (g ^. nameL))
 
 class CanQuantify a where
   -- | Apply a lower bound
@@ -767,12 +768,12 @@ k ==> gc =
 infixl 8 ==>
 
 -- | Assign a rule
-(=:=) :: IsType0 a => T.Text -> a -> Rule
+(=:=) :: IsType0 a => Name -> a -> Rule
 n =:= b = Rule (Named n (toType0 b) Nothing) def
 
 infixl 1 =:=
 
-(=:~) :: T.Text -> Group -> Named Group
+(=:~) :: Name -> Group -> Named Group
 n =:~ b = Named n b Nothing
 
 infixl 1 =:~
@@ -1026,7 +1027,7 @@ hiRule :: HuddleItem -> [Rule]
 hiRule (HIRule r) = [r]
 hiRule _ = []
 
-hiName :: HuddleItem -> T.Text
+hiName :: HuddleItem -> Name
 hiName (HIRule (Rule (Named n _ _) _)) = n
 hiName (HIGroup (Named n _ _)) = n
 hiName (HIGRule (Named n _ _)) = n
@@ -1049,6 +1050,7 @@ collectFrom topRs =
     goHuddleItem (HIRule r) = goRule r
     goHuddleItem (HIGroup g) = goNamedGroup g
     goHuddleItem (HIGRule (Named _ (GRule _ t0) _)) = goT0 t0
+    goRule :: Rule -> State (OMap Name HuddleItem) ()
     goRule r@(Rule (Named n t0 _) _) = do
       items <- get
       when (OMap.notMember n items) $ do
@@ -1150,10 +1152,10 @@ toCDDL' HuddleConfig {..} hdl =
       where
         go _ [] = rs
         go s (x : xs)
-          | n `Set.member` s = error . T.unpack $ "Duplicate definitions found for '" <> n <> "'"
+          | n `Set.member` s = error . T.unpack $ "Duplicate definitions found for '" <> unName n <> "'"
           | otherwise = go (Set.insert n s) xs
           where
-            n = C.name (C.ruleName x)
+            n = C.ruleName x
 
     toCDDLItem (HIRule r) = toCDDLRule r
     toCDDLItem (HIGroup g) = toCDDLGroup g
@@ -1166,7 +1168,7 @@ toCDDL' HuddleConfig {..} hdl =
     toCDDLRule :: Rule -> C.Rule HuddleStage
     toCDDLRule (Rule (Named n t0 c) extra) =
       ( \x ->
-          C.Rule (C.Name n) Nothing C.AssignEq x (extra & #hxrComment %~ (<> foldMap Comment c))
+          C.Rule n Nothing C.AssignEq x (extra & #hxrComment %~ (<> foldMap Comment c))
       )
         . C.TOGType
         . C.Type0
@@ -1215,8 +1217,8 @@ toCDDL' HuddleConfig {..} hdl =
       T2Array x -> C.Type1 (C.T2Array $ arrayToCDDLGroup x) Nothing mempty
       T2Tagged (Tagged mmin x) ->
         C.Type1 (C.T2Tag mmin $ toCDDLType0 x) Nothing mempty
-      T2Ref (Named n _ _) -> C.Type1 (C.T2Name (C.Name n) Nothing) Nothing mempty
-      T2Group (Named n _ _) -> C.Type1 (C.T2Name (C.Name n) Nothing) Nothing mempty
+      T2Ref (Named n _ _) -> C.Type1 (C.T2Name n Nothing) Nothing mempty
+      T2Group (Named n _ _) -> C.Type1 (C.T2Name n Nothing) Nothing mempty
       T2Generic g -> C.Type1 (toGenericCall g) Nothing mempty
       T2GenericRef (GRef n) -> C.Type1 (C.T2Name (C.Name n) Nothing) Nothing mempty
 
@@ -1256,7 +1258,7 @@ toCDDL' HuddleConfig {..} hdl =
 
     toCDDLConstrainable c = case c of
       CValue v -> toCDDLPostlude v
-      CRef r -> C.Name (name r)
+      CRef r -> name r
       CGRef (GRef n) -> C.Name n
 
     toCDDLRanged :: Ranged -> C.Type1 HuddleStage
@@ -1270,12 +1272,12 @@ toCDDL' HuddleConfig {..} hdl =
 
     toCDDLRangeBound :: RangeBound -> C.Type2 HuddleStage
     toCDDLRangeBound (RangeBoundLiteral l) = C.T2Value $ toCDDLValue l
-    toCDDLRangeBound (RangeBoundRef (Named n _ _)) = C.T2Name (C.Name n) Nothing
+    toCDDLRangeBound (RangeBoundRef (Named n _ _)) = C.T2Name n Nothing
 
     toCDDLGroup :: Named Group -> C.Rule HuddleStage
     toCDDLGroup (Named n (Group t0s) c) =
       C.Rule
-        (C.Name n)
+        n
         Nothing
         C.AssignEq
         ( C.TOGGroup
@@ -1293,13 +1295,13 @@ toCDDL' HuddleConfig {..} hdl =
     toGenericCall :: GRuleCall -> C.Type2 HuddleStage
     toGenericCall (Named n gr _) =
       C.T2Name
-        (C.Name n)
+        n
         (Just . C.GenericArg $ fmap toCDDLType1 (args gr))
 
     toGenRuleDef :: GRuleDef -> C.Rule HuddleStage
     toGenRuleDef (Named n gr c) =
       C.Rule
-        (C.Name n)
+        n
         (Just gps)
         C.AssignEq
         ( C.TOGType
@@ -1314,3 +1316,6 @@ toCDDL' HuddleConfig {..} hdl =
 
 withGenerator :: HasGenerator a => (forall g m. StatefulGen g m => g -> m WrappedTerm) -> a -> a
 withGenerator f = L.set generatorL (Just $ CBORGenerator f)
+
+instance HasName (Named a) where
+  nameL = #name
