@@ -201,7 +201,7 @@ run (Opts cmd cddlFile) = do
             case fullResolveCDDL $ mapCDDLDropExt cddl of
               Left err -> putStrLnErr (show err) >> exitFailure
               Right _ -> exitSuccess
-        (GenerateCBOR gOpts) ->
+        GenerateCBOR gOpts ->
           let
             cddl
               | gNoPrelude gOpts = res
