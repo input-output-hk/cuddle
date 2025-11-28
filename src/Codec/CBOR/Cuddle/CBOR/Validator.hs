@@ -131,12 +131,9 @@ validateCBOR :: BS.ByteString -> Name -> CDDL -> CBORTermResult
 validateCBOR bs rule cddl@(CTreeRoot tree) =
   case deserialiseFromBytes decodeTerm (BSL.fromStrict bs) of
     Left e -> error $ show e
-    Right (rest, term) ->
-      validateTerm cddl t (tree Map.! rule)
-      where
-        t
-          | BSL.null rest = term
-          | otherwise = TBytes bs
+    Right (rest, term)
+      | BSL.null rest -> validateTerm cddl term (tree Map.! rule)
+      | otherwise -> error $ "Leftover bytes after parsing CBOR" <> show rest
 
 --------------------------------------------------------------------------------
 -- Terms
