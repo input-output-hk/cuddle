@@ -18,7 +18,6 @@ import Codec.CBOR.Cuddle.CDDL.Resolve (MonoReferenced, XXCTree (..))
 import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
 import Codec.CBOR.Read
 import Codec.CBOR.Term
-import Control.Monad.Reader
 import Data.Bifunctor
 import Data.Bits hiding (And)
 import Data.ByteString qualified as BS
@@ -733,47 +732,47 @@ flattenGroup cddl nodes =
 --
 -- Essentially the rules we will parse is the choice among the expansions of the
 -- original rules.
-expandRules :: Int -> [Rule] -> Reader CDDL [[Rule]]
-expandRules remainingLen []
-  | remainingLen /= 0 = pure []
-expandRules _ [] = pure [[]]
-expandRules remainingLen _
-  | remainingLen < 0 = pure []
-  | remainingLen == 0 = pure [[]]
-expandRules remainingLen (x : xs) = do
-  y <- expandRule remainingLen x
-  concat
-    <$> mapM
+expandRules :: CDDL -> Int -> [Rule] -> [[Rule]]
+expandRules _ remainingLen []
+  | remainingLen /= 0 = []
+expandRules _ _ [] = [[]]
+expandRules _ remainingLen _
+  | remainingLen < 0 = []
+  | remainingLen == 0 = [[]]
+expandRules cddl remainingLen (x : xs) = do
+  let y = expandRule cddl remainingLen x
+  concat $
+    mapM
       ( \y' -> do
-          suffixes <- expandRules (remainingLen - length y') xs
-          pure [y' ++ ys' | ys' <- suffixes]
+          suffixes <- expandRules cddl (remainingLen - length y') xs
+          [y' ++ [ys'] | ys' <- suffixes]
       )
       y
 
-expandRule :: Int -> Rule -> Reader CDDL [[Rule]]
-expandRule maxLen _
-  | maxLen < 0 = pure []
-expandRule maxLen rule =
-  case rule of
-    Occur o OIOptional -> pure $ [] : [[o] | maxLen > 0]
-    Occur o OIZeroOrMore -> ([] :) <$> expandRule maxLen (Occur o OIOneOrMore)
-    Occur o OIOneOrMore ->
-      if maxLen > 0
-        then ([o] :) . map (o :) <$> expandRule (maxLen - 1) (Occur o OIOneOrMore)
-        else pure []
-    Occur o (OIBounded low high) -> case (low, high) of
-      (Nothing, Nothing) -> expandRule maxLen (Occur o OIZeroOrMore)
-      (Just (fromIntegral -> low'), Nothing) ->
-        if maxLen >= low'
-          then map (replicate low' o ++) <$> expandRule (maxLen - low') (Occur o OIZeroOrMore)
-          else pure []
-      (Nothing, Just (fromIntegral -> high')) ->
-        pure [replicate n o | n <- [0 .. min maxLen high']]
-      (Just (fromIntegral -> low'), Just (fromIntegral -> high')) ->
-        if maxLen >= low'
-          then pure [replicate n o | n <- [low' .. min maxLen high']]
-          else pure []
-    _ -> pure [[rule | maxLen > 0]]
+expandRule :: CDDL -> Int -> Rule -> [[Rule]]
+expandRule cddl maxLen rule
+  | maxLen < 0 = []
+  | otherwise =
+      case rule of
+        Occur o OIOptional -> [] : [[o] | maxLen > 0]
+        Occur o OIZeroOrMore -> ([] :) $ expandRule cddl maxLen (Occur o OIOneOrMore)
+        Occur o OIOneOrMore ->
+          if maxLen > 0
+            then ([o] :) . map (o :) $ expandRule cddl (maxLen - 1) (Occur o OIOneOrMore)
+            else []
+        Occur o (OIBounded low high) -> case (low, high) of
+          (Nothing, Nothing) -> expandRule cddl maxLen (Occur o OIZeroOrMore)
+          (Just (fromIntegral -> low'), Nothing) ->
+            if maxLen >= low'
+              then (replicate low' o ++) <$> expandRule cddl (maxLen - low') (Occur o OIZeroOrMore)
+              else []
+          (Nothing, Just (fromIntegral -> high')) ->
+            [replicate n o | n <- [0 .. min maxLen high']]
+          (Just (fromIntegral -> low'), Just (fromIntegral -> high')) ->
+            if maxLen >= low'
+              then [replicate n o | n <- [low' .. min maxLen high']]
+              else []
+        _ -> [[rule | maxLen > 0]]
 
 -- | Which rules are optional?
 isOptional :: Rule -> Bool
@@ -844,7 +843,7 @@ validateList cddl terms rule =
         [] -> (if all isOptional rules then Valid else InvalidRule) rule
         _ ->
           let sequencesOfRules =
-                runReader (expandRules (length terms) $ flattenGroup cddl rules) cddl
+                expandRules cddl (length terms) $ flattenGroup cddl rules
            in validateExpandedList cddl terms sequencesOfRules rule
     Choice opts -> validateChoice (validateList cddl terms) opts rule
     _ -> UnapplicableRule rule
@@ -869,8 +868,7 @@ validateMapWithExpandedRules cddl =
     go ((tk, tv) : ts) rs = do
       case go' tk tv rs of
         Left tt -> ([], Just tt)
-        Right (res, rs') ->
-          first (res :) $ go ts rs'
+        Right (res, rs') -> first (res :) $ go ts rs'
     go _ _ = error "Not yet implemented"
 
     -- For each pair of terms, try to find some rule that can be applied here,
@@ -924,7 +922,7 @@ validateMap cddl terms rule =
           [] -> if all isOptional rules then Valid else InvalidRule
           _ ->
             let sequencesOfRules =
-                  runReader (expandRules (length terms) $ flattenGroup cddl rules) cddl
+                  expandRules cddl (length terms) $ flattenGroup cddl rules
              in validateExpandedMap cddl terms sequencesOfRules
       Choice opts -> validateChoice (validateMap cddl terms) opts
       _ -> UnapplicableRule
