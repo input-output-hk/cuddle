@@ -212,62 +212,65 @@ validateInteger ::
   Rule ->
   m CDDLResult
 validateInteger i rule =
-  ($ rule) <$> do
-    case rule of
-      -- echo "C24101" | xxd -r -p - example.cbor
-      -- echo "foo = int" > a.cddl
-      -- cddl a.cddl validate example.cbor
-      --
-      -- but
-      --
-      -- echo "C249010000000000000000"| xxd -r -p - example.cbor
-      -- echo "foo = int" > a.cddl
-      -- cddl a.cddl validate example.cbor
-      --
-      -- and they are both bigints?
+  case rule of
+    -- echo "C24101" | xxd -r -p - example.cbor
+    -- echo "foo = int" > a.cddl
+    -- cddl a.cddl validate example.cbor
+    --
+    -- but
+    --
+    -- echo "C249010000000000000000"| xxd -r -p - example.cbor
+    -- echo "foo = int" > a.cddl
+    -- cddl a.cddl validate example.cbor
+    --
+    -- and they are both bigints?
 
-      -- a = any
-      Postlude PTAny -> pure Valid
-      -- a = int
-      Postlude PTInt -> pure Valid
-      -- a = uint
-      Postlude PTUInt -> pure $ check (i >= 0)
-      -- a = nint
-      Postlude PTNInt -> pure $ check (i <= 0)
-      -- a = x
-      Literal (Value (VUInt i') _) -> pure $ check $ i == fromIntegral i'
-      -- a = -x
-      Literal (Value (VNInt i') _) -> pure $ check $ -i == fromIntegral i'
-      -- a = <big number>
-      Literal (Value (VBignum i') _) -> pure $ check $ i == i'
-      -- a = foo .ctrl bar
-      Control op tgt ctrl -> ctrlDispatch (validateInteger i) op tgt ctrl (controlInteger i)
-      -- a = foo / bar
-      Choice opts -> validateChoice (validateInteger i) opts
-      -- a = x..y
-      Range low high bound ->
-        pure . check $ case (low, high) of
-          (Literal (Value (VUInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _)) -> n <= i && range bound i m
-          (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _)) -> -n <= i && range bound i m
-          (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VNInt (fromIntegral -> m)) _)) -> -n <= i && range bound i (-m)
-          (Literal (Value VUInt {} _), Literal (Value VNInt {} _)) -> False
-          (Literal (Value (VBignum n) _), Literal (Value (VUInt (fromIntegral -> m)) _)) -> n <= i && range bound i m
-          (Literal (Value (VBignum n) _), Literal (Value (VNInt (fromIntegral -> m)) _)) -> n <= i && range bound i (-m)
-          (Literal (Value (VUInt (fromIntegral -> n)) _), Literal (Value (VBignum m) _)) -> n <= i && range bound i m
-          (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VBignum m) _)) -> (-n) <= i && range bound i m
-          _ -> error "Not yet implemented"
-      -- a = &(x, y, z)
-      Enum g ->
-        case g of
-          Group g' -> validateInteger i (Choice (NE.fromList g')) <&> replaceRule
-          _ -> error "Not yet implemented"
-      -- a = x: y
-      -- Note KV cannot appear on its own, but we will use this when validating
-      -- lists.
-      KV _ v _ -> validateInteger i v <&> replaceRule
-      Tag 2 (Postlude PTBytes) -> pure Valid
-      Tag 3 (Postlude PTBytes) -> pure Valid
-      _ -> pure UnapplicableRule
+    -- a = any
+    Postlude PTAny -> pure $ Valid rule
+    -- a = int
+    Postlude PTInt -> pure $ Valid rule
+    -- a = uint
+    Postlude PTUInt -> pure $ check (i >= 0) rule
+    -- a = nint
+    Postlude PTNInt -> pure $ check (i <= 0) rule
+    -- a = x
+    Literal (Value (VUInt i') _) -> pure $ check (i == fromIntegral i') rule
+    -- a = -x
+    Literal (Value (VNInt i') _) -> pure $ check (-i == fromIntegral i') rule
+    -- a = <big number>
+    Literal (Value (VBignum i') _) -> pure $ check (i == i') rule
+    -- a = foo .ctrl bar
+    Control op tgt ctrl -> ($ rule) <$> ctrlDispatch (validateInteger i) op tgt ctrl (controlInteger i)
+    -- a = foo / bar
+    Choice opts -> ($ rule) <$> validateChoice (validateInteger i) opts
+    -- a = x..y
+    Range low high bound ->
+      pure $
+        check
+          ( case (low, high) of
+              (Literal (Value (VUInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _)) -> n <= i && range bound i m
+              (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _)) -> -n <= i && range bound i m
+              (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VNInt (fromIntegral -> m)) _)) -> -n <= i && range bound i (-m)
+              (Literal (Value VUInt {} _), Literal (Value VNInt {} _)) -> False
+              (Literal (Value (VBignum n) _), Literal (Value (VUInt (fromIntegral -> m)) _)) -> n <= i && range bound i m
+              (Literal (Value (VBignum n) _), Literal (Value (VNInt (fromIntegral -> m)) _)) -> n <= i && range bound i (-m)
+              (Literal (Value (VUInt (fromIntegral -> n)) _), Literal (Value (VBignum m) _)) -> n <= i && range bound i m
+              (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VBignum m) _)) -> (-n) <= i && range bound i m
+              _ -> error "Not yet implemented"
+          )
+          rule
+    -- a = &(x, y, z)
+    Enum g ->
+      case g of
+        Group g' -> (`replaceRule` rule) <$> validateInteger i (Choice (NE.fromList g'))
+        _ -> error "Not yet implemented"
+    -- a = x: y
+    -- Note KV cannot appear on its own, but we will use this when validating
+    -- lists.
+    KV _ v _ -> (`replaceRule` rule) <$> validateInteger i v
+    Tag 2 (Postlude PTBytes) -> pure $ Valid rule
+    Tag 3 (Postlude PTBytes) -> pure $ Valid rule
+    _ -> pure $ UnapplicableRule rule
 
 -- | Controls for an Integer
 controlInteger ::
@@ -819,9 +822,9 @@ expandRule maxLen rule =
     _ -> pure [[rule | maxLen > 0]]
 
 -- | Which rules are optional?
-isOptional :: MonadReader CDDL m => Rule -> m Bool
+isOptional :: Rule -> Bool
 isOptional rule =
-  pure $ case rule of
+  case rule of
     Occur _ OIOptional -> True
     Occur _ OIZeroOrMore -> True
     Occur _ (OIBounded Nothing _) -> True
@@ -887,19 +890,18 @@ validateExpandedList terms rules = go rules
 validateList ::
   MonadReader CDDL m => [Term] -> Rule -> m CDDLResult
 validateList terms rule =
-  ($ rule) <$> do
-    case rule of
-      Postlude PTAny -> pure Valid
-      Array rules ->
-        case terms of
-          [] -> ifM (and <$> mapM isOptional rules) (pure Valid) (pure InvalidRule)
-          _ ->
-            ask >>= \cddl ->
-              let sequencesOfRules =
-                    runReader (expandRules (length terms) $ flattenGroup cddl rules) cddl
-               in validateExpandedList terms sequencesOfRules
-      Choice opts -> validateChoice (validateList terms) opts
-      _ -> pure UnapplicableRule
+  case rule of
+    Postlude PTAny -> pure $ Valid rule
+    Array rules ->
+      case terms of
+        [] -> pure $ if all isOptional rules then Valid rule else InvalidRule rule
+        _ ->
+          ask >>= \cddl ->
+            let sequencesOfRules =
+                  runReader (expandRules (length terms) $ flattenGroup cddl rules) cddl
+             in ($ rule) <$> validateExpandedList terms sequencesOfRules
+    Choice opts -> ($ rule) <$> validateChoice (validateList terms) opts
+    _ -> pure $ UnapplicableRule rule
 
 --------------------------------------------------------------------------------
 -- Maps
@@ -981,7 +983,7 @@ validateMap terms rule =
       Postlude PTAny -> pure Valid
       Map rules ->
         case terms of
-          [] -> ifM (and <$> mapM isOptional rules) (pure Valid) (pure InvalidRule)
+          [] -> pure $ if all isOptional rules then Valid else InvalidRule
           _ ->
             ask >>= \cddl ->
               let sequencesOfRules =
@@ -1110,9 +1112,6 @@ replaceRule InvalidRule {} r = InvalidRule r
 replaceRule (InvalidControl _ a) r = InvalidControl r a
 replaceRule UnapplicableRule {} r = UnapplicableRule r
 replaceRule Valid {} r = Valid r
-
-ifM :: Monad m => m Bool -> m a -> m a -> m a
-ifM b t f = do b' <- b; if b' then t else f
 
 check :: Bool -> Rule -> CDDLResult
 check c = if c then Valid else InvalidRule
