@@ -38,6 +38,7 @@ module Codec.CBOR.Cuddle.CDDL (
   GrpChoice (..),
   unwrap,
   compareRuleName,
+  HasName (..),
   -- Extension
   ForAllExtensions,
   XCddl,
@@ -62,7 +63,7 @@ import Data.TreeDiff (ToExpr)
 import Data.Word (Word64, Word8)
 import GHC.Base (Constraint, Type)
 import GHC.Generics (Generic)
-import Optics.Core ((%), (%~), (&))
+import Optics.Core (Lens', lens, (%), (%~), (&))
 
 data family XXTopLevel i
 
@@ -107,7 +108,7 @@ ruleTopLevel _ = Nothing
 
 -- | Sort the CDDL Rules on the basis of their names
 sortCDDL :: CDDL i -> NonEmpty (Rule i)
-sortCDDL (CDDL r rs _) = NE.sortBy (compare `on` name . ruleName) $ r :| mapMaybe ruleTopLevel rs
+sortCDDL (CDDL r rs _) = NE.sortBy (compare `on` unName . ruleName) $ r :| mapMaybe ruleTopLevel rs
 
 fromRules :: Monoid (XCddl i) => NonEmpty (Rule i) -> CDDL i
 fromRules (x :| xs) = CDDL x (TopLevelRule <$> xs) mempty
@@ -155,7 +156,7 @@ deriving instance ForAllExtensions i ToExpr => ToExpr (TopLevel i)
 --
 --  *  Rule names (types or groups) do not appear in the actual CBOR
 --      encoding, but names used as "barewords" in member keys do.
-newtype Name = Name {name :: T.Text}
+newtype Name = Name {unName :: T.Text}
   deriving (Generic)
   deriving (Eq, Ord, Show)
   deriving newtype (Semigroup, Monoid)
@@ -169,6 +170,12 @@ instance CollectComments Name where
   collectComments _ = []
 
 instance Hashable Name
+
+class HasName a where
+  nameL :: Lens' a Name
+
+instance HasName Name where
+  nameL = lens id const
 
 -- |
 --   assignt = "=" / "/="

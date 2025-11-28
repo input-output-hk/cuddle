@@ -200,7 +200,7 @@ type2Spec = describe "type2" $ do
                                   ( Just
                                       ( MKType
                                           ( Type1
-                                              { t1Main = T2Name (Name {name = "int"}) Nothing
+                                              { t1Main = T2Name "int" Nothing
                                               , t1TyOp = Nothing
                                               , t1Comment = mempty
                                               }
@@ -210,7 +210,7 @@ type2Spec = describe "type2" $ do
                                   ( Type0
                                       { t0Type1 =
                                           Type1
-                                            { t1Main = T2Name (Name {name = "string"}) Nothing
+                                            { t1Main = T2Name "string" Nothing
                                             , t1TyOp = Nothing
                                             , t1Comment = mempty
                                             }
@@ -239,7 +239,7 @@ type2Spec = describe "type2" $ do
                                   ( Just
                                       ( MKType
                                           ( Type1
-                                              { t1Main = T2Name (Name {name = "int"}) Nothing
+                                              { t1Main = T2Name "int" Nothing
                                               , t1TyOp = Nothing
                                               , t1Comment = mempty
                                               }
@@ -249,7 +249,7 @@ type2Spec = describe "type2" $ do
                                   ( Type0
                                       { t0Type1 =
                                           Type1
-                                            { t1Main = T2Name (Name {name = "string"}) Nothing
+                                            { t1Main = T2Name "string" Nothing
                                             , t1TyOp = Nothing
                                             , t1Comment = mempty
                                             }
@@ -281,7 +281,7 @@ type2Spec = describe "type2" $ do
                                   ( Type0
                                       { t0Type1 =
                                           Type1
-                                            { t1Main = T2Name (Name {name = "string"}) Nothing
+                                            { t1Main = T2Name "string" Nothing
                                             , t1TyOp = Nothing
                                             , t1Comment = mempty
                                             }
@@ -300,7 +300,7 @@ type2Spec = describe "type2" $ do
                                   ( Type0
                                       { t0Type1 =
                                           Type1
-                                            { t1Main = T2Name (Name {name = "int"}) Nothing
+                                            { t1Main = T2Name "int" Nothing
                                             , t1TyOp = Nothing
                                             , t1Comment = mempty
                                             }
@@ -319,7 +319,7 @@ type2Spec = describe "type2" $ do
                                   ( Type0
                                       { t0Type1 =
                                           Type1
-                                            { t1Main = T2Name (Name {name = "bytes"}) Nothing
+                                            { t1Main = T2Name "bytes" Nothing
                                             , t1TyOp = Nothing
                                             , t1Comment = mempty
                                             }
@@ -350,7 +350,7 @@ type2Spec = describe "type2" $ do
                                   ( Type0
                                       { t0Type1 =
                                           Type1
-                                            { t1Main = T2Name (Name {name = "int"}) Nothing
+                                            { t1Main = T2Name "int" Nothing
                                             , t1TyOp = Nothing
                                             , t1Comment = mempty
                                             }
@@ -372,7 +372,7 @@ type2Spec = describe "type2" $ do
                                          ( Type0
                                              { t0Type1 =
                                                  Type1
-                                                   { t1Main = T2Name (Name {name = "string"}) Nothing
+                                                   { t1Main = T2Name "string" Nothing
                                                    , t1TyOp = Nothing
                                                    , t1Comment = mempty
                                                    }
@@ -482,7 +482,7 @@ type2Spec = describe "type2" $ do
                                   ( Type0
                                       { t0Type1 =
                                           Type1
-                                            { t1Main = T2Name (Name {name = "soon"}) Nothing
+                                            { t1Main = T2Name "soon" Nothing
                                             , t1TyOp = Nothing
                                             , t1Comment = mempty
                                             }
@@ -510,7 +510,7 @@ grpEntrySpec = describe "GroupEntry" $ do
               ( Type0
                   { t0Type1 =
                       Type1
-                        { t1Main = T2Name (Name {name = "int"}) Nothing
+                        { t1Main = T2Name "int" Nothing
                         , t1TyOp = Nothing
                         , t1Comment = mempty
                         }
@@ -529,7 +529,7 @@ grpEntrySpec = describe "GroupEntry" $ do
               ( Type0
                   { t0Type1 =
                       Type1
-                        { t1Main = T2Name (Name {name = "int"}) Nothing
+                        { t1Main = T2Name "int" Nothing
                         , t1TyOp = Nothing
                         , t1Comment = mempty
                         }
@@ -550,7 +550,7 @@ grpEntrySpec = describe "GroupEntry" $ do
                       Type1
                         { t1Main =
                             T2Name
-                              (Name {name = "a"})
+                              "a"
                               ( Just
                                   ( GenericArg
                                       ( Type1
@@ -652,7 +652,7 @@ qcFoundSpec =
             Just
               ( CtrlOp CtlOp.Ge
               , T2EnumRef
-                  (Name {name = "i"})
+                  "i"
                   ( Just
                       ( GenericArg
                           ( Type1
