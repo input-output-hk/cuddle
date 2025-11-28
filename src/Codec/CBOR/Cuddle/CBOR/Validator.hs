@@ -286,9 +286,9 @@ controlInteger i Size ctrl =
       pure . boolCtrl $ 0 <= i && i < 256 ^ sz
     _ -> error "Not yet implemented"
 controlInteger i Bits ctrl = do
-  indices <-
-    case ctrl of
-      Literal (Value (VUInt i') _) -> pure [i']
+  let
+    indices = case ctrl of
+      Literal (Value (VUInt i') _) -> [i']
       Choice nodes -> getIndicesOfChoice nodes
       Range ff tt incl -> getIndicesOfRange ff tt incl
       Enum g -> getIndicesOfEnum g
@@ -623,13 +623,14 @@ controlBytes bs Size ctrl =
             _ -> error "Not yet implemented"
     _ -> error "Not yet implemented"
 controlBytes bs Bits ctrl = do
-  indices <-
-    case ctrl of
-      Literal (Value (VUInt i') _) -> pure [i']
-      Choice nodes -> getIndicesOfChoice nodes
-      Range ff tt incl -> getIndicesOfRange ff tt incl
-      Enum g -> getIndicesOfEnum g
-      _ -> error "Not yet implemented"
+  let
+    indices =
+      case ctrl of
+        Literal (Value (VUInt i') _) -> [i']
+        Choice nodes -> getIndicesOfChoice nodes
+        Range ff tt incl -> getIndicesOfRange ff tt incl
+        Enum g -> getIndicesOfEnum g
+        _ -> error "Not yet implemented"
   pure $ boolCtrl $ bitsControlCheck (map fromIntegral indices)
   where
     bitsControlCheck :: [Int] -> Bool
@@ -907,70 +908,62 @@ validateList terms rule =
 -- Maps
 
 validateMapWithExpandedRules ::
-  forall m.
-  ( HasCallStack
-  , MonadReader CDDL m
-  ) =>
+  HasCallStack =>
+  CDDL ->
   [(Term, Term)] ->
   [Rule] ->
-  m ([AMatchedItem], Maybe ANonMatchedItem)
-validateMapWithExpandedRules =
+  ([AMatchedItem], Maybe ANonMatchedItem)
+validateMapWithExpandedRules cddl =
   go
   where
     go ::
       [(Term, Term)] ->
       [Rule] ->
-      m ([AMatchedItem], Maybe ANonMatchedItem)
-    go [] [] = pure ([], Nothing)
+      ([AMatchedItem], Maybe ANonMatchedItem)
+    go [] [] = ([], Nothing)
     go ((tk, tv) : ts) rs = do
-      go' tk tv rs >>= \case
-        Left tt -> pure ([], Just tt)
+      case go' tk tv rs of
+        Left tt -> ([], Just tt)
         Right (res, rs') ->
-          first (res :) <$> go ts rs'
+          first (res :) $ go ts rs'
     go _ _ = error "Not yet implemented"
 
     -- For each pair of terms, try to find some rule that can be applied here,
     -- and returns the others if there is a succesful match.
-    go' :: Term -> Term -> [Rule] -> m (Either ANonMatchedItem (AMatchedItem, [Rule]))
-    go' tk tv [] = pure $ Left $ ANonMatchedItem tk tv []
+    go' :: Term -> Term -> [Rule] -> Either ANonMatchedItem (AMatchedItem, [Rule])
+    go' tk tv [] = Left $ ANonMatchedItem tk tv []
     go' tk tv (r : rs) =
       case r of
         KV k v _ ->
-          ask >>= \cddl ->
-            case runReader (validateTerm tk k) cddl of
-              CBORTermResult _ r1@(Valid _) -> case runReader (validateTerm tv v) cddl of
-                CBORTermResult _ (Valid _) -> pure (Right (AMatchedItem tk tv r, rs))
-                CBORTermResult _ r2 ->
-                  bimap (\anmi -> anmi {anmiResults = Right (r, r1, r2) : anmiResults anmi}) (second (r :))
-                    <$> go' tk tv rs
-              CBORTermResult _ r1 ->
-                bimap (\anmi -> anmi {anmiResults = Left (r, r1) : anmiResults anmi}) (second (r :))
-                  <$> go' tk tv rs
+          case runReader (validateTerm tk k) cddl of
+            CBORTermResult _ r1@(Valid _) -> case runReader (validateTerm tv v) cddl of
+              CBORTermResult _ (Valid _) -> Right (AMatchedItem tk tv r, rs)
+              CBORTermResult _ r2 ->
+                bimap (\anmi -> anmi {anmiResults = Right (r, r1, r2) : anmiResults anmi}) (second (r :)) $
+                  go' tk tv rs
+            CBORTermResult _ r1 ->
+              bimap (\anmi -> anmi {anmiResults = Left (r, r1) : anmiResults anmi}) (second (r :)) $ go' tk tv rs
         _ -> error "Not yet implemented"
 
 validateExpandedMap ::
-  forall m.
-  MonadReader CDDL m =>
+  CDDL ->
   [(Term, Term)] ->
   [[Rule]] ->
-  m (Rule -> CDDLResult)
-validateExpandedMap terms rules = go rules
+  Rule ->
+  CDDLResult
+validateExpandedMap cddl terms rules = go rules
   where
-    go :: [[Rule]] -> m (Rule -> CDDLResult)
-    go [] = pure $ \r -> MapExpansionFail r rules []
+    go :: [[Rule]] -> Rule -> CDDLResult
+    go [] = \r -> MapExpansionFail r rules []
     go (choice : choices) = do
-      res <- validateMapWithExpandedRules terms choice
-      case res of
-        (_, Nothing) -> pure Valid
+      case validateMapWithExpandedRules cddl terms choice of
+        (_, Nothing) -> Valid
         (matches, Just notMatched) ->
-          go choices
-            >>= ( \case
-                    Valid _ -> pure Valid
-                    MapExpansionFail _ _ errors ->
-                      pure $ \r -> MapExpansionFail r rules ((matches, notMatched) : errors)
-                    _ -> error "Not yet implemented"
-                )
-              . ($ dummyRule)
+          case go choices dummyRule of
+            Valid _ -> Valid
+            MapExpansionFail _ _ errors ->
+              \r -> MapExpansionFail r rules ((matches, notMatched) : errors)
+            _ -> error "Not yet implemented"
 
 validateMap ::
   MonadReader CDDL m =>
@@ -988,7 +981,7 @@ validateMap terms rule =
             ask >>= \cddl ->
               let sequencesOfRules =
                     runReader (expandRules (length terms) $ flattenGroup cddl rules) cddl
-               in validateExpandedMap terms sequencesOfRules
+               in pure $ validateExpandedMap cddl terms sequencesOfRules
       Choice opts -> validateChoice (validateMap terms) opts
       _ -> pure UnapplicableRule
 
@@ -1061,40 +1054,37 @@ boolCtrl c = if c then Right () else Left Nothing
 --------------------------------------------------------------------------------
 -- Bits control
 
-getIndicesOfChoice :: MonadReader CDDL m => NE.NonEmpty Rule -> m [Word64]
+getIndicesOfChoice :: NE.NonEmpty Rule -> [Word64]
 getIndicesOfChoice nodes =
-  mconcat
-    . NE.toList
-    <$> mapM
-      ( \case
-          Literal (Value (VUInt v) _) -> pure [fromIntegral v]
-          KV _ v _ ->
-            case v of
-              Literal (Value (VUInt v') _) -> pure [fromIntegral v']
-              somethingElse ->
-                error $
-                  "Malformed value in KV in choice in .bits: "
-                    <> show somethingElse
-          Range ff tt incl -> getIndicesOfRange ff tt incl
-          Enum g -> getIndicesOfEnum g
-          somethingElse ->
-            error $
-              "Malformed alternative in choice in .bits: "
-                <> show somethingElse
-      )
-      nodes
+  concatMap
+    ( \case
+        Literal (Value (VUInt v) _) -> [fromIntegral v]
+        KV _ v _ ->
+          case v of
+            Literal (Value (VUInt v') _) -> [fromIntegral v']
+            somethingElse ->
+              error $
+                "Malformed value in KV in choice in .bits: "
+                  <> show somethingElse
+        Range ff tt incl -> getIndicesOfRange ff tt incl
+        Enum g -> getIndicesOfEnum g
+        somethingElse ->
+          error $
+            "Malformed alternative in choice in .bits: "
+              <> show somethingElse
+    )
+    (NE.toList nodes)
 
-getIndicesOfRange :: MonadReader CDDL m => Rule -> Rule -> RangeBound -> m [Word64]
+getIndicesOfRange :: Rule -> Rule -> RangeBound -> [Word64]
 getIndicesOfRange ff tt incl =
   case (ff, tt) of
     (Literal (Value (VUInt ff') _), Literal (Value (VUInt tt') _)) ->
-      pure $
-        [ff' .. tt'] & case incl of
-          ClOpen -> init
-          Closed -> id
+      [ff' .. tt'] & case incl of
+        ClOpen -> init
+        Closed -> id
     somethingElse -> error $ "Malformed range in .bits: " <> show somethingElse
 
-getIndicesOfEnum :: MonadReader CDDL m => Rule -> m [Word64]
+getIndicesOfEnum :: Rule -> [Word64]
 getIndicesOfEnum g =
   case g of
     Group g' -> getIndicesOfChoice (fromJust $ NE.nonEmpty g')
