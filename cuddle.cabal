@@ -139,6 +139,7 @@ test-suite cuddle-test
     Test.Codec.CBOR.Cuddle.CDDL.GeneratorSpec
     Test.Codec.CBOR.Cuddle.CDDL.Parser
     Test.Codec.CBOR.Cuddle.CDDL.Pretty
+    Test.Codec.CBOR.Cuddle.CDDL.Validator
     Test.Codec.CBOR.Cuddle.Huddle
 
   type: exitcode-stdio-1.0
@@ -157,6 +158,7 @@ test-suite cuddle-test
     hspec >=2.11,
     hspec-megaparsec >=2.2,
     megaparsec,
+    pretty-simple,
     prettyprinter,
     random,
     string-qq >=0.0.6,
