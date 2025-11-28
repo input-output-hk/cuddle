@@ -5,6 +5,7 @@ module Main (main) where
 import Codec.CBOR.Cuddle.CBOR.Gen (generateCBORTerm)
 import Codec.CBOR.Cuddle.CBOR.Validator
 import Codec.CBOR.Cuddle.CDDL (Name (..), fromRules, sortCDDL)
+import Codec.CBOR.Cuddle.CDDL.CTree (CTreeRoot)
 import Codec.CBOR.Cuddle.CDDL.Postlude (appendPostlude)
 import Codec.CBOR.Cuddle.CDDL.Resolve (
   fullResolveCDDL,
@@ -16,6 +17,7 @@ import Codec.CBOR.FlatTerm (toFlatTerm)
 import Codec.CBOR.Pretty (prettyHexEnc)
 import Codec.CBOR.Term (encodeTerm)
 import Codec.CBOR.Write (toStrictByteString)
+import Data.ByteString qualified as BS
 import Data.ByteString.Base16 qualified as Base16
 import Data.ByteString.Char8 qualified as BSC
 import Data.Text qualified as T
@@ -227,7 +229,7 @@ run (Opts cmd cddlFile) = do
               Left err -> putStrLnErr (show err) >> exitFailure
               Right mt -> do
                 cbor <- BSC.readFile (vcInput vcOpts)
-                validateCBOR cbor (Name $ vcItemName vcOpts) (mapIndex mt)
+                runValidateCBOR cbor (Name $ vcItemName vcOpts) (mapIndex mt)
 
 putStrLnErr :: String -> IO ()
 putStrLnErr = hPutStrLn stderr
@@ -237,3 +239,13 @@ parseFromFile ::
   String ->
   IO (Either (ParseErrorBundle T.Text e) a)
 parseFromFile p file = runParser p file <$> T.readFile file
+
+runValidateCBOR :: BS.ByteString -> Name -> CTreeRoot ValidatorStage -> IO ()
+runValidateCBOR bs rule cddl =
+  case validateCBOR bs rule cddl of
+    ok@(CBORTermResult _ (Valid _)) -> do
+      putStrLn $ "Valid " ++ show ok
+      exitSuccess
+    err -> do
+      hPutStrLn stderr $ "Invalid " ++ show err
+      exitFailure

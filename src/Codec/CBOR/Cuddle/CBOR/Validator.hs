@@ -6,9 +6,9 @@
 
 module Codec.CBOR.Cuddle.CBOR.Validator (
   validateCBOR,
-  validateCBOR',
   CDDLResult (..),
   CBORTermResult (..),
+  ValidatorStage,
 ) where
 
 import Codec.CBOR.Cuddle.CDDL hiding (CDDL, Group, Rule)
@@ -18,7 +18,6 @@ import Codec.CBOR.Cuddle.CDDL.Resolve (MonoReferenced, XXCTree (..))
 import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
 import Codec.CBOR.Read
 import Codec.CBOR.Term
-import Control.Exception
 import Control.Monad.Reader
 import Data.Bifunctor
 import Data.Bits hiding (And)
@@ -34,8 +33,6 @@ import Data.Text.Lazy qualified as TL
 import Data.Word
 import GHC.Float
 import GHC.Stack (HasCallStack)
-import System.Exit
-import System.IO
 import Text.Regex.TDFA
 
 type data ValidatorStage
@@ -132,25 +129,9 @@ data AMatchedItem = AMatchedItem
 --------------------------------------------------------------------------------
 -- Main entry point
 
-validateCBOR :: BS.ByteString -> Name -> CDDL -> IO ()
-validateCBOR bs rule cddl =
-  ( case validateCBOR' bs rule cddl of
-      ok@(CBORTermResult _ (Valid _)) -> do
-        putStrLn $ "Valid " ++ show ok
-        exitSuccess
-      err -> do
-        hPutStrLn stderr $ "Invalid " ++ show err
-        exitFailure
-  )
-    `catch` ( \(e :: PatternMatchFail) ->
-                putStrLn $
-                  "You uncovered a path we thought was impossible! Please submit your CDDL and CBOR to `https://github.com/input-output-hk/cuddle/issues` for us to investigate\n"
-                    <> displayException e
-            )
-
-validateCBOR' ::
+validateCBOR ::
   BS.ByteString -> Name -> CDDL -> CBORTermResult
-validateCBOR' bs rule cddl@(CTreeRoot tree) =
+validateCBOR bs rule cddl@(CTreeRoot tree) =
   case deserialiseFromBytes decodeTerm (BSL.fromStrict bs) of
     Left e -> error $ show e
     Right (rest, term) ->
@@ -168,26 +149,25 @@ validateTerm ::
   Term ->
   Rule ->
   CBORTermResult
-validateTerm cddl term rule =
-  let f = case term of
-        TInt i -> validateInteger (fromIntegral i)
-        TInteger i -> validateInteger i
-        TBytes b -> validateBytes cddl b
-        TBytesI b -> validateBytes cddl (BSL.toStrict b)
-        TString s -> validateText s
-        TStringI s -> validateText (TL.toStrict s)
-        TList ts -> validateList cddl ts
-        TListI ts -> validateList cddl ts
-        TMap ts -> validateMap cddl ts
-        TMapI ts -> validateMap cddl ts
-        TTagged w t -> validateTagged cddl w t
-        TBool b -> validateBool b
-        TNull -> validateNull
-        TSimple s -> validateSimple s
-        THalf h -> validateHalf h
-        TFloat h -> validateFloat h
-        TDouble d -> validateDouble d
-   in CBORTermResult term $ f rule
+validateTerm cddl term =
+  CBORTermResult term . case term of
+    TInt i -> validateInteger (fromIntegral i)
+    TInteger i -> validateInteger i
+    TBytes b -> validateBytes cddl b
+    TBytesI b -> validateBytes cddl (BSL.toStrict b)
+    TString s -> validateText s
+    TStringI s -> validateText (TL.toStrict s)
+    TList ts -> validateList cddl ts
+    TListI ts -> validateList cddl ts
+    TMap ts -> validateMap cddl ts
+    TMapI ts -> validateMap cddl ts
+    TTagged w t -> validateTagged cddl w t
+    TBool b -> validateBool b
+    TNull -> validateNull
+    TSimple s -> validateSimple s
+    THalf h -> validateHalf h
+    TFloat h -> validateFloat h
+    TDouble d -> validateDouble d
 
 --------------------------------------------------------------------------------
 -- Ints and integers
