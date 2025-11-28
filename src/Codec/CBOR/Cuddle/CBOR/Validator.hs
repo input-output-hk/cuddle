@@ -830,7 +830,7 @@ validateExpandedList cddl terms rules = go rules
         _ -> case last res of
           (_, CBORTermResult _ (Valid _)) -> Valid rule
           _ ->
-            case go choices dummyRule of
+            case go choices rule of
               Valid _ -> Valid rule
               ListExpansionFail _ _ errors -> ListExpansionFail rule rules (res : errors)
               _ -> error "Not yet implemented"
@@ -899,15 +899,15 @@ validateExpandedMap ::
 validateExpandedMap cddl terms rules = go rules
   where
     go :: [[Rule]] -> Rule -> CDDLResult
-    go [] = \r -> MapExpansionFail r rules []
-    go (choice : choices) = do
+    go [] rule = MapExpansionFail rule rules []
+    go (choice : choices) rule = do
       case validateMapWithExpandedRules cddl terms choice of
-        (_, Nothing) -> Valid
+        (_, Nothing) -> Valid rule
         (matches, Just notMatched) ->
-          case go choices dummyRule of
-            Valid _ -> Valid
+          case go choices rule of
+            Valid _ -> Valid rule
             MapExpansionFail _ _ errors ->
-              \r -> MapExpansionFail r rules ((matches, notMatched) : errors)
+              MapExpansionFail rule rules ((matches, notMatched) : errors)
             _ -> error "Not yet implemented"
 
 validateMap ::
@@ -937,22 +937,16 @@ validateChoice ::
 validateChoice v rules = go rules
   where
     go :: NE.NonEmpty Rule -> Rule -> CDDLResult
-    go (choice NE.:| xs) = do
+    go (choice NE.:| xs) rule = do
       case v choice of
-        Valid _ -> Valid
+        Valid _ -> Valid rule
         err -> case NE.nonEmpty xs of
-          Nothing -> \r -> ChoiceFail r rules ((choice, err) NE.:| [])
+          Nothing -> ChoiceFail rule rules ((choice, err) NE.:| [])
           Just choices ->
-            go choices
-              & ( \case
-                    Valid _ -> Valid
-                    ChoiceFail _ _ errors -> \r -> ChoiceFail r rules ((choice, err) NE.<| errors)
-                    _ -> error "Not yet implemented"
-                )
-                . ($ dummyRule)
-
-dummyRule :: Rule
-dummyRule = CTreeE $ VRuleRef "dummy"
+            case go choices rule of
+              Valid _ -> Valid rule
+              ChoiceFail _ _ errors -> ChoiceFail rule rules ((choice, err) NE.<| errors)
+              _ -> error "Not yet implemented"
 
 --------------------------------------------------------------------------------
 -- Control helpers
