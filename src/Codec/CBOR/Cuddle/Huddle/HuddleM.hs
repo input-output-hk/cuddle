@@ -15,25 +15,25 @@ module Codec.CBOR.Cuddle.Huddle.HuddleM (
 )
 where
 
+import Codec.CBOR.Cuddle.CDDL (Name)
 import Codec.CBOR.Cuddle.Huddle hiding (binding, (=:=), (=:~))
 import Codec.CBOR.Cuddle.Huddle qualified as Huddle
 import Control.Monad.State.Strict (State, modify, runState)
 import Data.Default.Class (def)
 import Data.Generics.Product (HasField (..))
 import Data.Map.Ordered.Strict qualified as OMap
-import Data.Text qualified as T
 import Optics.Core (set, (%~), (^.))
 
 type HuddleM = State Huddle
 
 -- | Overridden version of assignment which also adds the rule to the state
-(=:=) :: IsType0 a => T.Text -> a -> HuddleM Rule
+(=:=) :: IsType0 a => Name -> a -> HuddleM Rule
 n =:= b = let r = n Huddle.=:= b in include r
 
 infixl 1 =:=
 
 -- | Overridden version of group assignment which adds the rule to the state
-(=:~) :: T.Text -> Group -> HuddleM (Named Group)
+(=:~) :: Name -> Group -> HuddleM (Named Group)
 n =:~ b = let r = n Huddle.=:~ b in include r
 
 infixl 1 =:~
@@ -46,7 +46,7 @@ binding ::
 binding fRule = include (Huddle.binding fRule)
 
 -- | Renamed version of Huddle's underlying '=:=' for use in generic bindings
-(=::=) :: IsType0 a => T.Text -> a -> Rule
+(=::=) :: IsType0 a => Name -> a -> Rule
 n =::= b = n Huddle.=:= b
 
 infixl 1 =::=
@@ -97,7 +97,7 @@ instance Includable HuddleItem where
 
 unsafeIncludeFromHuddle ::
   Huddle ->
-  T.Text ->
+  Name ->
   HuddleM HuddleItem
 unsafeIncludeFromHuddle h name =
   let items = h ^. field @"items"
