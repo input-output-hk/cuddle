@@ -127,26 +127,23 @@ data AMatchedItem = AMatchedItem
 --------------------------------------------------------------------------------
 -- Main entry point
 
-validateCBOR ::
-  BS.ByteString -> Name -> CDDL -> CBORTermResult
+validateCBOR :: BS.ByteString -> Name -> CDDL -> CBORTermResult
 validateCBOR bs rule cddl@(CTreeRoot tree) =
   case deserialiseFromBytes decodeTerm (BSL.fromStrict bs) of
     Left e -> error $ show e
     Right (rest, term) ->
-      if BSL.null rest
-        then validateTerm cddl term (tree Map.! rule)
-        else validateTerm cddl (TBytes bs) (tree Map.! rule)
+      validateTerm cddl t (tree Map.! rule)
+      where
+        t
+          | BSL.null rest = term
+          | otherwise = TBytes bs
 
 --------------------------------------------------------------------------------
 -- Terms
 
 -- | Core function that validates a CBOR term to a particular rule of the CDDL
 -- spec
-validateTerm ::
-  CDDL ->
-  Term ->
-  Rule ->
-  CBORTermResult
+validateTerm :: CDDL -> Term -> Rule -> CBORTermResult
 validateTerm cddl term =
   CBORTermResult term . case term of
     TInt i -> validateInteger (fromIntegral i)
@@ -181,11 +178,7 @@ validateTerm cddl term =
 --
 -- For this reason, we cannot assume that bounds or literals are going to be
 -- Ints, so we convert everything to Integer.
-validateInteger ::
-  HasCallStack =>
-  Integer ->
-  Rule ->
-  CDDLResult
+validateInteger :: HasCallStack => Integer -> Rule -> CDDLResult
 validateInteger i rule =
   case rule of
     -- echo "C24101" | xxd -r -p - example.cbor
@@ -247,12 +240,7 @@ validateInteger i rule =
     _ -> UnapplicableRule rule
 
 -- | Controls for an Integer
-controlInteger ::
-  HasCallStack =>
-  Integer ->
-  CtlOp ->
-  Rule ->
-  Either (Maybe CBORTermResult) ()
+controlInteger :: HasCallStack => Integer -> CtlOp -> Rule -> Either (Maybe CBORTermResult) ()
 controlInteger i Size ctrl =
   case ctrl of
     Literal (Value (VUInt sz) _) ->
@@ -318,11 +306,7 @@ controlInteger _ _ _ = error "Not yet implemented"
 -- and decoding floating-point numbers.
 
 -- | Validating a `Float16`
-validateHalf ::
-  HasCallStack =>
-  Float ->
-  Rule ->
-  CDDLResult
+validateHalf :: HasCallStack => Float -> Rule -> CDDLResult
 validateHalf f rule =
   ($ rule) $ do
     case rule of
@@ -344,12 +328,7 @@ validateHalf f rule =
       _ -> UnapplicableRule
 
 -- | Controls for `Float16`
-controlHalf ::
-  HasCallStack =>
-  Float ->
-  CtlOp ->
-  Rule ->
-  Either (Maybe CBORTermResult) ()
+controlHalf :: HasCallStack => Float -> CtlOp -> Rule -> Either (Maybe CBORTermResult) ()
 controlHalf f Eq ctrl =
   boolCtrl $ case ctrl of
     Literal (Value (VFloat16 f') _) -> f == f'
@@ -361,11 +340,7 @@ controlHalf f Ne ctrl =
 controlHalf _ _ _ = error "Not yet implemented"
 
 -- | Validating a `Float32`
-validateFloat ::
-  HasCallStack =>
-  Float ->
-  Rule ->
-  CDDLResult
+validateFloat :: HasCallStack => Float -> Rule -> CDDLResult
 validateFloat f rule =
   ($ rule) $ do
     case rule of
@@ -390,12 +365,7 @@ validateFloat f rule =
       _ -> UnapplicableRule
 
 -- | Controls for `Float32`
-controlFloat ::
-  HasCallStack =>
-  Float ->
-  CtlOp ->
-  Rule ->
-  Either (Maybe CBORTermResult) ()
+controlFloat :: HasCallStack => Float -> CtlOp -> Rule -> Either (Maybe CBORTermResult) ()
 controlFloat f Eq ctrl =
   boolCtrl $ case ctrl of
     Literal (Value (VFloat16 f') _) -> f == f'
@@ -409,11 +379,7 @@ controlFloat f Ne ctrl =
 controlFloat _ _ _ = error "Not yet implemented"
 
 -- | Validating a `Float64`
-validateDouble ::
-  HasCallStack =>
-  Double ->
-  Rule ->
-  CDDLResult
+validateDouble :: HasCallStack => Double -> Rule -> CDDLResult
 validateDouble f rule =
   ($ rule) $ do
     case rule of
@@ -439,12 +405,7 @@ validateDouble f rule =
       _ -> UnapplicableRule
 
 -- | Controls for `Float64`
-controlDouble ::
-  HasCallStack =>
-  Double ->
-  CtlOp ->
-  Rule ->
-  Either (Maybe CBORTermResult) ()
+controlDouble :: HasCallStack => Double -> CtlOp -> Rule -> Either (Maybe CBORTermResult) ()
 controlDouble f Eq ctrl =
   boolCtrl $ case ctrl of
     Literal (Value (VFloat16 f') _) -> f == float2Double f'
@@ -463,10 +424,7 @@ controlDouble _ _ _ = error "Not yet implmented"
 -- Bool
 
 -- | Validating a boolean
-validateBool ::
-  Bool ->
-  Rule ->
-  CDDLResult
+validateBool :: Bool -> Rule -> CDDLResult
 validateBool b rule =
   ($ rule) $ do
     case rule of
@@ -483,12 +441,7 @@ validateBool b rule =
       _ -> UnapplicableRule
 
 -- | Controls for `Bool`
-controlBool ::
-  HasCallStack =>
-  Bool ->
-  CtlOp ->
-  Rule ->
-  Either (Maybe CBORTermResult) ()
+controlBool :: HasCallStack => Bool -> CtlOp -> Rule -> Either (Maybe CBORTermResult) ()
 controlBool b Eq ctrl =
   boolCtrl $ case ctrl of
     Literal (Value (VBool b') _) -> b == b'
@@ -503,10 +456,7 @@ controlBool _ _ _ = error "Not yet implemented"
 -- Simple
 
 -- | Validating a `TSimple`. It is unclear if this is used for anything else than undefined.
-validateSimple ::
-  Word8 ->
-  Rule ->
-  CDDLResult
+validateSimple :: Word8 -> Rule -> CDDLResult
 validateSimple 23 rule =
   ($ rule) $ do
     case rule of
@@ -523,8 +473,7 @@ validateSimple n _ = error $ "Found simple different to 23! please report this s
 -- Null/nil
 
 -- | Validating nil
-validateNull ::
-  Rule -> CDDLResult
+validateNull :: Rule -> CDDLResult
 validateNull rule =
   ($ rule) $ do
     case rule of
@@ -539,11 +488,7 @@ validateNull rule =
 -- Bytes
 
 -- | Validating a byte sequence
-validateBytes ::
-  CDDL ->
-  BS.ByteString ->
-  Rule ->
-  CDDLResult
+validateBytes :: CDDL -> BS.ByteString -> Rule -> CDDLResult
 validateBytes cddl bs rule =
   case rule of
     -- a = any
@@ -620,10 +565,7 @@ controlBytes _ _ _ _ = error "Not yet implmented"
 -- Text
 
 -- | Validating text strings
-validateText ::
-  T.Text ->
-  Rule ->
-  CDDLResult
+validateText :: T.Text -> Rule -> CDDLResult
 validateText txt rule =
   case rule of
     -- a = any
@@ -639,12 +581,7 @@ validateText txt rule =
     _ -> UnapplicableRule rule
 
 -- | Controls for text strings
-controlText ::
-  HasCallStack =>
-  T.Text ->
-  CtlOp ->
-  Rule ->
-  Either (Maybe CBORTermResult) ()
+controlText :: HasCallStack => T.Text -> CtlOp -> Rule -> Either (Maybe CBORTermResult) ()
 controlText bs Size ctrl =
   case ctrl of
     Literal (Value (VUInt (fromIntegral -> sz)) _) -> boolCtrl $ T.length bs == sz
@@ -667,12 +604,7 @@ controlText _ _ _ = error "Not yet implemented"
 -- Tagged values
 
 -- | Validating a `TTagged`
-validateTagged ::
-  CDDL ->
-  Word64 ->
-  Term ->
-  Rule ->
-  CDDLResult
+validateTagged :: CDDL -> Word64 -> Term -> Rule -> CDDLResult
 validateTagged cddl tag term rule =
   case rule of
     Postlude PTAny -> Valid rule
@@ -782,11 +714,7 @@ isOptional rule =
 -- --------------------------------------------------------------------------------
 -- -- Lists
 
-validateListWithExpandedRules ::
-  CDDL ->
-  [Term] ->
-  [Rule] ->
-  [(Rule, CBORTermResult)]
+validateListWithExpandedRules :: CDDL -> [Term] -> [Rule] -> [(Rule, CBORTermResult)]
 validateListWithExpandedRules cddl terms rules =
   go (zip terms rules)
   where
@@ -807,12 +735,7 @@ validateListWithExpandedRules cddl terms rules =
             ok@(CBORTermResult _ (Valid _)) -> ((r, ok) :) $ go ts
             err -> [(r, err)]
 
-validateExpandedList ::
-  CDDL ->
-  [Term] ->
-  [[Rule]] ->
-  Rule ->
-  CDDLResult
+validateExpandedList :: CDDL -> [Term] -> [[Rule]] -> Rule -> CDDLResult
 validateExpandedList cddl terms rules = go rules
   where
     go :: [[Rule]] -> Rule -> CDDLResult
@@ -883,12 +806,7 @@ validateMapWithExpandedRules cddl =
               bimap (\anmi -> anmi {anmiResults = Left (r, r1) : anmiResults anmi}) (second (r :)) $ go' tk tv rs
         _ -> error "Not yet implemented"
 
-validateExpandedMap ::
-  CDDL ->
-  [(Term, Term)] ->
-  [[Rule]] ->
-  Rule ->
-  CDDLResult
+validateExpandedMap :: CDDL -> [(Term, Term)] -> [[Rule]] -> Rule -> CDDLResult
 validateExpandedMap cddl terms rules = go rules
   where
     go :: [[Rule]] -> Rule -> CDDLResult
@@ -903,11 +821,7 @@ validateExpandedMap cddl terms rules = go rules
               MapExpansionFail rule rules ((matches, notMatched) : errors)
             _ -> error "Not yet implemented"
 
-validateMap ::
-  CDDL ->
-  [(Term, Term)] ->
-  Rule ->
-  CDDLResult
+validateMap :: CDDL -> [(Term, Term)] -> Rule -> CDDLResult
 validateMap cddl terms rule =
   case rule of
     Postlude PTAny -> Valid rule
@@ -924,8 +838,7 @@ validateMap cddl terms rule =
 --------------------------------------------------------------------------------
 -- Choices
 
-validateChoice ::
-  (Rule -> CDDLResult) -> NE.NonEmpty Rule -> Rule -> CDDLResult
+validateChoice :: (Rule -> CDDLResult) -> NE.NonEmpty Rule -> Rule -> CDDLResult
 validateChoice v rules = go rules
   where
     go :: NE.NonEmpty Rule -> Rule -> CDDLResult
