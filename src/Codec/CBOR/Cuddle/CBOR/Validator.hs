@@ -22,7 +22,6 @@ import Data.Bifunctor
 import Data.Bits hiding (And)
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as BSL
-import Data.Function ((&))
 import Data.IntSet qualified as IS
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as Map
@@ -546,19 +545,18 @@ validateBytes ::
   Rule ->
   CDDLResult
 validateBytes cddl bs rule =
-  ($ rule) $ do
-    case rule of
-      -- a = any
-      Postlude PTAny -> Valid
-      -- a = bytes
-      Postlude PTBytes -> Valid
-      -- a = h'123456'
-      Literal (Value (VBytes bs') _) -> check $ bs == bs'
-      -- a = foo .ctrl bar
-      Control op tgt ctrl -> ctrlDispatch (validateBytes cddl bs) op tgt ctrl (controlBytes cddl bs)
-      -- a = foo / bar
-      Choice opts -> validateChoice (validateBytes cddl bs) opts
-      _ -> UnapplicableRule
+  case rule of
+    -- a = any
+    Postlude PTAny -> Valid rule
+    -- a = bytes
+    Postlude PTBytes -> Valid rule
+    -- a = h'123456'
+    Literal (Value (VBytes bs') _) -> check (bs == bs') rule
+    -- a = foo .ctrl bar
+    Control op tgt ctrl -> ctrlDispatch (validateBytes cddl bs) op tgt ctrl (controlBytes cddl bs) rule
+    -- a = foo / bar
+    Choice opts -> validateChoice (validateBytes cddl bs) opts rule
+    _ -> UnapplicableRule rule
 
 -- | Controls for byte strings
 controlBytes ::
@@ -627,19 +625,18 @@ validateText ::
   Rule ->
   CDDLResult
 validateText txt rule =
-  ($ rule) $ do
-    case rule of
-      -- a = any
-      Postlude PTAny -> Valid
-      -- a = text
-      Postlude PTText -> Valid
-      -- a = "foo"
-      Literal (Value (VText txt') _) -> check $ txt == txt'
-      -- a = foo .ctrl bar
-      Control op tgt ctrl -> ctrlDispatch (validateText txt) op tgt ctrl (controlText txt)
-      -- a = foo / bar
-      Choice opts -> validateChoice (validateText txt) opts
-      _ -> UnapplicableRule
+  case rule of
+    -- a = any
+    Postlude PTAny -> Valid rule
+    -- a = text
+    Postlude PTText -> Valid rule
+    -- a = "foo"
+    Literal (Value (VText txt') _) -> check (txt == txt') rule
+    -- a = foo .ctrl bar
+    Control op tgt ctrl -> ctrlDispatch (validateText txt) op tgt ctrl (controlText txt) rule
+    -- a = foo / bar
+    Choice opts -> validateChoice (validateText txt) opts rule
+    _ -> UnapplicableRule rule
 
 -- | Controls for text strings
 controlText ::
@@ -739,15 +736,13 @@ expandRules _ _ [] = [[]]
 expandRules _ remainingLen _
   | remainingLen < 0 = []
   | remainingLen == 0 = [[]]
-expandRules cddl remainingLen (x : xs) = do
-  let y = expandRule cddl remainingLen x
-  concat $
-    mapM
-      ( \y' -> do
-          suffixes <- expandRules cddl (remainingLen - length y') xs
-          [y' ++ [ys'] | ys' <- suffixes]
-      )
-      y
+expandRules cddl remainingLen (x : xs) =
+  concatMap
+    ( \y' -> do
+        suffixes <- expandRules cddl (remainingLen - length y') xs
+        [y' ++ [ys'] | ys' <- suffixes]
+    )
+    (expandRule cddl remainingLen x)
 
 expandRule :: CDDL -> Int -> Rule -> [[Rule]]
 expandRule cddl maxLen rule
@@ -840,7 +835,7 @@ validateList cddl terms rule =
     Postlude PTAny -> Valid rule
     Array rules ->
       case terms of
-        [] -> (if all isOptional rules then Valid else InvalidRule) rule
+        [] -> if all isOptional rules then Valid rule else InvalidRule rule
         _ ->
           let sequencesOfRules =
                 expandRules cddl (length terms) $ flattenGroup cddl rules
@@ -914,18 +909,17 @@ validateMap ::
   Rule ->
   CDDLResult
 validateMap cddl terms rule =
-  ($ rule) $ do
-    case rule of
-      Postlude PTAny -> Valid
-      Map rules ->
-        case terms of
-          [] -> if all isOptional rules then Valid else InvalidRule
-          _ ->
-            let sequencesOfRules =
-                  expandRules cddl (length terms) $ flattenGroup cddl rules
-             in validateExpandedMap cddl terms sequencesOfRules
-      Choice opts -> validateChoice (validateMap cddl terms) opts
-      _ -> UnapplicableRule
+  case rule of
+    Postlude PTAny -> Valid rule
+    Map rules ->
+      case terms of
+        [] -> if all isOptional rules then Valid rule else InvalidRule rule
+        _ ->
+          let sequencesOfRules =
+                expandRules cddl (length terms) $ flattenGroup cddl rules
+           in validateExpandedMap cddl terms sequencesOfRules rule
+    Choice opts -> validateChoice (validateMap cddl terms) opts rule
+    _ -> UnapplicableRule rule
 
 --------------------------------------------------------------------------------
 -- Choices
@@ -950,19 +944,14 @@ validateChoice v rules = go rules
 -- Control helpers
 
 -- | Validate both rules
-ctrlAnd ::
-  (Rule -> CDDLResult) ->
-  Rule ->
-  Rule ->
-  Rule ->
-  CDDLResult
-ctrlAnd v tgt ctrl =
+ctrlAnd :: (Rule -> CDDLResult) -> Rule -> Rule -> Rule -> CDDLResult
+ctrlAnd v tgt ctrl rule =
   case v tgt of
     Valid _ ->
       case v ctrl of
-        Valid _ -> Valid
-        _ -> flip InvalidControl Nothing
-    _ -> InvalidRule
+        Valid _ -> Valid rule
+        _ -> InvalidControl rule Nothing
+    _ -> InvalidRule rule
 
 -- | Dispatch to the appropriate control
 ctrlDispatch ::
@@ -973,15 +962,15 @@ ctrlDispatch ::
   (CtlOp -> Rule -> Either (Maybe CBORTermResult) ()) ->
   Rule ->
   CDDLResult
-ctrlDispatch v And tgt ctrl _ = ctrlAnd v tgt ctrl
-ctrlDispatch v Within tgt ctrl _ = ctrlAnd v tgt ctrl
-ctrlDispatch v op tgt ctrl vctrl =
+ctrlDispatch v And tgt ctrl _ rule = ctrlAnd v tgt ctrl rule
+ctrlDispatch v Within tgt ctrl _ rule = ctrlAnd v tgt ctrl rule
+ctrlDispatch v op tgt ctrl vctrl rule =
   case v tgt of
     Valid _ ->
       case vctrl op ctrl of
-        Left err -> flip InvalidControl err
-        Right () -> Valid
-    _ -> InvalidRule
+        Left err -> InvalidControl rule err
+        Right () -> Valid rule
+    _ -> InvalidRule rule
 
 -- | A boolean control
 boolCtrl :: Bool -> Either (Maybe CBORTermResult) ()
@@ -1015,9 +1004,11 @@ getIndicesOfRange :: Rule -> Rule -> RangeBound -> [Word64]
 getIndicesOfRange ff tt incl =
   case (ff, tt) of
     (Literal (Value (VUInt ff') _), Literal (Value (VUInt tt') _)) ->
-      [ff' .. tt'] & case incl of
-        ClOpen -> init
-        Closed -> id
+      case incl of
+        ClOpen -> init rng
+        Closed -> rng
+      where
+        rng = [ff' .. tt']
     somethingElse -> error $ "Malformed range in .bits: " <> show somethingElse
 
 getIndicesOfEnum :: Rule -> [Word64]
