@@ -4,6 +4,7 @@ import System.IO (BufferMode (..), hSetBuffering, hSetEncoding, stdout, utf8)
 import Test.Codec.CBOR.Cuddle.CDDL.Examples qualified as Examples
 import Test.Codec.CBOR.Cuddle.CDDL.GeneratorSpec qualified as Generator
 import Test.Codec.CBOR.Cuddle.CDDL.Parser (parserSpec)
+import Test.Codec.CBOR.Cuddle.CDDL.Validator qualified as Validator
 import Test.Codec.CBOR.Cuddle.Huddle (huddleSpec)
 import Test.Hspec
 import Test.Hspec.Runner
@@ -23,3 +24,4 @@ main = do
     describe "Huddle" huddleSpec
     describe "Examples" Examples.spec
     describe "Generator" Generator.spec
+    describe "Validator" Validator.spec
