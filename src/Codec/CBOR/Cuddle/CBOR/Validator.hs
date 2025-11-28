@@ -143,23 +143,23 @@ validateCBOR bs rule cddl@(CTreeRoot tree) =
 validateTerm :: CDDL -> Term -> Rule -> CBORTermResult
 validateTerm cddl term =
   CBORTermResult term . case term of
-    TInt i -> validateInteger (fromIntegral i)
-    TInteger i -> validateInteger i
+    TInt i -> validateInteger cddl (fromIntegral i)
+    TInteger i -> validateInteger cddl i
     TBytes b -> validateBytes cddl b
     TBytesI b -> validateBytes cddl (BSL.toStrict b)
-    TString s -> validateText s
-    TStringI s -> validateText (TL.toStrict s)
+    TString s -> validateText cddl s
+    TStringI s -> validateText cddl (TL.toStrict s)
     TList ts -> validateList cddl ts
     TListI ts -> validateList cddl ts
     TMap ts -> validateMap cddl ts
     TMapI ts -> validateMap cddl ts
     TTagged w t -> validateTagged cddl w t
-    TBool b -> validateBool b
-    TNull -> validateNull
-    TSimple s -> validateSimple s
-    THalf h -> validateHalf h
-    TFloat h -> validateFloat h
-    TDouble d -> validateDouble d
+    TBool b -> validateBool cddl b
+    TNull -> validateNull cddl
+    TSimple s -> validateSimple cddl s
+    THalf h -> validateHalf cddl h
+    TFloat h -> validateFloat cddl h
+    TDouble d -> validateDouble cddl d
 
 --------------------------------------------------------------------------------
 -- Ints and integers
@@ -175,9 +175,9 @@ validateTerm cddl term =
 --
 -- For this reason, we cannot assume that bounds or literals are going to be
 -- Ints, so we convert everything to Integer.
-validateInteger :: HasCallStack => Integer -> Rule -> CDDLResult
-validateInteger i rule =
-  case rule of
+validateInteger :: HasCallStack => CDDL -> Integer -> Rule -> CDDLResult
+validateInteger cddl i rule =
+  case resolveIfRef cddl rule of
     -- echo "C24101" | xxd -r -p - example.cbor
     -- echo "foo = int" > a.cddl
     -- cddl a.cddl validate example.cbor
@@ -205,13 +205,13 @@ validateInteger i rule =
     -- a = <big number>
     Literal (Value (VBignum i') _) -> check (i == i') rule
     -- a = foo .ctrl bar
-    Control op tgt ctrl -> ctrlDispatch (validateInteger i) op tgt ctrl (controlInteger i) rule
+    Control op tgt ctrl -> ctrlDispatch (validateInteger cddl i) op tgt ctrl (controlInteger cddl i) rule
     -- a = foo / bar
-    Choice opts -> validateChoice (validateInteger i) opts rule
+    Choice opts -> validateChoice (validateInteger cddl i) opts rule
     -- a = x..y
     Range low high bound ->
       check
-        ( case (low, high) of
+        ( case (resolveIfRef cddl low, resolveIfRef cddl high) of
             (Literal (Value (VUInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _)) -> n <= i && range bound i m
             (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _)) -> -n <= i && range bound i m
             (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VNInt (fromIntegral -> m)) _)) -> -n <= i && range bound i (-m)
@@ -225,31 +225,32 @@ validateInteger i rule =
         rule
     -- a = &(x, y, z)
     Enum g ->
-      case g of
-        Group g' -> replaceRule (validateInteger i (Choice (NE.fromList g'))) rule
+      case resolveIfRef cddl g of
+        Group g' -> replaceRule (validateInteger cddl i (Choice (NE.fromList g'))) rule
         _ -> error "Not yet implemented"
     -- a = x: y
     -- Note KV cannot appear on its own, but we will use this when validating
     -- lists.
-    KV _ v _ -> replaceRule (validateInteger i v) rule
+    KV _ v _ -> replaceRule (validateInteger cddl i v) rule
     Tag 2 (Postlude PTBytes) -> Valid rule
     Tag 3 (Postlude PTBytes) -> Valid rule
     _ -> UnapplicableRule rule
 
 -- | Controls for an Integer
-controlInteger :: HasCallStack => Integer -> CtlOp -> Rule -> Either (Maybe CBORTermResult) ()
-controlInteger i Size ctrl =
-  case ctrl of
+controlInteger ::
+  HasCallStack => CDDL -> Integer -> CtlOp -> Rule -> Either (Maybe CBORTermResult) ()
+controlInteger cddl i Size ctrl =
+  case resolveIfRef cddl ctrl of
     Literal (Value (VUInt sz) _) ->
       boolCtrl $ 0 <= i && i < 256 ^ sz
     _ -> error "Not yet implemented"
-controlInteger i Bits ctrl = do
+controlInteger cddl i Bits ctrl = do
   let
-    indices = case ctrl of
+    indices = case resolveIfRef cddl ctrl of
       Literal (Value (VUInt i') _) -> [i']
-      Choice nodes -> getIndicesOfChoice nodes
-      Range ff tt incl -> getIndicesOfRange ff tt incl
-      Enum g -> getIndicesOfEnum g
+      Choice nodes -> getIndicesOfChoice cddl nodes
+      Range ff tt incl -> getIndicesOfRange cddl ff tt incl
+      Enum g -> getIndicesOfEnum cddl g
       _ -> error "Not yet implemented"
   boolCtrl $ go (IS.fromList (map fromIntegral indices)) i 0
   where
@@ -258,43 +259,43 @@ controlInteger i Bits ctrl = do
       let bitSet = testBit n 0
           allowed = not bitSet || IS.member idx indices
        in (allowed && go indices (shiftR n 1) (idx + 1))
-controlInteger i Lt ctrl =
-  boolCtrl $ case ctrl of
+controlInteger cddl i Lt ctrl =
+  boolCtrl $ case resolveIfRef cddl ctrl of
     Literal (Value (VUInt i') _) -> i < fromIntegral i'
     Literal (Value (VNInt i') _) -> i < -fromIntegral i'
     Literal (Value (VBignum i') _) -> i < i'
     _ -> error "Not yet implemented"
-controlInteger i Gt ctrl =
-  boolCtrl $ case ctrl of
+controlInteger cddl i Gt ctrl =
+  boolCtrl $ case resolveIfRef cddl ctrl of
     Literal (Value (VUInt i') _) -> i > fromIntegral i'
     Literal (Value (VNInt i') _) -> i > -fromIntegral i'
     Literal (Value (VBignum i') _) -> i > i'
     _ -> error "Not yet implemented"
-controlInteger i Le ctrl =
-  boolCtrl $ case ctrl of
+controlInteger cddl i Le ctrl =
+  boolCtrl $ case resolveIfRef cddl ctrl of
     Literal (Value (VUInt i') _) -> i <= fromIntegral i'
     Literal (Value (VNInt i') _) -> i <= -fromIntegral i'
     Literal (Value (VBignum i') _) -> i <= i'
     _ -> error "Not yet implemented"
-controlInteger i Ge ctrl =
-  boolCtrl $ case ctrl of
+controlInteger cddl i Ge ctrl =
+  boolCtrl $ case resolveIfRef cddl ctrl of
     Literal (Value (VUInt i') _) -> i >= fromIntegral i'
     Literal (Value (VNInt i') _) -> i >= -fromIntegral i'
     Literal (Value (VBignum i') _) -> i >= i'
     _ -> error "Not yet implemented"
-controlInteger i Eq ctrl =
-  boolCtrl $ case ctrl of
+controlInteger cddl i Eq ctrl =
+  boolCtrl $ case resolveIfRef cddl ctrl of
     Literal (Value (VUInt i') _) -> i == fromIntegral i'
     Literal (Value (VNInt i') _) -> i == -fromIntegral i'
     Literal (Value (VBignum i') _) -> i == i'
     _ -> error "Not yet implemented"
-controlInteger i Ne ctrl =
-  boolCtrl $ case ctrl of
+controlInteger cddl i Ne ctrl =
+  boolCtrl $ case resolveIfRef cddl ctrl of
     Literal (Value (VUInt i') _) -> i /= fromIntegral i'
     Literal (Value (VNInt i') _) -> i /= -fromIntegral i'
     Literal (Value (VBignum i') _) -> i /= i'
     _ -> error "Not yet implemented"
-controlInteger _ _ _ = error "Not yet implemented"
+controlInteger _ _ _ _ = error "Not yet implemented"
 
 --------------------------------------------------------------------------------
 -- Floating point (Float16, Float32, Float64)
@@ -303,44 +304,46 @@ controlInteger _ _ _ = error "Not yet implemented"
 -- and decoding floating-point numbers.
 
 -- | Validating a `Float16`
-validateHalf :: HasCallStack => Float -> Rule -> CDDLResult
-validateHalf f rule =
-  ($ rule) $ do
-    case rule of
-      -- a = any
-      Postlude PTAny -> Valid
-      -- a = float16
-      Postlude PTHalf -> Valid
-      -- a = 0.5
-      Literal (Value (VFloat16 f') _) -> check $ f == f'
-      -- a = foo / bar
-      Choice opts -> validateChoice (validateHalf f) opts
-      -- a = foo .ctrl bar
-      Control op tgt ctrl -> ctrlDispatch (validateHalf f) op tgt ctrl (controlHalf f)
-      -- a = x..y
-      Range low high bound ->
-        check $ case (low, high) of
-          (Literal (Value (VFloat16 n) _), Literal (Value (VFloat16 m) _)) -> n <= f && range bound f m
-          _ -> error "Not yet implemented"
-      _ -> UnapplicableRule
+validateHalf :: HasCallStack => CDDL -> Float -> Rule -> CDDLResult
+validateHalf cddl f rule =
+  case resolveIfRef cddl rule of
+    -- a = any
+    Postlude PTAny -> Valid rule
+    -- a = float16
+    Postlude PTHalf -> Valid rule
+    -- a = 0.5
+    Literal (Value (VFloat16 f') _) -> check (f == f') rule
+    -- a = foo / bar
+    Choice opts -> validateChoice (validateHalf cddl f) opts rule
+    -- a = foo .ctrl bar
+    Control op tgt ctrl -> ctrlDispatch (validateHalf cddl f) op tgt ctrl (controlHalf cddl f) rule
+    -- a = x..y
+    Range low high bound ->
+      check
+        ( case (resolveIfRef cddl low, resolveIfRef cddl high) of
+            (Literal (Value (VFloat16 n) _), Literal (Value (VFloat16 m) _)) -> n <= f && range bound f m
+            _ -> error "Not yet implemented"
+        )
+        rule
+    _ -> UnapplicableRule rule
 
 -- | Controls for `Float16`
-controlHalf :: HasCallStack => Float -> CtlOp -> Rule -> Either (Maybe CBORTermResult) ()
-controlHalf f Eq ctrl =
-  boolCtrl $ case ctrl of
+controlHalf :: HasCallStack => CDDL -> Float -> CtlOp -> Rule -> Either (Maybe CBORTermResult) ()
+controlHalf cddl f Eq ctrl =
+  boolCtrl $ case resolveIfRef cddl ctrl of
     Literal (Value (VFloat16 f') _) -> f == f'
     _ -> error "Not yet implemented"
-controlHalf f Ne ctrl =
-  boolCtrl $ case ctrl of
+controlHalf cddl f Ne ctrl =
+  boolCtrl $ case resolveIfRef cddl ctrl of
     Literal (Value (VFloat16 f') _) -> f /= f'
     _ -> error "Not yet implemented"
-controlHalf _ _ _ = error "Not yet implemented"
+controlHalf _ _ _ _ = error "Not yet implemented"
 
 -- | Validating a `Float32`
-validateFloat :: HasCallStack => Float -> Rule -> CDDLResult
-validateFloat f rule =
+validateFloat :: HasCallStack => CDDL -> Float -> Rule -> CDDLResult
+validateFloat cddl f rule =
   ($ rule) $ do
-    case rule of
+    case resolveIfRef cddl rule of
       -- a = any
       Postlude PTAny -> Valid
       -- a = float32
@@ -349,37 +352,37 @@ validateFloat f rule =
       -- TODO: it is unclear if smaller floats should also validate
       Literal (Value (VFloat32 f') _) -> check $ f == f'
       -- a = foo / bar
-      Choice opts -> validateChoice (validateFloat f) opts
+      Choice opts -> validateChoice (validateFloat cddl f) opts
       -- a = foo .ctrl bar
-      Control op tgt ctrl -> ctrlDispatch (validateFloat f) op tgt ctrl (controlFloat f)
+      Control op tgt ctrl -> ctrlDispatch (validateFloat cddl f) op tgt ctrl (controlFloat cddl f)
       -- a = x..y
       -- TODO it is unclear if this should mix floating point types too
       Range low high bound ->
-        check $ case (low, high) of
+        check $ case (resolveIfRef cddl low, resolveIfRef cddl high) of
           (Literal (Value (VFloat16 n) _), Literal (Value (VFloat16 m) _)) -> n <= f && range bound f m
           (Literal (Value (VFloat32 n) _), Literal (Value (VFloat32 m) _)) -> n <= f && range bound f m
           _ -> error "Not yet implemented"
       _ -> UnapplicableRule
 
 -- | Controls for `Float32`
-controlFloat :: HasCallStack => Float -> CtlOp -> Rule -> Either (Maybe CBORTermResult) ()
-controlFloat f Eq ctrl =
-  boolCtrl $ case ctrl of
+controlFloat :: HasCallStack => CDDL -> Float -> CtlOp -> Rule -> Either (Maybe CBORTermResult) ()
+controlFloat cddl f Eq ctrl =
+  boolCtrl $ case resolveIfRef cddl ctrl of
     Literal (Value (VFloat16 f') _) -> f == f'
     Literal (Value (VFloat32 f') _) -> f == f'
     _ -> error "Not yet implemented"
-controlFloat f Ne ctrl =
-  boolCtrl $ case ctrl of
+controlFloat cddl f Ne ctrl =
+  boolCtrl $ case resolveIfRef cddl ctrl of
     Literal (Value (VFloat16 f') _) -> f /= f'
     Literal (Value (VFloat32 f') _) -> f /= f'
     _ -> error "Not yet implemented"
-controlFloat _ _ _ = error "Not yet implemented"
+controlFloat _ _ _ _ = error "Not yet implemented"
 
 -- | Validating a `Float64`
-validateDouble :: HasCallStack => Double -> Rule -> CDDLResult
-validateDouble f rule =
+validateDouble :: HasCallStack => CDDL -> Double -> Rule -> CDDLResult
+validateDouble cddl f rule =
   ($ rule) $ do
-    case rule of
+    case resolveIfRef cddl rule of
       -- a = any
       Postlude PTAny -> Valid
       -- a = float64
@@ -388,13 +391,13 @@ validateDouble f rule =
       -- TODO: it is unclear if smaller floats should also validate
       Literal (Value (VFloat64 f') _) -> check $ f == f'
       -- a = foo / bar
-      Choice opts -> validateChoice (validateDouble f) opts
+      Choice opts -> validateChoice (validateDouble cddl f) opts
       -- a = foo .ctrl bar
-      Control op tgt ctrl -> ctrlDispatch (validateDouble f) op tgt ctrl (controlDouble f)
+      Control op tgt ctrl -> ctrlDispatch (validateDouble cddl f) op tgt ctrl (controlDouble cddl f)
       -- a = x..y
       -- TODO it is unclear if this should mix floating point types too
       Range low high bound ->
-        check $ case (low, high) of
+        check $ case (resolveIfRef cddl low, resolveIfRef cddl high) of
           (Literal (Value (VFloat16 (float2Double -> n)) _), Literal (Value (VFloat16 (float2Double -> m)) _)) -> n <= f && range bound f m
           (Literal (Value (VFloat32 (float2Double -> n)) _), Literal (Value (VFloat32 (float2Double -> m)) _)) -> n <= f && range bound f m
           (Literal (Value (VFloat64 n) _), Literal (Value (VFloat64 m) _)) -> n <= f && range bound f m
@@ -402,29 +405,29 @@ validateDouble f rule =
       _ -> UnapplicableRule
 
 -- | Controls for `Float64`
-controlDouble :: HasCallStack => Double -> CtlOp -> Rule -> Either (Maybe CBORTermResult) ()
-controlDouble f Eq ctrl =
-  boolCtrl $ case ctrl of
+controlDouble :: HasCallStack => CDDL -> Double -> CtlOp -> Rule -> Either (Maybe CBORTermResult) ()
+controlDouble cddl f Eq ctrl =
+  boolCtrl $ case resolveIfRef cddl ctrl of
     Literal (Value (VFloat16 f') _) -> f == float2Double f'
     Literal (Value (VFloat32 f') _) -> f == float2Double f'
     Literal (Value (VFloat64 f') _) -> f == f'
     _ -> error "Not yet implemented"
-controlDouble f Ne ctrl =
-  boolCtrl $ case ctrl of
+controlDouble cddl f Ne ctrl =
+  boolCtrl $ case resolveIfRef cddl ctrl of
     Literal (Value (VFloat16 f') _) -> f /= float2Double f'
     Literal (Value (VFloat32 f') _) -> f /= float2Double f'
     Literal (Value (VFloat64 f') _) -> f /= f'
     _ -> error "Not yet implemented"
-controlDouble _ _ _ = error "Not yet implmented"
+controlDouble _ _ _ _ = error "Not yet implmented"
 
 --------------------------------------------------------------------------------
 -- Bool
 
 -- | Validating a boolean
-validateBool :: Bool -> Rule -> CDDLResult
-validateBool b rule =
+validateBool :: CDDL -> Bool -> Rule -> CDDLResult
+validateBool cddl b rule =
   ($ rule) $ do
-    case rule of
+    case resolveIfRef cddl rule of
       -- a = any
       Postlude PTAny -> Valid
       -- a = bool
@@ -432,54 +435,53 @@ validateBool b rule =
       -- a = true
       Literal (Value (VBool b') _) -> check $ b == b'
       -- a = foo .ctrl bar
-      Control op tgt ctrl -> ctrlDispatch (validateBool b) op tgt ctrl (controlBool b)
+      Control op tgt ctrl -> ctrlDispatch (validateBool cddl b) op tgt ctrl (controlBool cddl b)
       -- a = foo / bar
-      Choice opts -> validateChoice (validateBool b) opts
+      Choice opts -> validateChoice (validateBool cddl b) opts
       _ -> UnapplicableRule
 
 -- | Controls for `Bool`
-controlBool :: HasCallStack => Bool -> CtlOp -> Rule -> Either (Maybe CBORTermResult) ()
-controlBool b Eq ctrl =
-  boolCtrl $ case ctrl of
+controlBool :: HasCallStack => CDDL -> Bool -> CtlOp -> Rule -> Either (Maybe CBORTermResult) ()
+controlBool cddl b Eq ctrl =
+  boolCtrl $ case resolveIfRef cddl ctrl of
     Literal (Value (VBool b') _) -> b == b'
     _ -> error "Not yet implemented"
-controlBool b Ne ctrl =
-  boolCtrl $ case ctrl of
+controlBool cddl b Ne ctrl =
+  boolCtrl $ case resolveIfRef cddl ctrl of
     Literal (Value (VBool b') _) -> b /= b'
     _ -> error "Not yet implemented"
-controlBool _ _ _ = error "Not yet implemented"
+controlBool _ _ _ _ = error "Not yet implemented"
 
 --------------------------------------------------------------------------------
 -- Simple
 
 -- | Validating a `TSimple`. It is unclear if this is used for anything else than undefined.
-validateSimple :: Word8 -> Rule -> CDDLResult
-validateSimple 23 rule =
-  ($ rule) $ do
-    case rule of
+validateSimple :: CDDL -> Word8 -> Rule -> CDDLResult
+validateSimple cddl 23 rule =
+  do
+    case resolveIfRef cddl rule of
       -- a = any
-      Postlude PTAny -> Valid
+      Postlude PTAny -> Valid rule
       -- a = undefined
-      Postlude PTUndefined -> Valid
+      Postlude PTUndefined -> Valid rule
       -- a = foo / bar
-      Choice opts -> validateChoice (validateSimple 23) opts
-      _ -> UnapplicableRule
-validateSimple n _ = error $ "Found simple different to 23! please report this somewhere! Found: " <> show n
+      Choice opts -> validateChoice (validateSimple cddl 23) opts rule
+      _ -> UnapplicableRule rule
+validateSimple _ n _ = error $ "Found simple different to 23! please report this somewhere! Found: " <> show n
 
 --------------------------------------------------------------------------------
 -- Null/nil
 
 -- | Validating nil
-validateNull :: Rule -> CDDLResult
-validateNull rule =
-  ($ rule) $ do
-    case rule of
-      -- a = any
-      Postlude PTAny -> Valid
-      -- a = nil
-      Postlude PTNil -> Valid
-      Choice opts -> validateChoice validateNull opts
-      _ -> UnapplicableRule
+validateNull :: CDDL -> Rule -> CDDLResult
+validateNull cddl rule =
+  case resolveIfRef cddl rule of
+    -- a = any
+    Postlude PTAny -> Valid rule
+    -- a = nil
+    Postlude PTNil -> Valid rule
+    Choice opts -> validateChoice (validateNull cddl) opts rule
+    _ -> UnapplicableRule rule
 
 --------------------------------------------------------------------------------
 -- Bytes
@@ -487,7 +489,7 @@ validateNull rule =
 -- | Validating a byte sequence
 validateBytes :: CDDL -> BS.ByteString -> Rule -> CDDLResult
 validateBytes cddl bs rule =
-  case rule of
+  case resolveIfRef cddl rule of
     -- a = any
     Postlude PTAny -> Valid rule
     -- a = bytes
@@ -508,26 +510,26 @@ controlBytes ::
   CtlOp ->
   Rule ->
   Either (Maybe CBORTermResult) ()
-controlBytes _ bs Size ctrl =
-  case ctrl of
+controlBytes cddl bs Size ctrl =
+  case resolveIfRef cddl ctrl of
     Literal (Value (VUInt (fromIntegral -> sz)) _) -> boolCtrl $ BS.length bs == sz
     Range low high bound ->
       let i = BS.length bs
-       in boolCtrl $ case (low, high) of
+       in boolCtrl $ case (resolveIfRef cddl low, resolveIfRef cddl high) of
             (Literal (Value (VUInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _)) -> n <= i && range bound i m
             (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _)) -> -n <= i && range bound i m
             (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VNInt (fromIntegral -> m)) _)) -> -n <= i && range bound i (-m)
             (Literal (Value VUInt {} _), Literal (Value VNInt {} _)) -> False
             _ -> error "Not yet implemented"
     _ -> error "Not yet implemented"
-controlBytes _ bs Bits ctrl = do
+controlBytes cddl bs Bits ctrl = do
   let
     indices =
-      case ctrl of
+      case resolveIfRef cddl ctrl of
         Literal (Value (VUInt i') _) -> [i']
-        Choice nodes -> getIndicesOfChoice nodes
-        Range ff tt incl -> getIndicesOfRange ff tt incl
-        Enum g -> getIndicesOfEnum g
+        Choice nodes -> getIndicesOfChoice cddl nodes
+        Range ff tt incl -> getIndicesOfRange cddl ff tt incl
+        Enum g -> getIndicesOfEnum cddl g
         _ -> error "Not yet implemented"
   boolCtrl $ bitsControlCheck (map fromIntegral indices)
   where
@@ -562,9 +564,9 @@ controlBytes _ _ _ _ = error "Not yet implmented"
 -- Text
 
 -- | Validating text strings
-validateText :: T.Text -> Rule -> CDDLResult
-validateText txt rule =
-  case rule of
+validateText :: CDDL -> T.Text -> Rule -> CDDLResult
+validateText cddl txt rule =
+  case resolveIfRef cddl rule of
     -- a = any
     Postlude PTAny -> Valid rule
     -- a = text
@@ -572,30 +574,30 @@ validateText txt rule =
     -- a = "foo"
     Literal (Value (VText txt') _) -> check (txt == txt') rule
     -- a = foo .ctrl bar
-    Control op tgt ctrl -> ctrlDispatch (validateText txt) op tgt ctrl (controlText txt) rule
+    Control op tgt ctrl -> ctrlDispatch (validateText cddl txt) op tgt ctrl (controlText cddl txt) rule
     -- a = foo / bar
-    Choice opts -> validateChoice (validateText txt) opts rule
+    Choice opts -> validateChoice (validateText cddl txt) opts rule
     _ -> UnapplicableRule rule
 
 -- | Controls for text strings
-controlText :: HasCallStack => T.Text -> CtlOp -> Rule -> Either (Maybe CBORTermResult) ()
-controlText bs Size ctrl =
-  case ctrl of
+controlText :: HasCallStack => CDDL -> T.Text -> CtlOp -> Rule -> Either (Maybe CBORTermResult) ()
+controlText cddl bs Size ctrl =
+  case resolveIfRef cddl ctrl of
     Literal (Value (VUInt (fromIntegral -> sz)) _) -> boolCtrl $ T.length bs == sz
     Range ff tt bound ->
-      boolCtrl $ case (ff, tt) of
+      boolCtrl $ case (resolveIfRef cddl ff, resolveIfRef cddl tt) of
         (Literal (Value (VUInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _)) -> n <= T.length bs && range bound (T.length bs) m
         (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _)) -> -n <= T.length bs && range bound (T.length bs) m
         (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VNInt (fromIntegral -> m)) _)) -> -n <= T.length bs && range bound (T.length bs) (-m)
         _ -> error "Not yet implemented"
     _ -> error "Not yet implemented"
-controlText s Regexp ctrl =
-  boolCtrl $ case ctrl of
+controlText cddl s Regexp ctrl =
+  boolCtrl $ case resolveIfRef cddl ctrl of
     Literal (Value (VText rxp) _) -> case s =~ rxp :: (T.Text, T.Text, T.Text) of
       ("", s', "") -> s == s'
       _ -> error "Not yet implemented"
     _ -> error "Not yet implemented"
-controlText _ _ _ = error "Not yet implemented"
+controlText _ _ _ _ = error "Not yet implemented"
 
 --------------------------------------------------------------------------------
 -- Tagged values
@@ -603,7 +605,7 @@ controlText _ _ _ = error "Not yet implemented"
 -- | Validating a `TTagged`
 validateTagged :: CDDL -> Word64 -> Term -> Rule -> CDDLResult
 validateTagged cddl tag term rule =
-  case rule of
+  case resolveIfRef cddl rule of
     Postlude PTAny -> Valid rule
     Tag tag' rule' ->
       -- If the tag does not match, this is a direct fail
@@ -677,7 +679,7 @@ expandRule :: CDDL -> Int -> Rule -> [[Rule]]
 expandRule cddl maxLen rule
   | maxLen < 0 = []
   | otherwise =
-      case rule of
+      case resolveIfRef cddl rule of
         Occur o OIOptional -> [] : [[o] | maxLen > 0]
         Occur o OIZeroOrMore -> ([] :) $ expandRule cddl maxLen (Occur o OIOneOrMore)
         Occur o OIOneOrMore ->
@@ -699,9 +701,9 @@ expandRule cddl maxLen rule
         _ -> [[rule | maxLen > 0]]
 
 -- | Which rules are optional?
-isOptional :: Rule -> Bool
-isOptional rule =
-  case rule of
+isOptional :: CDDL -> Rule -> Bool
+isOptional cddl rule =
+  case resolveIfRef cddl rule of
     Occur _ OIOptional -> True
     Occur _ OIZeroOrMore -> True
     Occur _ (OIBounded Nothing _) -> True
@@ -719,7 +721,7 @@ validateListWithExpandedRules cddl terms rules =
       [(Term, Rule)] -> [(Rule, CBORTermResult)]
     go [] = []
     go ((t, r) : ts) =
-      case r of
+      case resolveIfRef cddl r of
         -- Should the rule be a KV, then we validate the rule for the value
         KV _ v _ ->
           -- We need to do this juggling because validateTerm has a different
@@ -751,11 +753,11 @@ validateExpandedList cddl terms rules = go rules
 
 validateList :: CDDL -> [Term] -> Rule -> CDDLResult
 validateList cddl terms rule =
-  case rule of
+  case resolveIfRef cddl rule of
     Postlude PTAny -> Valid rule
     Array rules ->
       case terms of
-        [] -> if all isOptional rules then Valid rule else InvalidRule rule
+        [] -> if all (isOptional cddl) rules then Valid rule else InvalidRule rule
         _ ->
           let sequencesOfRules =
                 expandRules cddl (length terms) $ flattenGroup cddl rules
@@ -791,7 +793,7 @@ validateMapWithExpandedRules cddl =
     go' :: Term -> Term -> [Rule] -> Either ANonMatchedItem (AMatchedItem, [Rule])
     go' tk tv [] = Left $ ANonMatchedItem tk tv []
     go' tk tv (r : rs) =
-      case r of
+      case resolveIfRef cddl r of
         KV k v _ ->
           case validateTerm cddl tk k of
             CBORTermResult _ r1@(Valid _) -> case validateTerm cddl tv v of
@@ -820,11 +822,11 @@ validateExpandedMap cddl terms rules = go rules
 
 validateMap :: CDDL -> [(Term, Term)] -> Rule -> CDDLResult
 validateMap cddl terms rule =
-  case rule of
+  case resolveIfRef cddl rule of
     Postlude PTAny -> Valid rule
     Map rules ->
       case terms of
-        [] -> if all isOptional rules then Valid rule else InvalidRule rule
+        [] -> if all (isOptional cddl) rules then Valid rule else InvalidRule rule
         _ ->
           let sequencesOfRules =
                 expandRules cddl (length terms) $ flattenGroup cddl rules
@@ -889,20 +891,20 @@ boolCtrl c = if c then Right () else Left Nothing
 --------------------------------------------------------------------------------
 -- Bits control
 
-getIndicesOfChoice :: NE.NonEmpty Rule -> [Word64]
-getIndicesOfChoice nodes =
+getIndicesOfChoice :: CDDL -> NE.NonEmpty Rule -> [Word64]
+getIndicesOfChoice cddl nodes =
   concatMap
     ( \case
         Literal (Value (VUInt v) _) -> [fromIntegral v]
         KV _ v _ ->
-          case v of
+          case resolveIfRef cddl v of
             Literal (Value (VUInt v') _) -> [fromIntegral v']
             somethingElse ->
               error $
                 "Malformed value in KV in choice in .bits: "
                   <> show somethingElse
-        Range ff tt incl -> getIndicesOfRange ff tt incl
-        Enum g -> getIndicesOfEnum g
+        Range ff tt incl -> getIndicesOfRange cddl ff tt incl
+        Enum g -> getIndicesOfEnum cddl g
         somethingElse ->
           error $
             "Malformed alternative in choice in .bits: "
@@ -910,9 +912,9 @@ getIndicesOfChoice nodes =
     )
     (NE.toList nodes)
 
-getIndicesOfRange :: Rule -> Rule -> RangeBound -> [Word64]
-getIndicesOfRange ff tt incl =
-  case (ff, tt) of
+getIndicesOfRange :: CDDL -> Rule -> Rule -> RangeBound -> [Word64]
+getIndicesOfRange cddl ff tt incl =
+  case (resolveIfRef cddl ff, resolveIfRef cddl tt) of
     (Literal (Value (VUInt ff') _), Literal (Value (VUInt tt') _)) ->
       case incl of
         ClOpen -> init rng
@@ -921,11 +923,21 @@ getIndicesOfRange ff tt incl =
         rng = [ff' .. tt']
     somethingElse -> error $ "Malformed range in .bits: " <> show somethingElse
 
-getIndicesOfEnum :: Rule -> [Word64]
-getIndicesOfEnum g =
-  case g of
-    Group g' -> getIndicesOfChoice (fromJust $ NE.nonEmpty g')
+getIndicesOfEnum :: CDDL -> Rule -> [Word64]
+getIndicesOfEnum cddl g =
+  case resolveIfRef cddl g of
+    Group g' -> getIndicesOfChoice cddl (fromJust $ NE.nonEmpty g')
     somethingElse -> error $ "Malformed enum in .bits: " <> show somethingElse
+
+--------------------------------------------------------------------------------
+-- Resolving rules from the CDDL spec
+
+resolveIfRef :: CDDL -> Rule -> Rule
+resolveIfRef ct@(CTreeRoot cddl) (CTreeE (VRuleRef n)) = do
+  case Map.lookup n cddl of
+    Nothing -> error $ "Unbound reference: " <> show n
+    Just val -> resolveIfRef ct val
+resolveIfRef _ r = r
 
 --------------------------------------------------------------------------------
 -- Utils
