@@ -307,7 +307,7 @@ buildRefCTree rules = PartialCTreeRoot $ uncurry toCTreeRule <$> rules
 
     toCTreeMemberKey :: MemberKey CTreePhase -> CTree OrReferenced
     toCTreeMemberKey (MKValue v) = CTree.Literal v
-    toCTreeMemberKey (MKBareword n) = CTree.Literal (Value (VText $ name n) mempty)
+    toCTreeMemberKey (MKBareword n) = CTree.Literal (Value (VText $ unName n) mempty)
     toCTreeMemberKey (MKType t1) = toCTreeT1 t1
 
 --------------------------------------------------------------------------------
