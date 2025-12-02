@@ -18,7 +18,6 @@ import Codec.CBOR.Cuddle.CDDL.Resolve (MonoReferenced, XXCTree (..))
 import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
 import Codec.CBOR.Read
 import Codec.CBOR.Term
-import Data.Bifunctor
 import Data.Bits hiding (And)
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as BSL
@@ -29,7 +28,6 @@ import Data.Maybe
 import Data.Text qualified as T
 import Data.Text.Lazy qualified as TL
 import Data.Word
-import Debug.Trace (trace)
 import GHC.Float
 import GHC.Stack (HasCallStack)
 import Text.Regex.TDFA
@@ -240,7 +238,7 @@ validateInteger cddl i rule =
     KV _ v _ -> replaceRule (validateInteger cddl i v) rule
     Tag 2 (Postlude PTBytes) -> Valid rule
     Tag 3 (Postlude PTBytes) -> Valid rule
-    x -> UnapplicableRule ("validateInteger\n" <> show x) rule
+    _ -> UnapplicableRule "validateInteger" rule
 
 -- | Controls for an Integer
 controlInteger ::
@@ -501,7 +499,7 @@ validateBytes cddl bs rule =
     -- a = bytes
     Postlude PTBytes -> Valid rule
     -- a = h'123456'
-    Literal (Value (VBytes bs') _) -> trace "Failed when checking literal bytes" $ check (bs == bs') rule
+    Literal (Value (VBytes bs') _) -> check (bs == bs') rule
     -- a = foo .ctrl bar
     Control op tgt ctrl -> ctrlDispatch (validateBytes cddl bs) op tgt ctrl (controlBytes cddl bs) rule
     -- a = foo / bar
@@ -623,53 +621,22 @@ validateTagged cddl tag term rule =
     Choice opts -> validateChoice (validateTagged cddl tag term) opts rule
     _ -> UnapplicableRule "validateTagged" rule
 
---------------------------------------------------------------------------------
--- Collection helpers
-
--- | Groups might contain enums, or unwraps inside. This resolves all those to
--- the top level of the group.
-flattenGroup :: HasCallStack => [Rule] -> [Rule]
-flattenGroup nodes =
-  mconcat
-    [ case rule of
-        Literal {} -> [rule]
-        Postlude {} -> [rule]
-        Map {} -> [rule]
-        Array {} -> [rule]
-        Choice {} -> [rule]
-        KV {} -> [rule]
-        Occur {} -> [rule]
-        Range {} -> [rule]
-        Control {} -> [rule]
-        Enum e -> case e of
-          Group g -> flattenGroup g
-          _ -> error "Malformed cddl"
-        Unwrap g -> case g of
-          Map n -> flattenGroup n
-          Array n -> flattenGroup n
-          Tag _ n -> [n]
-          _ -> error "Malformed cddl"
-        Tag {} -> [rule]
-        Group g -> flattenGroup g
-        CTreeE {} -> error "Encountered a reference"
-    | rule <- nodes
-    ]
-
--- | Which rules are optional?
-isOptional :: CDDL -> Rule -> Bool
-isOptional cddl rule =
-  case resolveIfRef cddl rule of
-    Occur _ OIOptional -> True
-    Occur _ OIZeroOrMore -> True
-    Occur _ (OIBounded Nothing _) -> True
-    Occur _ (OIBounded (Just 0) _) -> True
-    _ -> False
-
 -- --------------------------------------------------------------------------------
 -- -- Lists
 
 isWithinBoundsInclusive :: Ord a => a -> Maybe a -> Maybe a -> Bool
 isWithinBoundsInclusive x lb ub = maybe True (x >=) lb && maybe True (x <=) ub
+
+isOptional :: CTree i -> Bool
+isOptional (Occur _ oi) = case oi of
+  OIOptional -> True
+  OIZeroOrMore -> True
+  OIBounded lb ub -> isWithinBoundsInclusive 0 lb ub
+  _ -> False
+isOptional _ = False
+
+decrementBounds :: Maybe Word64 -> Maybe Word64 -> OccurrenceIndicator
+decrementBounds lb ub = OIBounded (pred <$> lb) (pred <$> ub)
 
 validateList :: CDDL -> [Term] -> Rule -> CDDLResult
 validateList cddl terms rule =
@@ -677,17 +644,14 @@ validateList cddl terms rule =
     Postlude PTAny -> Valid rule
     Array rules -> validate terms rules
     Choice opts -> validateChoice (validateList cddl terms) opts rule
-    _ -> UnapplicableRule "validateList" rule
+    r -> UnapplicableRule "validateList" r
   where
     validate :: [Term] -> [CTree ValidatorStage] -> CDDLResult
     validate [] [] = Valid rule
     validate _ [] = ListExpansionFail rule [] []
-    validate [] (r : rs) = case r of
-      Occur _ OIOptional -> validate [] rs
-      Occur _ OIZeroOrMore -> validate [] rs
-      Occur _ (OIBounded lb ub)
-        | isWithinBoundsInclusive 0 lb ub -> validate [] rs
-      _ -> UnapplicableRule "validateList" r
+    validate [] (r : rs)
+      | isOptional r = validate [] rs
+      | otherwise = UnapplicableRule "validateList" r
     validate (t : ts) (r : rs) = case r of
       Occur ct oi -> case oi of
         OIOptional
@@ -729,76 +693,60 @@ validateList cddl terms rule =
       (Valid {}, _) -> True
       _ -> False
 
-    decrementBounds lb ub = OIBounded (pred <$> lb) (pred <$> ub)
-
 --------------------------------------------------------------------------------
 -- Maps
-
-validateMapWithExpandedRules ::
-  HasCallStack =>
-  CDDL ->
-  [(Term, Term)] ->
-  [Rule] ->
-  ([AMatchedItem], Maybe ANonMatchedItem)
-validateMapWithExpandedRules cddl =
-  go
-  where
-    go ::
-      [(Term, Term)] ->
-      [Rule] ->
-      ([AMatchedItem], Maybe ANonMatchedItem)
-    go [] [] = ([], Nothing)
-    go ((tk, tv) : ts) rs = do
-      case go' tk tv rs of
-        Left tt -> ([], Just tt)
-        Right (res, rs') -> first (res :) $ go ts rs'
-    go _ _ = error "Not yet implemented"
-
-    -- For each pair of terms, try to find some rule that can be applied here,
-    -- and returns the others if there is a succesful match.
-    go' :: Term -> Term -> [Rule] -> Either ANonMatchedItem (AMatchedItem, [Rule])
-    go' tk tv [] = Left $ ANonMatchedItem tk tv []
-    go' tk tv (r : rs) =
-      case resolveIfRef cddl r of
-        KV k v _ ->
-          case validateTerm cddl tk k of
-            CBORTermResult _ r1@(Valid _) -> case validateTerm cddl tv v of
-              CBORTermResult _ (Valid _) -> Right (AMatchedItem tk tv r, rs)
-              CBORTermResult _ r2 ->
-                bimap (\anmi -> anmi {anmiResults = Right (r, r1, r2) : anmiResults anmi}) (second (r :)) $
-                  go' tk tv rs
-            CBORTermResult _ r1 ->
-              bimap (\anmi -> anmi {anmiResults = Left (r, r1) : anmiResults anmi}) (second (r :)) $ go' tk tv rs
-        _ -> error "Not yet implemented"
-
-validateExpandedMap :: CDDL -> [(Term, Term)] -> [[Rule]] -> Rule -> CDDLResult
-validateExpandedMap cddl terms rules = go rules
-  where
-    go :: [[Rule]] -> Rule -> CDDLResult
-    go [] rule = MapExpansionFail rule rules []
-    go (choice : choices) rule = do
-      case validateMapWithExpandedRules cddl terms choice of
-        (_, Nothing) -> Valid rule
-        (matches, Just notMatched) ->
-          case go choices rule of
-            Valid _ -> Valid rule
-            MapExpansionFail _ _ errors ->
-              MapExpansionFail rule rules ((matches, notMatched) : errors)
-            _ -> error "Not yet implemented"
 
 validateMap :: CDDL -> [(Term, Term)] -> Rule -> CDDLResult
 validateMap cddl terms rule =
   case resolveIfRef cddl rule of
     Postlude PTAny -> Valid rule
-    Map rules ->
-      case terms of
-        [] -> if all (isOptional cddl) rules then Valid rule else InvalidRule rule
-        _ ->
-          let sequencesOfRules = undefined
-           in -- expandRules cddl (length terms) $ flattenGroup cddl rules
-              validateExpandedMap cddl terms sequencesOfRules rule
+    Map rules -> validate [] terms rules
     Choice opts -> validateChoice (validateMap cddl terms) opts rule
-    _ -> UnapplicableRule "validateMap" rule
+    r -> UnapplicableRule "validateMap" r
+  where
+    validate :: [Rule] -> [(Term, Term)] -> [Rule] -> CDDLResult
+    validate [] [] [] = Valid rule
+    validate _ _ [] = MapExpansionFail rule [] []
+    validate [] [] (r : rs)
+      | isOptional r = validate [] [] rs
+      | otherwise = UnapplicableRule "validateMap" r
+    validate exhausted ((k, v) : ts) (r : rs) = case r of
+      Occur ct oi -> case oi of
+        OIOptional
+          | (Valid {}, leftover) <- validateKVInMap ((k, v) : ts) ct
+          , res@Valid {} <- validate [] leftover (exhausted <> rs) ->
+              res
+          | otherwise -> validate (r : exhausted) ((k, v) : ts) rs
+        OIZeroOrMore
+          | (Valid {}, leftover) <- validateKVInMap ((k, v) : ts) ct
+          , res@Valid {} <- validate [] leftover (r : exhausted <> rs) ->
+              res
+          | otherwise -> validate (r : exhausted) ((k, v) : ts) rs
+        OIOneOrMore -> case validateKVInMap ((k, v) : ts) ct of
+          (Valid {}, leftover) -> validate [] leftover (Occur ct OIZeroOrMore : exhausted <> rs)
+          (err, _) -> err
+        OIBounded _ (Just ub) | 0 > ub -> MapExpansionFail rule [] []
+        OIBounded lb ub
+          | (Valid {}, leftover) <- validateKVInMap ((k, v) : ts) ct
+          , not (isWithinBoundsInclusive 0 lb ub) ->
+              validate [] leftover (Occur ct (decrementBounds lb ub) : exhausted <> rs)
+          | isWithinBoundsInclusive 0 lb ub && not (isValidTerm ((k, v) : ts) ct) ->
+              validate (r : exhausted) ((k, v) : ts) rs
+          | otherwise -> UnapplicableRule "validateMap" r
+      _ -> case validateKVInMap ((k, v) : ts) r of
+        (Valid {}, leftover) -> validate [] leftover (exhausted <> rs)
+        (err, _) -> err
+    validate _ _ _ = error "Impossible happened"
+
+    validateKVInMap ((tk, tv) : ts) (KV k v _) = case (validateTerm cddl tk k, validateTerm cddl tv v) of
+      (CBORTermResult _ Valid {}, CBORTermResult _ x@Valid {}) -> (x, ts)
+      (CBORTermResult _ Valid {}, CBORTermResult _ err) -> (err, ts)
+      (CBORTermResult _ err, _) -> (err, ts)
+    validateKVInMap [] _ = error "No remaining KV pairs"
+    validateKVInMap _ x = error $ "Unexpected value in map: " <> show x
+    isValidTerm ts r = case validateKVInMap ts r of
+      (Valid {}, _) -> True
+      _ -> False
 
 --------------------------------------------------------------------------------
 -- Choices
