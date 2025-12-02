@@ -155,14 +155,11 @@ data Named a = Named
   , value :: a
   , description :: Maybe T.Text
   }
-  deriving (Functor, Generic)
+  deriving (Functor, Generic, Show)
 
 -- | Add a description to a rule or group entry, to be included as a comment.
 comment :: HasComment a => T.Text -> a -> a
 comment desc n = n & commentL %~ (<> Comment desc)
-
-instance Show (Named a) where
-  show (Named n _ _) = T.unpack n
 
 data Rule = Rule
   { ruleDefinition :: Named Type0
@@ -437,7 +434,6 @@ data Constrainable a
   = CValue (Value a)
   | CRef (AnyRef a)
   | CGRef GRef
-  deriving (Show)
 
 -- | Uninhabited type used as marker for the type of thing a CRef sizes
 data CRefType
@@ -480,9 +476,6 @@ data ValueConstraint a = ValueConstraint
   { applyConstraint :: C.Type2 HuddleStage -> C.Type1 HuddleStage
   , showConstraint :: String
   }
-
-instance Show (ValueConstraint a) where
-  show = showConstraint
 
 instance Default (ValueConstraint a) where
   def =
@@ -598,7 +591,6 @@ le v bound =
 data RangeBound
   = RangeBoundLiteral Literal
   | RangeBoundRef (Named Type0)
-  deriving (Show)
 
 class IsRangeBound a where
   toRangeBound :: a -> RangeBound
@@ -617,13 +609,12 @@ instance IsRangeBound Rule where
 
 data Ranged where
   Ranged ::
-    { lb :: RangeBound
-    , ub :: RangeBound
-    , bounds :: C.RangeBound
+    { _lb :: RangeBound
+    , _ub :: RangeBound
+    , _bounds :: C.RangeBound
     } ->
     Ranged
   Unranged :: Literal -> Ranged
-  deriving (Show)
 
 -- | Establish a closed range bound.
 (...) :: (IsRangeBound a, IsRangeBound b) => a -> b -> Ranged
@@ -702,7 +693,7 @@ instance IsType0 HuddleItem where
   toType0 (HIGroup g) = toType0 g
   toType0 (HIGRule g) =
     error $
-      "Attempt to reference generic rule from HuddleItem not supported: " <> show g
+      "Attempt to reference generic rule from HuddleItem not supported: " <> T.unpack (name g)
 
 class CanQuantify a where
   -- | Apply a lower bound

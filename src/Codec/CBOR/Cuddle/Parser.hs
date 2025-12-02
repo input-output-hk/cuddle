@@ -25,6 +25,7 @@ import Codec.CBOR.Cuddle.Parser.Lexer (
   space,
  )
 import Control.Applicative.Combinators.NonEmpty qualified as NE
+import Data.ByteString.Base16 qualified as Base16
 import Data.Foldable (Foldable (..))
 import Data.Functor (void, ($>))
 import Data.List.NonEmpty (NonEmpty (..))
@@ -323,7 +324,10 @@ pValue =
           <*> pure x
     pBytes = do
       _qualifier <- optional ("h" <|> "b64")
-      between "'" "'" $ VBytes . encodeUtf8 <$> pSByte
+      bytes <- between "'" "'" pSByte
+      case Base16.decode $ encodeUtf8 bytes of
+        Right x -> pure $ VBytes x
+        Left err -> fail err
 
 pTyOp :: Parser TyOp
 pTyOp =
