@@ -108,6 +108,8 @@ data CDDLResult
       (Either Word64 CBORTermResult)
   | -- | The rule we are trying is not applicable to the CBOR term
     UnapplicableRule
+      -- | Extra information
+      String
       -- | Rule we are trying
       Rule
   deriving (Show)
@@ -238,7 +240,7 @@ validateInteger cddl i rule =
     KV _ v _ -> replaceRule (validateInteger cddl i v) rule
     Tag 2 (Postlude PTBytes) -> Valid rule
     Tag 3 (Postlude PTBytes) -> Valid rule
-    _ -> UnapplicableRule rule
+    x -> UnapplicableRule ("validateInteger\n" <> show x) rule
 
 -- | Controls for an Integer
 controlInteger ::
@@ -329,7 +331,7 @@ validateHalf cddl f rule =
             _ -> error "Not yet implemented"
         )
         rule
-    _ -> UnapplicableRule rule
+    _ -> UnapplicableRule "validateHalf" rule
 
 -- | Controls for `Float16`
 controlHalf :: HasCallStack => CDDL -> Float -> CtlOp -> Rule -> Either (Maybe CBORTermResult) ()
@@ -366,7 +368,7 @@ validateFloat cddl f rule =
           (Literal (Value (VFloat16 n) _), Literal (Value (VFloat16 m) _)) -> n <= f && range bound f m
           (Literal (Value (VFloat32 n) _), Literal (Value (VFloat32 m) _)) -> n <= f && range bound f m
           _ -> error "Not yet implemented"
-      _ -> UnapplicableRule
+      _ -> UnapplicableRule "validateFloat"
 
 -- | Controls for `Float32`
 controlFloat :: HasCallStack => CDDL -> Float -> CtlOp -> Rule -> Either (Maybe CBORTermResult) ()
@@ -406,7 +408,7 @@ validateDouble cddl f rule =
           (Literal (Value (VFloat32 (float2Double -> n)) _), Literal (Value (VFloat32 (float2Double -> m)) _)) -> n <= f && range bound f m
           (Literal (Value (VFloat64 n) _), Literal (Value (VFloat64 m) _)) -> n <= f && range bound f m
           _ -> error "Not yet implemented"
-      _ -> UnapplicableRule
+      _ -> UnapplicableRule "validateDouble"
 
 -- | Controls for `Float64`
 controlDouble :: HasCallStack => CDDL -> Double -> CtlOp -> Rule -> Either (Maybe CBORTermResult) ()
@@ -442,7 +444,7 @@ validateBool cddl b rule =
       Control op tgt ctrl -> ctrlDispatch (validateBool cddl b) op tgt ctrl (controlBool cddl b)
       -- a = foo / bar
       Choice opts -> validateChoice (validateBool cddl b) opts
-      _ -> UnapplicableRule
+      _ -> UnapplicableRule "validateBool"
 
 -- | Controls for `Bool`
 controlBool :: HasCallStack => CDDL -> Bool -> CtlOp -> Rule -> Either (Maybe CBORTermResult) ()
@@ -470,7 +472,7 @@ validateSimple cddl 23 rule =
       Postlude PTUndefined -> Valid rule
       -- a = foo / bar
       Choice opts -> validateChoice (validateSimple cddl 23) opts rule
-      _ -> UnapplicableRule rule
+      _ -> UnapplicableRule "validateSimple" rule
 validateSimple _ n _ = error $ "Found simple different to 23! please report this somewhere! Found: " <> show n
 
 --------------------------------------------------------------------------------
@@ -485,7 +487,7 @@ validateNull cddl rule =
     -- a = nil
     Postlude PTNil -> Valid rule
     Choice opts -> validateChoice (validateNull cddl) opts rule
-    _ -> UnapplicableRule rule
+    _ -> UnapplicableRule "validateNull" rule
 
 --------------------------------------------------------------------------------
 -- Bytes
@@ -499,12 +501,12 @@ validateBytes cddl bs rule =
     -- a = bytes
     Postlude PTBytes -> Valid rule
     -- a = h'123456'
-    Literal (Value (VBytes bs') _) -> check (bs == bs') rule
+    Literal (Value (VBytes bs') _) -> trace "Failed when checking literal bytes" $ check (bs == bs') rule
     -- a = foo .ctrl bar
     Control op tgt ctrl -> ctrlDispatch (validateBytes cddl bs) op tgt ctrl (controlBytes cddl bs) rule
     -- a = foo / bar
     Choice opts -> validateChoice (validateBytes cddl bs) opts rule
-    _ -> UnapplicableRule rule
+    _ -> UnapplicableRule "validateBytes" rule
 
 -- | Controls for byte strings
 controlBytes ::
@@ -581,7 +583,7 @@ validateText cddl txt rule =
     Control op tgt ctrl -> ctrlDispatch (validateText cddl txt) op tgt ctrl (controlText cddl txt) rule
     -- a = foo / bar
     Choice opts -> validateChoice (validateText cddl txt) opts rule
-    _ -> trace "Failed to validate text" $ UnapplicableRule rule
+    _ -> UnapplicableRule "validateText" rule
 
 -- | Controls for text strings
 controlText :: HasCallStack => CDDL -> T.Text -> CtlOp -> Rule -> Either (Maybe CBORTermResult) ()
@@ -619,7 +621,7 @@ validateTagged cddl tag term rule =
           err -> InvalidTagged rule (Right err)
         else InvalidTagged rule (Left tag)
     Choice opts -> validateChoice (validateTagged cddl tag term) opts rule
-    _ -> UnapplicableRule rule
+    _ -> UnapplicableRule "validateTagged" rule
 
 --------------------------------------------------------------------------------
 -- Collection helpers
@@ -649,7 +651,7 @@ flattenGroup nodes =
           _ -> error "Malformed cddl"
         Tag {} -> [rule]
         Group g -> flattenGroup g
-        _ -> error "Not yet implemented"
+        CTreeE {} -> error "Encountered a reference"
     | rule <- nodes
     ]
 
@@ -675,8 +677,9 @@ validateList cddl terms rule =
     Postlude PTAny -> Valid rule
     Array rules -> validate terms rules
     Choice opts -> validateChoice (validateList cddl terms) opts rule
-    x -> trace ("failed to resolve list, got\n" <> show x) $ UnapplicableRule rule
+    _ -> UnapplicableRule "validateList" rule
   where
+    validate :: [Term] -> [CTree ValidatorStage] -> CDDLResult
     validate [] [] = Valid rule
     validate _ [] = ListExpansionFail rule [] []
     validate [] (r : rs) = case r of
@@ -684,39 +687,46 @@ validateList cddl terms rule =
       Occur _ OIZeroOrMore -> validate [] rs
       Occur _ (OIBounded lb ub)
         | isWithinBoundsInclusive 0 lb ub -> validate [] rs
-      _ -> trace "Failed to validate list" $ UnapplicableRule r
+      _ -> UnapplicableRule "validateList" r
     validate (t : ts) (r : rs) = case r of
       Occur ct oi -> case oi of
         OIOptional
-          | isValidTerm t ct
-          , res@Valid {} <- validate ts rs ->
+          | (Valid {}, leftover) <- validateTermInList (t : ts) ct
+          , res@Valid {} <- validate leftover rs ->
               res
           | otherwise -> validate (t : ts) rs
         OIZeroOrMore
-          | isValidTerm t ct
-          , res@Valid {} <- validate ts (r : rs) ->
+          | (Valid {}, leftover) <- validateTermInList (t : ts) ct
+          , res@Valid {} <- validate leftover (r : rs) ->
               res
           | otherwise -> validate (t : ts) rs
-        OIOneOrMore -> case validateTermInList t ct of
-          Valid {} -> validate ts (Occur ct OIZeroOrMore : rs)
-          err -> err
+        OIOneOrMore -> case validateTermInList (t : ts) ct of
+          (Valid {}, leftover) -> validate leftover (Occur ct OIZeroOrMore : rs)
+          (err, _) -> err
         OIBounded _ (Just ub) | ub < 0 -> ListExpansionFail rule [] []
         OIBounded lb ub
-          | not (isWithinBoundsInclusive 0 lb ub) && isValidTerm t ct ->
-              validate ts (Occur ct (decrementBounds lb ub) : rs)
-          | isWithinBoundsInclusive 0 lb ub && not (isValidTerm t ct) ->
+          | (Valid {}, leftover) <- validateTermInList (t : ts) ct
+          , not (isWithinBoundsInclusive 0 lb ub) ->
+              validate leftover (Occur ct (decrementBounds lb ub) : rs)
+          | isWithinBoundsInclusive 0 lb ub && not (isValidTerm (t : ts) ct) ->
               validate (t : ts) rs
-          | otherwise -> trace "Failed to validate list2" $ UnapplicableRule r
-      _ -> case validateTermInList t r of
-        Valid {} -> validate ts rs
-        err -> err
+          | otherwise -> UnapplicableRule "validateList" r
+      _ -> case validateTermInList (t : ts) (resolveIfRef cddl r) of
+        (Valid {}, leftover) -> validate leftover rs
+        (err, _) -> err
 
-    validateTermInList t (KV _ v _) = validateTermInList t v
-    validateTermInList t r =
+    validateTermInList ts (KV _ v _) = validateTermInList ts v
+    validateTermInList ts (Group grp) = case grp of
+      g : gs
+        | (Valid {}, leftover) <- validateTermInList ts g -> validateTermInList leftover (Group gs)
+        | otherwise -> (UnapplicableRule "validateTermInList group" g, ts)
+      [] -> (Valid rule, ts)
+    validateTermInList (t : ts) r =
       let CBORTermResult _ res = validateTerm cddl t r
-       in res
-    isValidTerm t r = case validateTermInList t r of
-      Valid {} -> True
+       in (res, ts)
+    validateTermInList [] g = (validate [] [g], [])
+    isValidTerm ts r = case validateTermInList ts r of
+      (Valid {}, _) -> True
       _ -> False
 
     decrementBounds lb ub = OIBounded (pred <$> lb) (pred <$> ub)
@@ -788,7 +798,7 @@ validateMap cddl terms rule =
            in -- expandRules cddl (length terms) $ flattenGroup cddl rules
               validateExpandedMap cddl terms sequencesOfRules rule
     Choice opts -> validateChoice (validateMap cddl terms) opts rule
-    _ -> UnapplicableRule rule
+    _ -> UnapplicableRule "validateMap" rule
 
 --------------------------------------------------------------------------------
 -- Choices
@@ -905,7 +915,7 @@ replaceRule (MapExpansionFail _ a b) r = MapExpansionFail r a b
 replaceRule (InvalidTagged _ a) r = InvalidTagged r a
 replaceRule InvalidRule {} r = InvalidRule r
 replaceRule (InvalidControl _ a) r = InvalidControl r a
-replaceRule UnapplicableRule {} r = UnapplicableRule r
+replaceRule (UnapplicableRule m _) r = UnapplicableRule m r
 replaceRule Valid {} r = Valid r
 
 check :: Bool -> Rule -> CDDLResult
