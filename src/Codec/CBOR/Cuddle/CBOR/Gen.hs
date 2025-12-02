@@ -41,7 +41,6 @@ import Control.Monad.State.Strict (StateT, runStateT)
 import Control.Monad.State.Strict qualified as MTL
 import Data.Bifunctor (second)
 import Data.ByteString (ByteString)
-import Data.ByteString.Base16 qualified as Base16
 import Data.Functor ((<&>))
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as Map
@@ -429,9 +428,7 @@ genValueVariant (VFloat16 i) = pure . THalf $ i
 genValueVariant (VFloat32 i) = pure . TFloat $ i
 genValueVariant (VFloat64 i) = pure . TDouble $ i
 genValueVariant (VText t) = pure $ TString t
-genValueVariant (VBytes b) = case Base16.decode b of
-  Right bHex -> pure $ TBytes bHex
-  Left err -> error $ "Unable to parse hex encoded bytestring: " <> err
+genValueVariant (VBytes b) = pure $ TBytes b
 genValueVariant (VBool b) = pure $ TBool b
 
 --------------------------------------------------------------------------------
