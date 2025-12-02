@@ -22,6 +22,7 @@ import Data.Bifunctor
 import Data.Bits hiding (And)
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as BSL
+import Data.Foldable (Foldable (..))
 import Data.IntSet qualified as IS
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as Map
@@ -53,7 +54,10 @@ instance IndexMappable CTree MonoReferenced ValidatorStage where
 type CDDL = CTreeRoot ValidatorStage
 type Rule = CTree ValidatorStage
 
-data CBORTermResult = CBORTermResult Term CDDLResult
+data CBORTermResult = CBORTermResult
+  { ctrTerm :: Term
+  , ctrResult :: CDDLResult
+  }
   deriving (Show)
 
 data CDDLResult
@@ -649,57 +653,6 @@ flattenGroup cddl nodes =
     | rule <- nodes
     ]
 
--- | Expand rules to reach exactly the wanted length, which must be the number
--- of items in the container. For example, if we want to validate 3 elements,
--- and we have the following CDDL:
---
--- > a = [* int, * bool]
---
--- this will be expanded to `[int, int, int], [int, int, bool], [int, bool,
--- bool], [bool, bool, bool]`.
---
--- Essentially the rules we will parse is the choice among the expansions of the
--- original rules.
-expandRules :: CDDL -> Int -> [Rule] -> [[Rule]]
-expandRules _ remainingLen []
-  | remainingLen /= 0 = []
-expandRules _ _ [] = [[]]
-expandRules _ remainingLen _
-  | remainingLen < 0 = []
-  | remainingLen == 0 = [[]]
-expandRules cddl remainingLen (x : xs) =
-  concatMap
-    ( \y' -> do
-        suffixes <- expandRules cddl (remainingLen - length y') xs
-        [y' ++ [ys'] | ys' <- suffixes]
-    )
-    (expandRule cddl remainingLen x)
-
-expandRule :: CDDL -> Int -> Rule -> [[Rule]]
-expandRule cddl maxLen rule
-  | maxLen < 0 = []
-  | otherwise =
-      case resolveIfRef cddl rule of
-        Occur o OIOptional -> [] : [[o] | maxLen > 0]
-        Occur o OIZeroOrMore -> ([] :) $ expandRule cddl maxLen (Occur o OIOneOrMore)
-        Occur o OIOneOrMore ->
-          if maxLen > 0
-            then ([o] :) . map (o :) $ expandRule cddl (maxLen - 1) (Occur o OIOneOrMore)
-            else []
-        Occur o (OIBounded low high) -> case (low, high) of
-          (Nothing, Nothing) -> expandRule cddl maxLen (Occur o OIZeroOrMore)
-          (Just (fromIntegral -> low'), Nothing) ->
-            if maxLen >= low'
-              then (replicate low' o ++) <$> expandRule cddl (maxLen - low') (Occur o OIZeroOrMore)
-              else []
-          (Nothing, Just (fromIntegral -> high')) ->
-            [replicate n o | n <- [0 .. min maxLen high']]
-          (Just (fromIntegral -> low'), Just (fromIntegral -> high')) ->
-            if maxLen >= low'
-              then [replicate n o | n <- [low' .. min maxLen high']]
-              else []
-        _ -> [[rule | maxLen > 0]]
-
 -- | Which rules are optional?
 isOptional :: CDDL -> Rule -> Bool
 isOptional cddl rule =
@@ -713,57 +666,56 @@ isOptional cddl rule =
 -- --------------------------------------------------------------------------------
 -- -- Lists
 
-validateListWithExpandedRules :: CDDL -> [Term] -> [Rule] -> [(Rule, CBORTermResult)]
-validateListWithExpandedRules cddl terms rules =
-  go (zip terms rules)
-  where
-    go ::
-      [(Term, Rule)] -> [(Rule, CBORTermResult)]
-    go [] = []
-    go ((t, r) : ts) =
-      case resolveIfRef cddl r of
-        -- Should the rule be a KV, then we validate the rule for the value
-        KV _ v _ ->
-          -- We need to do this juggling because validateTerm has a different
-          -- error type
-          case validateTerm cddl t v of
-            ok@(CBORTermResult _ (Valid _)) -> ((r, ok) :) $ go ts
-            err -> [(r, err)]
-        _ ->
-          case validateTerm cddl t r of
-            ok@(CBORTermResult _ (Valid _)) -> ((r, ok) :) $ go ts
-            err -> [(r, err)]
-
-validateExpandedList :: CDDL -> [Term] -> [[Rule]] -> Rule -> CDDLResult
-validateExpandedList cddl terms rules = go rules
-  where
-    go :: [[Rule]] -> Rule -> CDDLResult
-    go [] rule = ListExpansionFail rule rules []
-    go (choice : choices) rule = do
-      let res = validateListWithExpandedRules cddl terms choice
-      case res of
-        [] -> Valid rule
-        _ -> case last res of
-          (_, CBORTermResult _ (Valid _)) -> Valid rule
-          _ ->
-            case go choices rule of
-              Valid _ -> Valid rule
-              ListExpansionFail _ _ errors -> ListExpansionFail rule rules (res : errors)
-              _ -> error "Not yet implemented"
+isWithinBoundsInclusive :: Ord a => a -> Maybe a -> Maybe a -> Bool
+isWithinBoundsInclusive x lb ub = maybe True (x >=) lb && maybe True (x <=) ub
 
 validateList :: CDDL -> [Term] -> Rule -> CDDLResult
 validateList cddl terms rule =
   case resolveIfRef cddl rule of
     Postlude PTAny -> Valid rule
-    Array rules ->
-      case terms of
-        [] -> if all (isOptional cddl) rules then Valid rule else InvalidRule rule
-        _ ->
-          let sequencesOfRules =
-                expandRules cddl (length terms) $ flattenGroup cddl rules
-           in validateExpandedList cddl terms sequencesOfRules rule
+    Array rules -> validate terms rules
     Choice opts -> validateChoice (validateList cddl terms) opts rule
     _ -> UnapplicableRule rule
+  where
+    validate [] [] = Valid rule
+    validate _ [] = ListExpansionFail rule [] []
+    validate [] (r : rs) = case r of
+      Occur _ OIOptional -> validate [] rs
+      Occur _ OIZeroOrMore -> validate [] rs
+      Occur _ (OIBounded lb ub)
+        | isWithinBoundsInclusive 0 lb ub -> validate [] rs
+      _ -> UnapplicableRule r
+    validate (t : ts) (r : rs) = case r of
+      Occur ct oi -> case oi of
+        OIOptional
+          | isValidTerm t ct
+          , res@Valid {} <- validate ts rs ->
+              res
+          | otherwise -> validate (t : ts) rs
+        OIZeroOrMore
+          | isValidTerm t ct
+          , res@Valid {} <- validate ts (r : rs) ->
+              res
+          | otherwise -> validate (t : ts) rs
+        OIOneOrMore -> case validateTerm cddl t ct of
+          CBORTermResult _ Valid {} -> validate ts (Occur ct OIZeroOrMore : rs)
+          CBORTermResult _ err -> err
+        OIBounded _ (Just ub) | ub < 0 -> ListExpansionFail rule [] []
+        OIBounded lb ub
+          | not (isWithinBoundsInclusive 0 lb ub) && isValidTerm t ct ->
+              validate ts (Occur ct (decrementBounds lb ub) : rs)
+          | isWithinBoundsInclusive 0 lb ub && not (isValidTerm t ct) ->
+              validate (t : ts) rs
+          | otherwise -> UnapplicableRule r
+      _ -> case validateTerm cddl t r of
+        CBORTermResult _ Valid {} -> validate ts rs
+        CBORTermResult _ err -> err
+
+    isValidTerm x y = case validateTerm cddl x y of
+      CBORTermResult _ Valid {} -> True
+      _ -> False
+
+    decrementBounds lb ub = OIBounded (pred <$> lb) (pred <$> ub)
 
 --------------------------------------------------------------------------------
 -- Maps
@@ -828,9 +780,9 @@ validateMap cddl terms rule =
       case terms of
         [] -> if all (isOptional cddl) rules then Valid rule else InvalidRule rule
         _ ->
-          let sequencesOfRules =
-                expandRules cddl (length terms) $ flattenGroup cddl rules
-           in validateExpandedMap cddl terms sequencesOfRules rule
+          let sequencesOfRules = undefined
+           in -- expandRules cddl (length terms) $ flattenGroup cddl rules
+              validateExpandedMap cddl terms sequencesOfRules rule
     Choice opts -> validateChoice (validateMap cddl terms) opts rule
     _ -> UnapplicableRule rule
 
