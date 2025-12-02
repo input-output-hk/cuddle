@@ -6,7 +6,7 @@ import Codec.CBOR.Cuddle.CBOR.Gen (generateCBORTerm)
 import Codec.CBOR.Cuddle.CBOR.Validator (
   CBORTermResult (..),
   CDDLResult (..),
-  validateCBOR',
+  validateCBOR,
  )
 import Codec.CBOR.Cuddle.CDDL (Name (..))
 import Codec.CBOR.Cuddle.CDDL.CTree (CTreeRoot (..))
@@ -45,7 +45,7 @@ genAndValidateFromFile path = do
           gen = mkQCGen seed
           cborTerm = generateCBORTerm resolvedCddl name gen
           generatedCbor = toStrictByteString $ encodeTerm cborTerm
-          res = validateCBOR' generatedCbor name (mapIndex resolvedCddl)
+          res = validateCBOR generatedCbor name (mapIndex resolvedCddl)
           extraInfo =
             unlines
               [ "Term result:"
