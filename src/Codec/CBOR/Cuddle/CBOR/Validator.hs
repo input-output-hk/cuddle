@@ -22,7 +22,6 @@ import Data.Bifunctor
 import Data.Bits hiding (And)
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as BSL
-import Data.Foldable (Foldable (..))
 import Data.IntSet qualified as IS
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as Map
@@ -30,6 +29,7 @@ import Data.Maybe
 import Data.Text qualified as T
 import Data.Text.Lazy qualified as TL
 import Data.Word
+import Debug.Trace (trace)
 import GHC.Float
 import GHC.Stack (HasCallStack)
 import Text.Regex.TDFA
@@ -581,7 +581,7 @@ validateText cddl txt rule =
     Control op tgt ctrl -> ctrlDispatch (validateText cddl txt) op tgt ctrl (controlText cddl txt) rule
     -- a = foo / bar
     Choice opts -> validateChoice (validateText cddl txt) opts rule
-    _ -> UnapplicableRule rule
+    _ -> trace "Failed to validate text" $ UnapplicableRule rule
 
 -- | Controls for text strings
 controlText :: HasCallStack => CDDL -> T.Text -> CtlOp -> Rule -> Either (Maybe CBORTermResult) ()
@@ -626,8 +626,8 @@ validateTagged cddl tag term rule =
 
 -- | Groups might contain enums, or unwraps inside. This resolves all those to
 -- the top level of the group.
-flattenGroup :: HasCallStack => CDDL -> [Rule] -> [Rule]
-flattenGroup cddl nodes =
+flattenGroup :: HasCallStack => [Rule] -> [Rule]
+flattenGroup nodes =
   mconcat
     [ case rule of
         Literal {} -> [rule]
@@ -640,15 +640,15 @@ flattenGroup cddl nodes =
         Range {} -> [rule]
         Control {} -> [rule]
         Enum e -> case e of
-          Group g -> flattenGroup cddl g
+          Group g -> flattenGroup g
           _ -> error "Malformed cddl"
         Unwrap g -> case g of
-          Map n -> flattenGroup cddl n
-          Array n -> flattenGroup cddl n
+          Map n -> flattenGroup n
+          Array n -> flattenGroup n
           Tag _ n -> [n]
           _ -> error "Malformed cddl"
         Tag {} -> [rule]
-        Group g -> flattenGroup cddl g
+        Group g -> flattenGroup g
         _ -> error "Not yet implemented"
     | rule <- nodes
     ]
@@ -675,7 +675,7 @@ validateList cddl terms rule =
     Postlude PTAny -> Valid rule
     Array rules -> validate terms rules
     Choice opts -> validateChoice (validateList cddl terms) opts rule
-    _ -> UnapplicableRule rule
+    x -> trace ("failed to resolve list, got\n" <> show x) $ UnapplicableRule rule
   where
     validate [] [] = Valid rule
     validate _ [] = ListExpansionFail rule [] []
@@ -684,7 +684,7 @@ validateList cddl terms rule =
       Occur _ OIZeroOrMore -> validate [] rs
       Occur _ (OIBounded lb ub)
         | isWithinBoundsInclusive 0 lb ub -> validate [] rs
-      _ -> UnapplicableRule r
+      _ -> trace "Failed to validate list" $ UnapplicableRule r
     validate (t : ts) (r : rs) = case r of
       Occur ct oi -> case oi of
         OIOptional
@@ -697,22 +697,26 @@ validateList cddl terms rule =
           , res@Valid {} <- validate ts (r : rs) ->
               res
           | otherwise -> validate (t : ts) rs
-        OIOneOrMore -> case validateTerm cddl t ct of
-          CBORTermResult _ Valid {} -> validate ts (Occur ct OIZeroOrMore : rs)
-          CBORTermResult _ err -> err
+        OIOneOrMore -> case validateTermInList t ct of
+          Valid {} -> validate ts (Occur ct OIZeroOrMore : rs)
+          err -> err
         OIBounded _ (Just ub) | ub < 0 -> ListExpansionFail rule [] []
         OIBounded lb ub
           | not (isWithinBoundsInclusive 0 lb ub) && isValidTerm t ct ->
               validate ts (Occur ct (decrementBounds lb ub) : rs)
           | isWithinBoundsInclusive 0 lb ub && not (isValidTerm t ct) ->
               validate (t : ts) rs
-          | otherwise -> UnapplicableRule r
-      _ -> case validateTerm cddl t r of
-        CBORTermResult _ Valid {} -> validate ts rs
-        CBORTermResult _ err -> err
+          | otherwise -> trace "Failed to validate list2" $ UnapplicableRule r
+      _ -> case validateTermInList t r of
+        Valid {} -> validate ts rs
+        err -> err
 
-    isValidTerm x y = case validateTerm cddl x y of
-      CBORTermResult _ Valid {} -> True
+    validateTermInList t (KV _ v _) = validateTermInList t v
+    validateTermInList t r =
+      let CBORTermResult _ res = validateTerm cddl t r
+       in res
+    isValidTerm t r = case validateTermInList t r of
+      Valid {} -> True
       _ -> False
 
     decrementBounds lb ub = OIBounded (pred <$> lb) (pred <$> ub)
