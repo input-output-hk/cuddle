@@ -298,8 +298,12 @@ pValue =
     -- value.
     pInt =
       pSignedNum L.decimal >>= \case
-        (False, val) -> pure $ VUInt val
-        (True, val) -> pure $ VNInt val
+        (False, val)
+          | val < fromIntegral (maxBound @Word64) -> pure . VUInt $ fromIntegral val
+          | otherwise -> pure $ VBignum val
+        (True, val)
+          | val < fromIntegral (maxBound @Word64) -> pure . VNInt $ fromIntegral val
+          | otherwise -> pure . VBignum $ -val
     pFloat =
       pSignedNum L.float >>= \case
         (False, val) -> pure $ VFloat64 val
