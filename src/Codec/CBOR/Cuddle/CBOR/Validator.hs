@@ -137,7 +137,7 @@ validateCBOR bs rule cddl@(CTreeRoot tree) =
     Left e -> error $ show e
     Right (rest, term)
       | BSL.null rest -> validateTerm cddl term (tree Map.! rule)
-      | otherwise -> error $ "Leftover bytes after parsing CBOR" <> show rest
+      | otherwise -> error $ "Leftover bytes in CBOR" <> show rest
 
 --------------------------------------------------------------------------------
 -- Terms
@@ -145,25 +145,27 @@ validateCBOR bs rule cddl@(CTreeRoot tree) =
 -- | Core function that validates a CBOR term to a particular rule of the CDDL
 -- spec
 validateTerm :: CDDL -> Term -> Rule -> CBORTermResult
-validateTerm cddl term =
-  CBORTermResult term . case term of
-    TInt i -> validateInteger cddl (fromIntegral i)
-    TInteger i -> validateInteger cddl i
-    TBytes b -> validateBytes cddl b
-    TBytesI b -> validateBytes cddl (BSL.toStrict b)
-    TString s -> validateText cddl s
-    TStringI s -> validateText cddl (TL.toStrict s)
-    TList ts -> validateList cddl ts
-    TListI ts -> validateList cddl ts
-    TMap ts -> validateMap cddl ts
-    TMapI ts -> validateMap cddl ts
-    TTagged w t -> validateTagged cddl w t
-    TBool b -> validateBool cddl b
-    TNull -> validateNull cddl
-    TSimple s -> validateSimple cddl s
-    THalf h -> validateHalf cddl h
-    TFloat h -> validateFloat cddl h
-    TDouble d -> validateDouble cddl d
+validateTerm cddl term rule =
+  CBORTermResult term $ case term of
+    TInt i -> validateInteger cddl (fromIntegral i) rRule
+    TInteger i -> validateInteger cddl i rRule
+    TBytes b -> validateBytes cddl b rRule
+    TBytesI b -> validateBytes cddl (BSL.toStrict b) rRule
+    TString s -> validateText cddl s rRule
+    TStringI s -> validateText cddl (TL.toStrict s) rRule
+    TList ts -> validateList cddl ts rRule
+    TListI ts -> validateList cddl ts rRule
+    TMap ts -> validateMap cddl ts rRule
+    TMapI ts -> validateMap cddl ts rRule
+    TTagged w t -> validateTagged cddl w t rRule
+    TBool b -> validateBool cddl b rRule
+    TNull -> validateNull cddl rRule
+    TSimple s -> validateSimple cddl s rRule
+    THalf h -> validateHalf cddl h rRule
+    TFloat h -> validateFloat cddl h rRule
+    TDouble d -> validateDouble cddl d rRule
+  where
+    rRule = resolveIfRef cddl rule
 
 --------------------------------------------------------------------------------
 -- Ints and integers
@@ -236,9 +238,19 @@ validateInteger cddl i rule =
     -- Note KV cannot appear on its own, but we will use this when validating
     -- lists.
     KV _ v _ -> replaceRule (validateInteger cddl i v) rule
-    Tag 2 (Postlude PTBytes) -> Valid rule
-    Tag 3 (Postlude PTBytes) -> Valid rule
+    Tag 2 x -> validateBigInt x
+    Tag 3 x -> validateBigInt x
     _ -> UnapplicableRule "validateInteger" rule
+  where
+    validateBigInt x = case resolveIfRef cddl x of
+      Postlude PTBytes -> Valid rule
+      Control op tgt@(Postlude PTBytes) ctrl ->
+        ctrlDispatch (validateBytes cddl bs) op tgt ctrl (controlBytes cddl bs) rule
+        where
+          -- TODO figure out a way to turn Integer into bytes or figure out why
+          -- tagged bigints are decoded as integers in the first place
+          bs = mempty
+      e -> error $ "Not yet implemented" <> show e
 
 -- | Controls for an Integer
 controlInteger ::
