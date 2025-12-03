@@ -47,7 +47,7 @@ import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import Data.Text qualified as T
-import Data.Word (Word32, Word64)
+import Data.Word (Word32)
 import GHC.Generics (Generic)
 import System.Random.Stateful (
   Random,
@@ -427,8 +427,10 @@ applyOccurenceIndicator OIOneOrMore oldGen =
   genDepthBiasedRM (1 :: Int, 10) >>= \i ->
     G <$> replicateM i oldGen
 applyOccurenceIndicator (OIBounded mlb mub) oldGen =
-  genDepthBiasedRM (fromMaybe 0 mlb :: Word64, fromMaybe 10 mub)
+  genDepthBiasedRM (lo, fromMaybe (max 10 lo) mub)
     >>= \i -> G <$> replicateM (fromIntegral i) oldGen
+  where
+    lo = fromMaybe 0 mlb
 
 genValue :: RandomGen g => Value -> M g Term
 genValue (Value x _) = genValueVariant x

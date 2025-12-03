@@ -704,9 +704,6 @@ validateList cddl terms rule =
       let CBORTermResult _ res = validateTerm cddl t r
        in (res, ts)
     validateTermInList [] g = (validate [] [g], [])
-    isValidTerm ts r = case validateTermInList ts r of
-      (Valid {}, _) -> True
-      _ -> False
 
 --------------------------------------------------------------------------------
 -- Maps
