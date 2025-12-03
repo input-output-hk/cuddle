@@ -6,7 +6,15 @@
 {-# LANGUAGE ViewPatterns #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Codec.CBOR.Cuddle.Pretty where
+module Codec.CBOR.Cuddle.Pretty (
+  CommentRender (..),
+  PrettyStage,
+  XXTopLevel (..),
+  XXType2 (..),
+  XTerm (..),
+  XCddl (..),
+  XRule (..),
+) where
 
 import Codec.CBOR.Cuddle.CDDL
 import Codec.CBOR.Cuddle.CDDL.CtlOp (CtlOp)
