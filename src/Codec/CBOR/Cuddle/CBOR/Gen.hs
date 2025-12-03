@@ -300,23 +300,17 @@ genForCTree (CTree.Range from to _bounds) = do
   case (term1, term2) of
     (S (TInt a), S (TInt b))
       | a <= b -> genUniformRM (a, b) <&> S . TInt
-      | otherwise -> error $ "invalid range, a > b\na = " <> show a <> "\nb = " <> show b
     (S (TInt a), S (TInteger b))
       | fromIntegral a <= b -> genUniformRM (fromIntegral a, b) <&> S . TInteger
-      | otherwise -> error $ "invalid range, a > b\na = " <> show a <> "\nb = " <> show b
     (S (TInteger a), S (TInteger b))
       | a <= b -> genUniformRM (a, b) <&> S . TInteger
-      | otherwise -> error $ "invalid range, a > b\na = " <> show a <> "\nb = " <> show b
     (S (THalf a), S (THalf b))
       | a <= b -> genUniformRM (a, b) <&> S . THalf
-      | otherwise -> error $ "invalid range, a > b\na = " <> show a <> "\nb = " <> show b
     (S (TFloat a), S (TFloat b))
       | a <= b -> genUniformRM (a, b) <&> S . TFloat
-      | otherwise -> error $ "invalid range, a > b\na = " <> show a <> "\nb = " <> show b
     (S (TDouble a), S (TDouble b))
       | a <= b -> genUniformRM (a, b) <&> S . TDouble
-      | otherwise -> error $ "invalid range, a > b\na = " <> show a <> "\nb = " <> show b
-    x -> error $ "Cannot apply range operator to non-numeric types: " <> show x
+    (a, b) -> error $ "invalid range (a = " <> show a <> ", b = " <> show b <> ")"
 genForCTree (CTree.Control op target controller) = do
   case (op, controller) of
     (CtlOp.Le, CTree.Literal (Value (VUInt n) _)) -> case target of

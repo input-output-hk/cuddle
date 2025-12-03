@@ -23,8 +23,14 @@ import Data.ByteString.Char8 qualified as BSC
 import Data.Text qualified as T
 import Data.Text.IO qualified as T
 import Options.Applicative
-import Prettyprinter (Pretty (pretty))
-import Prettyprinter.Util (putDocW)
+import Prettyprinter (
+  LayoutOptions (..),
+  PageWidth (..),
+  Pretty (pretty),
+  defaultLayoutOptions,
+  layoutPretty,
+ )
+import Prettyprinter.Render.Text qualified as PT
 import System.Exit (exitFailure, exitSuccess)
 import System.IO (hPutStrLn, stderr)
 import System.Random (getStdGen)
@@ -190,8 +196,13 @@ run (Opts cmd cddlFile) = do
             defs
               | sort fOpts = fromRules $ sortCDDL res
               | otherwise = res
+            layoutOptions = defaultLayoutOptions {layoutPageWidth = AvailablePerLine 80 1}
+            formattedText =
+              PT.renderStrict . layoutPretty layoutOptions . pretty $
+                mapIndex @_ @_ @PrettyStage defs
+            strippedText = T.unlines . fmap (T.dropWhileEnd (== ' ')) $ T.lines formattedText
            in
-            putDocW 80 . pretty $ mapIndex @_ @_ @PrettyStage defs
+            T.putStr strippedText
         Validate vOpts ->
           let
             cddl
