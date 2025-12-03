@@ -63,6 +63,7 @@ import System.Random.Stateful (
   )
 import Codec.CBOR.Cuddle.CDDL.CBORGenerator (WrappedTerm (..), CBORGenerator (..))
 import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
+import GHC.Stack (HasCallStack)
 #endif
 
 type data MonoDropGen
@@ -254,7 +255,7 @@ showDropGen = show . mapIndex @_ @_ @MonoDropGen
 -- Generator functions
 --------------------------------------------------------------------------------
 
-genForCTree :: RandomGen g => CTree MonoReferenced -> M g WrappedTerm
+genForCTree :: (HasCallStack, RandomGen g) => CTree MonoReferenced -> M g WrappedTerm
 genForCTree (CTree.Literal v) = S <$> genValue v
 genForCTree (CTree.Postlude pt) = S <$> genPostlude pt
 genForCTree (CTree.Map nodes) = do
@@ -297,12 +298,24 @@ genForCTree (CTree.Range from to _bounds) = do
   term1 <- genForCTree from
   term2 <- genForCTree to
   case (term1, term2) of
-    (S (TInt a), S (TInt b)) -> genUniformRM (a, b) <&> S . TInt
-    (S (TInt a), S (TInteger b)) -> genUniformRM (fromIntegral a, b) <&> S . TInteger
-    (S (TInteger a), S (TInteger b)) -> genUniformRM (a, b) <&> S . TInteger
-    (S (THalf a), S (THalf b)) -> genUniformRM (a, b) <&> S . THalf
-    (S (TFloat a), S (TFloat b)) -> genUniformRM (a, b) <&> S . TFloat
-    (S (TDouble a), S (TDouble b)) -> genUniformRM (a, b) <&> S . TDouble
+    (S (TInt a), S (TInt b))
+      | a <= b -> genUniformRM (a, b) <&> S . TInt
+      | otherwise -> error $ "invalid range, a > b\na = " <> show a <> "\nb = " <> show b
+    (S (TInt a), S (TInteger b))
+      | fromIntegral a <= b -> genUniformRM (fromIntegral a, b) <&> S . TInteger
+      | otherwise -> error $ "invalid range, a > b\na = " <> show a <> "\nb = " <> show b
+    (S (TInteger a), S (TInteger b))
+      | a <= b -> genUniformRM (a, b) <&> S . TInteger
+      | otherwise -> error $ "invalid range, a > b\na = " <> show a <> "\nb = " <> show b
+    (S (THalf a), S (THalf b))
+      | a <= b -> genUniformRM (a, b) <&> S . THalf
+      | otherwise -> error $ "invalid range, a > b\na = " <> show a <> "\nb = " <> show b
+    (S (TFloat a), S (TFloat b))
+      | a <= b -> genUniformRM (a, b) <&> S . TFloat
+      | otherwise -> error $ "invalid range, a > b\na = " <> show a <> "\nb = " <> show b
+    (S (TDouble a), S (TDouble b))
+      | a <= b -> genUniformRM (a, b) <&> S . TDouble
+      | otherwise -> error $ "invalid range, a > b\na = " <> show a <> "\nb = " <> show b
     x -> error $ "Cannot apply range operator to non-numeric types: " <> show x
 genForCTree (CTree.Control op target controller) = do
   case (op, controller) of
@@ -361,7 +374,7 @@ genForCTree (CTree.Tag tag node) = do
 genForCTree (CTree.CTreeE (MRuleRef n)) = genForNode n
 genForCTree (CTree.CTreeE (MGenerator (CBORGenerator gen) _)) = gen StateGenM
 
-genForNode :: RandomGen g => Name -> M g WrappedTerm
+genForNode :: (HasCallStack, RandomGen g) => Name -> M g WrappedTerm
 genForNode = genForCTree <=< resolveRef
 
 -- | Take a reference and resolve it to the relevant Tree, following multiple
@@ -383,7 +396,7 @@ resolveRef n = do
 -- This will throw an error if the generated item does not correspond to a
 -- single CBOR term (e.g. if the name resolves to a group, which cannot be
 -- generated outside a context).
-genForName :: RandomGen g => Name -> M g Term
+genForName :: (HasCallStack, RandomGen g) => Name -> M g Term
 genForName n = do
   (CTreeRoot cddl) <- ask @"cddl"
   case Map.lookup n cddl of
@@ -435,13 +448,14 @@ genValueVariant (VBool b) = pure $ TBool b
 -- Generator functions
 --------------------------------------------------------------------------------
 
-generateCBORTerm :: RandomGen g => CTreeRoot MonoReferenced -> Name -> g -> Term
+generateCBORTerm :: (HasCallStack, RandomGen g) => CTreeRoot MonoReferenced -> Name -> g -> Term
 generateCBORTerm cddl n stdGen =
   let genEnv = GenEnv {cddl}
       genState = GenState {randomSeed = stdGen, depth = 1}
    in evalGen (genForName n) genEnv genState
 
-generateCBORTerm' :: RandomGen g => CTreeRoot MonoReferenced -> Name -> g -> (Term, g)
+generateCBORTerm' ::
+  (HasCallStack, RandomGen g) => CTreeRoot MonoReferenced -> Name -> g -> (Term, g)
 generateCBORTerm' cddl n stdGen =
   let genEnv = GenEnv {cddl}
       genState = GenState {randomSeed = stdGen, depth = 1}
