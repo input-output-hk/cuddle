@@ -693,7 +693,7 @@ validateList cddl terms rule =
 
     validateTermInList ts (KV _ v _) = validateTermInList ts v
     validateTermInList ts (Group grp) = case grp of
-      g : gs
+      (resolveIfRef cddl -> g) : gs
         | (Valid {}, leftover) <- validateTermInList ts g -> validateTermInList leftover (Group gs)
         | otherwise -> (UnapplicableRule "validateTermInList group" g, ts)
       [] -> (Valid rule, ts)
