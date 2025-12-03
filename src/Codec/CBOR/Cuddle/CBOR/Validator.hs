@@ -28,6 +28,7 @@ import Data.Maybe
 import Data.Text qualified as T
 import Data.Text.Lazy qualified as TL
 import Data.Word
+import Debug.Trace (trace, traceShow)
 import GHC.Float
 import GHC.Stack (HasCallStack)
 import Text.Regex.TDFA
@@ -648,7 +649,10 @@ isOptional (Occur _ oi) = case oi of
 isOptional _ = False
 
 decrementBounds :: Maybe Word64 -> Maybe Word64 -> OccurrenceIndicator
-decrementBounds lb ub = OIBounded (pred <$> lb) (pred <$> ub)
+decrementBounds lb ub = OIBounded (clampedPred <$> lb) (clampedPred <$> ub)
+  where
+    clampedPred 0 = 0
+    clampedPred x = pred x
 
 validateList :: CDDL -> [Term] -> Rule -> CDDLResult
 validateList cddl terms rule =
@@ -679,14 +683,13 @@ validateList cddl terms rule =
         OIOneOrMore -> case validateTermInList (t : ts) ct of
           (Valid {}, leftover) -> validate leftover (Occur ct OIZeroOrMore : rs)
           (err, _) -> err
-        OIBounded _ (Just ub) | ub < 0 -> ListExpansionFail rule [] []
+        OIBounded _ (Just ub) | ub < 0 -> trace ("out of bounds: " <> show ub) $ ListExpansionFail rule [] []
         OIBounded lb ub
-          | (Valid {}, leftover) <- validateTermInList (t : ts) ct
-          , not (isWithinBoundsInclusive 0 lb ub) ->
+          | (Valid {}, leftover) <- validateTermInList (t : ts) ct ->
               validate leftover (Occur ct (decrementBounds lb ub) : rs)
-          | isWithinBoundsInclusive 0 lb ub && not (isValidTerm (t : ts) ct) ->
+          | isWithinBoundsInclusive 0 lb ub ->
               validate (t : ts) rs
-          | otherwise -> UnapplicableRule "validateList" r
+          | otherwise -> trace "foo" $ UnapplicableRule "validateList" r
       _ -> case validateTermInList (t : ts) (resolveIfRef cddl r) of
         (Valid {}, leftover) -> validate leftover rs
         (err, _) -> err
@@ -718,7 +721,7 @@ validateMap cddl terms rule =
   where
     validate :: [Rule] -> [(Term, Term)] -> [Rule] -> CDDLResult
     validate [] [] [] = Valid rule
-    validate _ _ [] = MapExpansionFail rule [] []
+    validate exhausted _ [] = trace (unlines $ show <$> exhausted) $ MapExpansionFail rule [] []
     validate [] [] (r : rs)
       | isOptional r = validate [] [] rs
       | otherwise = UnapplicableRule "validateMap" r
@@ -737,7 +740,7 @@ validateMap cddl terms rule =
         OIOneOrMore -> case validateKVInMap ((k, v) : ts) ct of
           (Valid {}, leftover) -> validate [] leftover (Occur ct OIZeroOrMore : exhausted <> rs)
           (err, _) -> err
-        OIBounded _ (Just ub) | 0 > ub -> MapExpansionFail rule [] []
+        OIBounded _ (Just ub) | 0 > ub -> traceShow ub $ MapExpansionFail rule [] []
         OIBounded lb ub
           | (Valid {}, leftover) <- validateKVInMap ((k, v) : ts) ct
           , not (isWithinBoundsInclusive 0 lb ub) ->
