@@ -63,3 +63,4 @@ spec :: Spec
 spec =
   describe "Generate and validate from file" $ do
     genAndValidateFromFile "example/cddl-files/conway.cddl"
+    genAndValidateFromFile "example/cddl-files/costmdls_min.cddl"
