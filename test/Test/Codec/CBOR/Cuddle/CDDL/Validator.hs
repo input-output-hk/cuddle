@@ -25,8 +25,7 @@ import Data.Text.Lazy qualified as LT
 import Paths_cuddle (getDataFileName)
 import Test.Hspec (Spec, describe, runIO, shouldSatisfy)
 import Test.Hspec.QuickCheck
-import Test.QuickCheck (counterexample)
-import Test.QuickCheck.Modifiers (NoShrink (..))
+import Test.QuickCheck (counterexample, noShrinking)
 import Test.QuickCheck.Random (mkQCGen)
 import Text.Megaparsec (runParser)
 import Text.Pretty.Simple (pShow)
@@ -41,7 +40,7 @@ genAndValidateFromFile path = do
     isRule _ = True
   describe path $
     forM_ (Map.keys $ Map.filter isRule m) $ \name@(Name n) ->
-      prop (T.unpack n) $ \(NoShrink seed) -> do
+      prop (T.unpack n) . noShrinking $ \seed -> do
         let
           gen = mkQCGen seed
           cborTerm = generateCBORTerm resolvedCddl name gen
