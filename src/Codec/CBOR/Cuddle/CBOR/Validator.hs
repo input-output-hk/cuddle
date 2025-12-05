@@ -820,20 +820,20 @@ boolCtrl c = if c then Right () else Left Nothing
 getIndicesOfChoice :: CDDL -> NE.NonEmpty Rule -> [Word64]
 getIndicesOfChoice cddl =
   concatMap $ \case
-        Literal (Value (VUInt v) _) -> [fromIntegral v]
-        KV _ v _ ->
-          case resolveIfRef cddl v of
-            Literal (Value (VUInt v') _) -> [fromIntegral v']
-            somethingElse ->
-              error $
-                "Malformed value in KV in choice in .bits: "
-                  <> show somethingElse
-        Range ff tt incl -> getIndicesOfRange cddl ff tt incl
-        Enum g -> getIndicesOfEnum cddl g
+    Literal (Value (VUInt v) _) -> [fromIntegral v]
+    KV _ v _ ->
+      case resolveIfRef cddl v of
+        Literal (Value (VUInt v') _) -> [fromIntegral v']
         somethingElse ->
           error $
-            "Malformed alternative in choice in .bits: "
+            "Malformed value in KV in choice in .bits: "
               <> show somethingElse
+    Range ff tt incl -> getIndicesOfRange cddl ff tt incl
+    Enum g -> getIndicesOfEnum cddl g
+    somethingElse ->
+      error $
+        "Malformed alternative in choice in .bits: "
+          <> show somethingElse
 
 getIndicesOfRange :: CDDL -> Rule -> Rule -> RangeBound -> [Word64]
 getIndicesOfRange cddl ff tt incl =

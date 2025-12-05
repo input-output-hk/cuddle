@@ -22,8 +22,6 @@ module Codec.CBOR.Cuddle.CBOR.Gen (generateCBORTerm, generateCBORTerm') where
 import System.Random.Stateful (
   SplitGen (..)
   )
-import Codec.CBOR.Cuddle.CDDL.CBORGenerator (WrappedTerm (..), CBORGenerator (..))
-import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
 #endif
 import Capability.Reader
 import Capability.Sink (HasSink)
@@ -35,10 +33,12 @@ import Codec.CBOR.Cuddle.CDDL (
   Value (..),
   ValueVariant (..),
  )
+import Codec.CBOR.Cuddle.CDDL.CBORGenerator (CBORGenerator (..), WrappedTerm (..))
 import Codec.CBOR.Cuddle.CDDL.CTree (CTree (..), CTreeRoot (..), PTerm (..), foldCTree)
 import Codec.CBOR.Cuddle.CDDL.CTree qualified as CTree
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
 import Codec.CBOR.Cuddle.CDDL.Resolve (MonoReferenced, XXCTree (..))
+import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
 import Codec.CBOR.Term (Term (..))
 import Codec.CBOR.Term qualified as CBOR
 import Codec.CBOR.Write qualified as CBOR
