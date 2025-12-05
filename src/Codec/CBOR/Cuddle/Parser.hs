@@ -287,6 +287,7 @@ pValue =
         , try pInt
         , try pBytes
         , pText
+        , try pBool
         ]
   where
     pSignedNum :: Num a => Parser a -> Parser (Bool, a)
@@ -332,6 +333,11 @@ pValue =
       case Base16.decode $ encodeUtf8 bytes of
         Right x -> pure $ VBytes x
         Left err -> fail err
+    pBool = label "boolean" $ do
+      b <-
+        (True <$ string "true")
+          <|> (False <$ string "false")
+      pure $ VBool b
 
 pTyOp :: Parser TyOp
 pTyOp =

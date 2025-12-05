@@ -83,6 +83,9 @@ valueSpec = describe "pValue" $ do
     parse pValue "" "3.1415" `shouldParse` value (VFloat64 3.1415)
   it "Parses text" $
     parse pValue "" "\"Hello World\"" `shouldParse` value (VText "Hello World")
+  it "Parses boolean" $ do
+    parse pValue "" "true" `shouldParse` value (VBool True)
+    parse pValue "" "false" `shouldParse` value (VBool False)
 
 occurSpec :: Spec
 occurSpec = describe "pOccur" $ do
@@ -177,8 +180,10 @@ genericSpec = describe "generics" $ do
 type2Spec :: SpecWith ()
 type2Spec = describe "type2" $ do
   describe "Value" $ do
-    it "Parses a value" $
+    it "Parses a value" $ do
       parse pType2 "" "123" `shouldParse` T2Value (value $ VUInt 123)
+      parse pType2 "" "true" `shouldParse` T2Value (value $ VBool True)
+      parse pType2 "" "false" `shouldParse` T2Value (value $ VBool False)
   describe "Map" $ do
     it "Parses a basic group" $
       parse pType2 "" "{ int => string }"
