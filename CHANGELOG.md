@@ -2,6 +2,11 @@
 
 ## 1.1.0.0
 
+* Removed most `Show` instances from `Huddle` as they were unlawful
+* Added `ctrTerm` and `ctrResult` field accessors to `CBORTermResult`
+* Add `ValidatorStage`
+* Remove `validateCBOR'`, copied its implementation to `validateCBOR`
+* Add extra information field to `UnapplicableRule`
 * Implement `IndexMappable` instance for
   - `HuddleStage` to `CTreePhase`
   - `HuddleStage` to `PrettyStage`
