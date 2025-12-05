@@ -18,6 +18,13 @@
 -- | Generate example CBOR given a CDDL specification
 module Codec.CBOR.Cuddle.CBOR.Gen (generateCBORTerm, generateCBORTerm') where
 
+#if MIN_VERSION_random(1,3,0)
+import System.Random.Stateful (
+  SplitGen (..)
+  )
+import Codec.CBOR.Cuddle.CDDL.CBORGenerator (WrappedTerm (..), CBORGenerator (..))
+import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
+#endif
 import Capability.Reader
 import Capability.Sink (HasSink)
 import Capability.Source (HasSource, MonadState (..))
@@ -49,6 +56,7 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Word (Word32)
 import GHC.Generics (Generic)
+import GHC.Stack (HasCallStack)
 import System.Random.Stateful (
   Random,
   RandomGen (..),
@@ -57,14 +65,6 @@ import System.Random.Stateful (
   randomM,
   uniformByteStringM,
  )
-#if MIN_VERSION_random(1,3,0)
-import System.Random.Stateful (
-  SplitGen (..)
-  )
-import Codec.CBOR.Cuddle.CDDL.CBORGenerator (WrappedTerm (..), CBORGenerator (..))
-import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
-import GHC.Stack (HasCallStack)
-#endif
 
 type data MonoDropGen
 
