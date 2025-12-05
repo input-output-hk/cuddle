@@ -2,6 +2,7 @@
 
 ## 1.1.0.0
 
+* Add `bool` to `Huddle` module
 * Removed most `Show` instances from `Huddle` as they were unlawful
 * Added `ctrTerm` and `ctrResult` field accessors to `CBORTermResult`
 * Add `ValidatorStage`
