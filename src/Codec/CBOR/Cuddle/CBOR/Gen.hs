@@ -1,20 +1,18 @@
-{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE CPP #-}
+#if MIN_VERSION_random(1,3,0)
+{-# OPTIONS_GHC -Wno-deprecations #-} -- Due to usage of `split`
+#endif
+{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeData #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ViewPatterns #-}
 
-#if MIN_VERSION_random(1,3,0)
-{-# OPTIONS_GHC -Wno-deprecations #-} -- Due to usage of `split`
-{-# LANGUAGE TypeData #-}
-{-# LANGUAGE TypeFamilies #-}
-#endif
 -- | Generate example CBOR given a CDDL specification
 module Codec.CBOR.Cuddle.CBOR.Gen (generateCBORTerm, generateCBORTerm') where
 
