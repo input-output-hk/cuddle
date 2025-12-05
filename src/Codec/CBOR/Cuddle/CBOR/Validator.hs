@@ -818,9 +818,8 @@ boolCtrl c = if c then Right () else Left Nothing
 -- Bits control
 
 getIndicesOfChoice :: CDDL -> NE.NonEmpty Rule -> [Word64]
-getIndicesOfChoice cddl nodes =
-  concatMap
-    ( \case
+getIndicesOfChoice cddl =
+  concatMap $ \case
         Literal (Value (VUInt v) _) -> [fromIntegral v]
         KV _ v _ ->
           case resolveIfRef cddl v of
@@ -835,8 +834,6 @@ getIndicesOfChoice cddl nodes =
           error $
             "Malformed alternative in choice in .bits: "
               <> show somethingElse
-    )
-    (NE.toList nodes)
 
 getIndicesOfRange :: CDDL -> Rule -> Rule -> RangeBound -> [Word64]
 getIndicesOfRange cddl ff tt incl =
