@@ -22,6 +22,7 @@ import Data.Map qualified as Map
 import Data.Text qualified as T
 import Data.Text.IO qualified as T
 import Data.Text.Lazy qualified as LT
+import Paths_cuddle (getDataFileName)
 import Test.Hspec (Spec, describe, runIO, shouldSatisfy)
 import Test.Hspec.QuickCheck
 import Test.QuickCheck (counterexample)
@@ -32,7 +33,7 @@ import Text.Pretty.Simple (pShow)
 
 genAndValidateFromFile :: FilePath -> Spec
 genAndValidateFromFile path = do
-  contents <- runIO $ T.readFile path
+  contents <- runIO $ T.readFile =<< getDataFileName path
   let
     cddl = fromRight (error "Failed to parse CDDL") $ runParser pCDDL path contents
     resolvedCddl@(CTreeRoot m) = either (error . show) id . fullResolveCDDL $ mapCDDLDropExt cddl
