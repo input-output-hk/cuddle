@@ -66,6 +66,7 @@ module Codec.CBOR.Cuddle.Huddle (
   bstr,
   int,
   text,
+  bool,
 
   -- * Ctl operators
   IsConstrainable,
@@ -406,6 +407,7 @@ data LiteralVariant where
   LFloat :: Float -> LiteralVariant
   LDouble :: Double -> LiteralVariant
   LBytes :: ByteString -> LiteralVariant
+  LBool :: Bool -> LiteralVariant
   deriving (Show)
 
 int :: Integer -> Literal
@@ -416,6 +418,9 @@ bstr x = Literal (LBytes x) mempty
 
 text :: T.Text -> Literal
 text x = Literal (LText x) mempty
+
+bool :: Bool -> Literal
+bool x = Literal (LBool x) mempty
 
 inferInteger :: Integer -> Literal
 inferInteger i
@@ -1171,6 +1176,7 @@ toCDDL' HuddleConfig {..} hdl =
     toCDDLValue' (LDouble d) = C.VFloat64 d
     toCDDLValue' (LText t) = C.VText t
     toCDDLValue' (LBytes b) = C.VBytes b
+    toCDDLValue' (LBool b) = C.VBool b
 
     mapToCDDLGroup :: Map -> C.Group HuddleStage
     mapToCDDLGroup xs = C.Group $ mapChoiceToCDDL <$> choiceToNE xs

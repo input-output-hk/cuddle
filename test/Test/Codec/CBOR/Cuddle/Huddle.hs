@@ -90,6 +90,12 @@ basicAssign = describe "basic assignment" $ do
   -- it "Can assign a float" $
   --   toSortedCDDL ["onepointone" =:= (1.1 :: Float)]
   --     `shouldMatchParseCDDL` "onepointone = 1.1"
+  it "Can assign `true` " $
+    toSortedCDDL ["isValid" =:= (bool True)]
+      `shouldMatchParseCDDL` "isValid = true"
+  it "Can assign `false` " $
+    toSortedCDDL ["isValid" =:= (bool False)]
+      `shouldMatchParseCDDL` "isValid = false"
   it "Can assign a text string" $
     toSortedCDDL ["hello" =:= ("Hello World" :: T.Text)]
       `shouldMatchParseCDDL` "hello = \"Hello World\""
@@ -100,27 +106,27 @@ basicAssign = describe "basic assignment" $ do
 arraySpec :: Spec
 arraySpec = describe "Arrays" $ do
   it "Can assign a small array" $
-    toSortedCDDL ["asl" =:= arr [a VUInt, a VBool, a VText]]
-      `shouldMatchParseCDDL` "asl = [ uint, bool, text ]"
+    toSortedCDDL ["asl" =:= arr [a VUInt, a VBool, a VText, a (bool True)]]
+      `shouldMatchParseCDDL` "asl = [ uint, bool, text, true ]"
   it "Can quantify an upper bound" $
     toSortedCDDL ["age" =:= arr [a VUInt +> 64]]
       `shouldMatchParseCDDL` "age = [ *64 uint ]"
   it "Can quantify an optional" $
-    toSortedCDDL ["age" =:= arr [0 <+ a VUInt +> 1]]
-      `shouldMatchParseCDDL` "age = [ ? uint ]"
+    toSortedCDDL ["age" =:= arr [0 <+ a VUInt +> 1, 0 <+ a (bool False) +> 1]]
+      `shouldMatchParseCDDL` "age = [ ? uint, ? false ]"
   it "Can handle a choice" $
     toSortedCDDL ["ageOrSex" =:= arr [a VUInt] / arr [a VBool]]
       `shouldMatchParseCDDL` "ageOrSex = [ uint // bool ]"
   it "Can handle choices of groups" $
     toSortedCDDL
       [ "asl"
-          =:= arr [a VUInt, a VBool, a VText]
+          =:= arr [a VUInt, a VBool, a VText, a (bool True)]
           / arr
             [ a (int 1)
             , a ("Hello" :: T.Text)
             ]
       ]
-      `shouldMatchParseCDDL` "asl = [ uint, bool, text // 1, \"Hello\" ]"
+      `shouldMatchParseCDDL` "asl = [ uint, bool, text, true // 1, \"Hello\" ]"
 
 mapSpec :: Spec
 mapSpec = describe "Maps" $ do
@@ -143,9 +149,9 @@ mapSpec = describe "Maps" $ do
 grpSpec :: Spec
 grpSpec = describe "Groups" $ do
   it "Can handle a choice in a group entry" $
-    let g1 = "g1" =:~ grp [a (VUInt / VBytes), a VUInt]
+    let g1 = "g1" =:~ grp [a (VUInt / VBytes), a VUInt, a (bool False)]
      in toSortedCDDL (collectFrom [HIRule $ "a1" =:= arr [a g1]])
-          `shouldMatchParseCDDL` "a1 = [g1]\n g1 = ( uint / bytes, uint )"
+          `shouldMatchParseCDDL` "a1 = [g1]\n g1 = ( uint / bytes, uint, false)"
   it "Can handle keys in a group entry" $
     let g1 = "g1" =:~ grp ["bytes" ==> VBytes]
      in toSortedCDDL (collectFrom [HIRule $ "a1" =:= arr [a g1]])
