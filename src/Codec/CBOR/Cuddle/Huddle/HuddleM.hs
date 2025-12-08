@@ -33,7 +33,7 @@ n =:= b = let r = n Huddle.=:= b in include r
 infixl 1 =:=
 
 -- | Overridden version of group assignment which adds the rule to the state
-(=:~) :: Name -> Group -> HuddleM (Named Group)
+(=:~) :: Name -> Group -> HuddleM GroupDef
 n =:~ b = let r = n Huddle.=:~ b in include r
 
 infixl 1 =:~
@@ -69,11 +69,11 @@ instance Includable Rule where
     modify (field @"items" %~ (OMap.|> (name x, HIRule r)))
       >> pure r
 
-instance Includable (Named Group) where
+instance Includable GroupDef where
   include r =
     modify
       ( (field @"items")
-          %~ (OMap.|> (r ^. field @"name", HIGroup r))
+          %~ (OMap.|> (getName r, HIGroup r))
       )
       >> pure r
 
@@ -83,14 +83,14 @@ instance IsType0 t0 => Includable (t0 -> GRuleCall) where
         grDef = callToDef <$> gr fakeT0
         n = grDef ^. field @"name"
      in do
-          modify (field @"items" %~ (OMap.|> (n, HIGRule grDef)))
+          modify (field @"items" %~ (OMap.|> (n, HIGRule $ GRuleDef grDef)))
           pure gr
 
 instance Includable HuddleItem where
   include x@(HIRule r) = include r >> pure x
   include x@(HIGroup g) = include g >> pure x
   include x@(HIGRule g) =
-    let n = g ^. field @"name"
+    let n = getName g
      in do
           modify (field @"items" %~ (OMap.|> (n, x)))
           pure x
