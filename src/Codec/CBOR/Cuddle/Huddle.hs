@@ -124,7 +124,7 @@ import Data.Void (Void)
 import Data.Word (Word64)
 import GHC.Exts (IsList (Item, fromList, toList))
 import GHC.Generics (Generic)
-import Optics.Core (lens, view, (%), (%~), (&), (^.))
+import Optics.Core (lens, view, (%), (%~), (&), (.~), (^.))
 import Optics.Core qualified as L
 import System.Random.Stateful (StatefulGen)
 import Prelude hiding ((/))
@@ -154,9 +154,12 @@ newtype instance C.XXType2 HuddleStage = HuddleXXType2 Void
 data Named a = Named
   { name :: T.Text
   , value :: a
-  , description :: Maybe T.Text
+  , namedComment :: Comment
   }
   deriving (Functor, Generic, Show)
+
+instance HasComment (Named a) where
+  commentL = #namedComment
 
 -- | Add a description to a rule or group entry, to be included as a comment.
 comment :: HasComment a => T.Text -> a -> a
@@ -764,12 +767,12 @@ infixl 8 ==>
 
 -- | Assign a rule
 (=:=) :: IsType0 a => T.Text -> a -> Rule
-n =:= b = Rule (Named n (toType0 b) Nothing) def
+n =:= b = Rule (Named n (toType0 b) mempty) def
 
 infixl 1 =:=
 
 (=:~) :: T.Text -> Group -> Named Group
-n =:~ b = Named n b Nothing
+n =:~ b = Named n b mempty
 
 infixl 1 =:~
 
@@ -988,7 +991,7 @@ binding fRule t0 =
       { args = t2 NE.:| []
       , body = getField @"value" $ ruleDefinition rule
       }
-    Nothing
+    mempty
   where
     rule = fRule (freshName 0)
     t2 = case toType0 t0 of
@@ -1004,7 +1007,7 @@ binding2 fRule t0 t1 =
       { args = t02 NE.:| [t12]
       , body = getField @"value" $ ruleDefinition rule
       }
-    Nothing
+    mempty
   where
     rule = fRule (freshName 0) (freshName 1)
     t02 = case toType0 t0 of
@@ -1162,7 +1165,7 @@ toCDDL' HuddleConfig {..} hdl =
     toCDDLRule :: Rule -> C.Rule HuddleStage
     toCDDLRule (Rule (Named n t0 c) extra) =
       ( \x ->
-          C.Rule (C.Name n) Nothing C.AssignEq x (extra & #hxrComment %~ (<> foldMap Comment c))
+          C.Rule (C.Name n) Nothing C.AssignEq x (extra & #hxrComment .~ c)
       )
         . C.TOGType
         . C.Type0
@@ -1285,7 +1288,7 @@ toCDDL' HuddleConfig {..} hdl =
               arrayEntryToCDDL
               t0s
         )
-        (HuddleXRule (foldMap Comment c) Nothing)
+        (HuddleXRule c Nothing)
 
     toGenericCall :: GRuleCall -> C.Type2 HuddleStage
     toGenericCall (Named n gr _) =
@@ -1303,7 +1306,7 @@ toCDDL' HuddleConfig {..} hdl =
             . C.Type0
             $ toCDDLType1 <$> choiceToNE (body gr)
         )
-        (HuddleXRule (foldMap Comment c) Nothing)
+        (HuddleXRule c Nothing)
       where
         gps =
           C.GenericParameters $
