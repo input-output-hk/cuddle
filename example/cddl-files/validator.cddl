@@ -1,0 +1,13 @@
+negative = nint
+
+anyfloat = f16 / f32 / f64
+
+f16 = float16
+f32 = float32
+f64 = float64
+
+bs = bstr / bytes
+txt = tstr / text
+
+my_bigint = #6.2(bstr)
+my_any = any
