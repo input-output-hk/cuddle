@@ -35,7 +35,9 @@ genAndValidateFromFile path = do
   contents <- runIO $ T.readFile =<< getDataFileName path
   let
     cddl = fromRight (error "Failed to parse CDDL") $ runParser pCDDL path contents
-    resolvedCddl@(CTreeRoot m) = either (error . show) id . fullResolveCDDL $ mapCDDLDropExt cddl
+    resolverError x =
+      error $ "Failed to resolve the CDDL from file " <> show path <> ":\n" <> show x
+    resolvedCddl@(CTreeRoot m) = either resolverError id . fullResolveCDDL $ mapCDDLDropExt cddl
     isRule CTree.Group {} = False
     isRule _ = True
   describe path $
@@ -62,5 +64,9 @@ genAndValidateFromFile path = do
 spec :: Spec
 spec =
   describe "Generate and validate from file" $ do
+    genAndValidateFromFile "example/cddl-files/basic_assign.cddl"
     genAndValidateFromFile "example/cddl-files/conway.cddl"
     genAndValidateFromFile "example/cddl-files/costmdls_min.cddl"
+    genAndValidateFromFile "example/cddl-files/issue80-min.cddl"
+    genAndValidateFromFile "example/cddl-files/pretty.cddl"
+    genAndValidateFromFile "example/cddl-files/shelley.cddl"

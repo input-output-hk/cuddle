@@ -16,7 +16,7 @@ header_body = [
 $kes_signature = bytes .size 32
 unit_interval<denominator> = [0 .. denominator, denominator]
 
-unit_int = unit_interval<uint>
+unit_int = unit_interval<4294967295>
 
 mysize = 16
 
@@ -41,7 +41,7 @@ big_group = (
   8* 4,
   & group,
   uint,
-  unit_interval<uint>,
+  unit_interval<3>,
   5 ...10,
   h'11aaff3351bc'
 )

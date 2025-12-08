@@ -310,7 +310,10 @@ genForCTree (CTree.Range from to _bounds) = do
       | a <= b -> genUniformRM (a, b) <&> S . TDouble
     (a, b) -> error $ "invalid range (a = " <> show a <> ", b = " <> show b <> ")"
 genForCTree (CTree.Control op target controller) = do
-  case (op, controller) of
+  resolvedController <- case controller of
+    CTreeE (MRuleRef n) -> resolveRef n
+    x -> pure x
+  case (op, resolvedController) of
     (CtlOp.Le, CTree.Literal (Value (VUInt n) _)) -> case target of
       CTree.Postlude PTUInt -> S . TInteger <$> genUniformRM (0, fromIntegral n)
       _ -> error "Cannot apply le operator to target"
@@ -354,7 +357,7 @@ genForCTree (CTree.Control op target controller) = do
 genForCTree (CTree.Enum tree) = do
   case tree of
     CTree.Group trees -> do
-      ix <- genUniformRM (0, length trees)
+      ix <- genUniformRM (0, length trees - 1)
       genForCTree $ trees !! ix
     _ -> error "Attempt to form an enum from something other than a group"
 genForCTree (CTree.Unwrap node) = genForCTree node
