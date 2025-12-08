@@ -227,7 +227,7 @@ validateInteger cddl i rule =
             (Literal (Value (VBignum n) _), Literal (Value (VNInt (fromIntegral -> m)) _)) -> n <= i && range bound i (-m)
             (Literal (Value (VUInt (fromIntegral -> n)) _), Literal (Value (VBignum m) _)) -> n <= i && range bound i m
             (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VBignum m) _)) -> (-n) <= i && range bound i m
-            _ -> error "Not yet implemented"
+            x -> error $ "Unable to validate range: " <> show x
         )
         rule
     -- a = &(x, y, z)
