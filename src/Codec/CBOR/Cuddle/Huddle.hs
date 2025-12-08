@@ -103,7 +103,7 @@ module Codec.CBOR.Cuddle.Huddle (
 )
 where
 
-import Codec.CBOR.Cuddle.CDDL (CDDL, GenericParameter (..), HasName, Name (..), XRule, nameL)
+import Codec.CBOR.Cuddle.CDDL (CDDL, GenericParameter (..), HasName (..), Name (..), XRule)
 import Codec.CBOR.Cuddle.CDDL qualified as C
 import Codec.CBOR.Cuddle.CDDL.CBORGenerator (CBORGenerator (..), HasGenerator (..), WrappedTerm)
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
@@ -127,7 +127,7 @@ import Data.Void (Void)
 import Data.Word (Word64)
 import GHC.Exts (IsList (Item, fromList, toList))
 import GHC.Generics (Generic)
-import Optics.Core (lens, view, (%), (%~), (&), (^.))
+import Optics.Core (lens, view, (%), (%~), (&))
 import Optics.Core qualified as L
 import System.Random.Stateful (StatefulGen)
 import Prelude hiding ((/))
@@ -178,7 +178,7 @@ instance HasComment Rule where
   commentL = #ruleExtra % #hxrComment
 
 instance HasName Rule where
-  nameL = #ruleDefinition % nameL
+  getName = getName . ruleDefinition
 
 data HuddleItem
   = HIRule Rule
@@ -225,7 +225,7 @@ instance IsList Huddle where
   type Item Huddle = Rule
   fromList [] = Huddle mempty OMap.empty
   fromList (r@(Rule x _) : xs) =
-    (#items %~ (OMap.|> (x ^. nameL, HIRule r))) $ fromList xs
+    (#items %~ (OMap.|> (getName x, HIRule r))) $ fromList xs
 
   toList = const []
 
@@ -705,7 +705,7 @@ instance IsType0 HuddleItem where
   toType0 (HIGRule g) =
     error $
       "Attempt to reference generic rule from HuddleItem not supported: "
-        <> T.unpack (unName (g ^. nameL))
+        <> T.unpack (unName (getName g))
 
 class CanQuantify a where
   -- | Apply a lower bound
@@ -1321,4 +1321,4 @@ withGenerator :: HasGenerator a => (forall g m. StatefulGen g m => g -> m Wrappe
 withGenerator f = L.set generatorL (Just $ CBORGenerator f)
 
 instance HasName (Named a) where
-  nameL = #name
+  getName = name
