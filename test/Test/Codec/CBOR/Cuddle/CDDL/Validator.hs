@@ -11,6 +11,7 @@ import Codec.CBOR.Cuddle.CBOR.Validator (
 import Codec.CBOR.Cuddle.CDDL (Name (..))
 import Codec.CBOR.Cuddle.CDDL.CTree (CTreeRoot (..))
 import Codec.CBOR.Cuddle.CDDL.CTree qualified as CTree
+import Codec.CBOR.Cuddle.CDDL.Postlude (appendPostlude)
 import Codec.CBOR.Cuddle.CDDL.Resolve (fullResolveCDDL)
 import Codec.CBOR.Cuddle.IndexMappable (mapCDDLDropExt, mapIndex)
 import Codec.CBOR.Cuddle.Parser (pCDDL)
@@ -37,7 +38,9 @@ genAndValidateFromFile path = do
     cddl = fromRight (error "Failed to parse CDDL") $ runParser pCDDL path contents
     resolverError x =
       error $ "Failed to resolve the CDDL from file " <> show path <> ":\n" <> show x
-    resolvedCddl@(CTreeRoot m) = either resolverError id . fullResolveCDDL $ mapCDDLDropExt cddl
+    resolvedCddl@(CTreeRoot m) =
+      either resolverError id . fullResolveCDDL . appendPostlude $
+        mapCDDLDropExt cddl
     isRule CTree.Group {} = False
     isRule _ = True
   describe path $
@@ -70,3 +73,4 @@ spec =
     genAndValidateFromFile "example/cddl-files/issue80-min.cddl"
     genAndValidateFromFile "example/cddl-files/pretty.cddl"
     genAndValidateFromFile "example/cddl-files/shelley.cddl"
+    genAndValidateFromFile "example/cddl-files/validator.cddl"
