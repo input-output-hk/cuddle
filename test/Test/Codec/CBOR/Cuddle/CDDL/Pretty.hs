@@ -215,6 +215,13 @@ unitSpec = describe "HUnit" $ do
       it "simple assignment with comment" $
         [HIRule $ H.comment "comment" $ "a" =:= H.bool True]
           `huddlePrettyPrintsTo` "; comment\na = true\n"
+      it "comment and reference" $
+        let
+          b = H.comment "this is rule 'b'" $ "b" =:= H.text "bee"
+         in
+          [ HIRule $ H.comment "comment" $ "a" =:= b
+          ]
+            `huddlePrettyPrintsTo` "; comment\na = b\n; this is rule 'b'\nb = \"bee\"\n"
     describe "GroupDef" $ do
       it "simple pair" $
         [HIGroup $ "a" =:~ [a $ H.bool True, a $ H.int 3]]
