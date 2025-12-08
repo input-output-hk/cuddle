@@ -157,7 +157,6 @@ newtype instance C.XXType2 HuddleStage = HuddleXXType2 Void
 data Named a = Named
   { name :: Name
   , value :: a
-  , description :: Maybe T.Text
   }
   deriving (Functor, Generic, Show)
 
@@ -565,7 +564,7 @@ instance IsCborable (AnyRef a)
 instance IsCborable GRef
 
 cbor :: (IsCborable b, IsConstrainable c b) => c -> Rule -> Constrained
-cbor v r@(Rule (Named n _ _) _) =
+cbor v r@(Rule (Named n _) _) =
   Constrained
     (toConstrainable v)
     ValueConstraint
@@ -771,12 +770,12 @@ infixl 8 ==>
 
 -- | Assign a rule
 (=:=) :: IsType0 a => Name -> a -> Rule
-n =:= b = Rule (Named n (toType0 b) Nothing) def
+n =:= b = Rule (Named n (toType0 b)) def
 
 infixl 1 =:=
 
 (=:~) :: Name -> Group -> Named Group
-n =:~ b = Named n b Nothing
+n =:~ b = Named n b
 
 infixl 1 =:~
 
@@ -995,7 +994,6 @@ binding fRule t0 =
       { args = t2 NE.:| []
       , body = getField @"value" $ ruleDefinition rule
       }
-    Nothing
   where
     rule = fRule (freshName 0)
     t2 = case toType0 t0 of
@@ -1011,7 +1009,6 @@ binding2 fRule t0 t1 =
       { args = t02 NE.:| [t12]
       , body = getField @"value" $ ruleDefinition rule
       }
-    Nothing
   where
     rule = fRule (freshName 0) (freshName 1)
     t02 = case toType0 t0 of
@@ -1030,9 +1027,9 @@ hiRule (HIRule r) = [r]
 hiRule _ = []
 
 hiName :: HuddleItem -> Name
-hiName (HIRule (Rule (Named n _ _) _)) = n
-hiName (HIGroup (Named n _ _)) = n
-hiName (HIGRule (Named n _ _)) = n
+hiName (HIRule (Rule (Named n _) _)) = n
+hiName (HIGroup (Named n _)) = n
+hiName (HIGRule (Named n _)) = n
 
 -- | Collect all rules starting from a given point. This will also insert a
 --   single pseudo-rule as the first element which references the specified
@@ -1051,9 +1048,9 @@ collectFrom topRs =
         }
     goHuddleItem (HIRule r) = goRule r
     goHuddleItem (HIGroup g) = goNamedGroup g
-    goHuddleItem (HIGRule (Named _ (GRule _ t0) _)) = goT0 t0
+    goHuddleItem (HIGRule (Named _ (GRule _ t0))) = goT0 t0
     goRule :: Rule -> State (OMap Name HuddleItem) ()
-    goRule r@(Rule (Named n t0 _) _) = do
+    goRule r@(Rule (Named n t0) _) = do
       items <- get
       when (OMap.notMember n items) $ do
         modify (OMap.|> (n, HIRule r))
@@ -1061,12 +1058,12 @@ collectFrom topRs =
     goChoice f (NoChoice x) = f x
     goChoice f (ChoiceOf x xs) = f x >> goChoice f xs
     goT0 = goChoice goT2
-    goNamedGroup r@(Named n g _) = do
+    goNamedGroup r@(Named n g) = do
       items <- get
       when (OMap.notMember n items) $ do
         modify (OMap.|> (n, HIGroup r))
         goGroup g
-    goGRule r@(Named n g _) = do
+    goGRule r@(Named n g) = do
       items <- get
       when (OMap.notMember n items) $ do
         modify (OMap.|> (n, HIGRule $ fmap callToDef r))
@@ -1168,9 +1165,9 @@ toCDDL' HuddleConfig {..} hdl =
         comment "Pseudo-rule introduced by Cuddle to collect root elements" $
           "huddle_root_defs" =:= arr (fromList (fmap a topRs))
     toCDDLRule :: Rule -> C.Rule HuddleStage
-    toCDDLRule (Rule (Named n t0 c) extra) =
+    toCDDLRule (Rule (Named n t0) extra) =
       ( \x ->
-          C.Rule n Nothing C.AssignEq x (extra & #hxrComment %~ (<> foldMap Comment c))
+          C.Rule n Nothing C.AssignEq x extra
       )
         . C.TOGType
         . C.Type0
@@ -1220,8 +1217,8 @@ toCDDL' HuddleConfig {..} hdl =
       T2Array x -> C.Type1 (C.T2Array $ arrayToCDDLGroup x) Nothing mempty
       T2Tagged (Tagged mmin x) ->
         C.Type1 (C.T2Tag mmin $ toCDDLType0 x) Nothing mempty
-      T2Ref (Named n _ _) -> C.Type1 (C.T2Name n Nothing) Nothing mempty
-      T2Group (Named n _ _) -> C.Type1 (C.T2Name n Nothing) Nothing mempty
+      T2Ref (Named n _) -> C.Type1 (C.T2Name n Nothing) Nothing mempty
+      T2Group (Named n _) -> C.Type1 (C.T2Name n Nothing) Nothing mempty
       T2Generic g -> C.Type1 (toGenericCall g) Nothing mempty
       T2GenericRef (GRef n) -> C.Type1 (C.T2Name (C.Name n) Nothing) Nothing mempty
 
@@ -1275,10 +1272,10 @@ toCDDL' HuddleConfig {..} hdl =
 
     toCDDLRangeBound :: RangeBound -> C.Type2 HuddleStage
     toCDDLRangeBound (RangeBoundLiteral l) = C.T2Value $ toCDDLValue l
-    toCDDLRangeBound (RangeBoundRef (Named n _ _)) = C.T2Name n Nothing
+    toCDDLRangeBound (RangeBoundRef (Named n _)) = C.T2Name n Nothing
 
     toCDDLGroup :: Named Group -> C.Rule HuddleStage
-    toCDDLGroup (Named n (Group t0s) c) =
+    toCDDLGroup (Named n (Group t0s)) =
       C.Rule
         n
         Nothing
@@ -1293,16 +1290,16 @@ toCDDL' HuddleConfig {..} hdl =
               arrayEntryToCDDL
               t0s
         )
-        (HuddleXRule (foldMap Comment c) Nothing)
+        def
 
     toGenericCall :: GRuleCall -> C.Type2 HuddleStage
-    toGenericCall (Named n gr _) =
+    toGenericCall (Named n gr) =
       C.T2Name
         n
         (Just . C.GenericArg $ fmap toCDDLType1 (args gr))
 
     toGenRuleDef :: GRuleDef -> C.Rule HuddleStage
-    toGenRuleDef (Named n gr c) =
+    toGenRuleDef (Named n gr) =
       C.Rule
         n
         (Just gps)
@@ -1311,7 +1308,7 @@ toCDDL' HuddleConfig {..} hdl =
             . C.Type0
             $ toCDDLType1 <$> choiceToNE (body gr)
         )
-        (HuddleXRule (foldMap Comment c) Nothing)
+        def
       where
         gps =
           C.GenericParameters $
