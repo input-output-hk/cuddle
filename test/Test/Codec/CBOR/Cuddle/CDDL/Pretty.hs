@@ -9,7 +9,7 @@ module Test.Codec.CBOR.Cuddle.CDDL.Pretty (
 import Codec.CBOR.Cuddle.CDDL (
   Assign (..),
   CDDL,
-  Group (Group),
+  Group (..),
   GroupEntry (..),
   GroupEntryVariant (..),
   GrpChoice (..),
@@ -22,7 +22,10 @@ import Codec.CBOR.Cuddle.CDDL (
   ValueVariant (..),
   value,
  )
-import Codec.CBOR.Cuddle.Pretty (PrettyStage)
+import Codec.CBOR.Cuddle.Huddle (HuddleItem (..), (=:=))
+import Codec.CBOR.Cuddle.Huddle qualified as H
+import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
+import Codec.CBOR.Cuddle.Pretty (PrettyStage, XRule (..))
 import Data.Default.Class (Default (..))
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Text qualified as T
@@ -125,69 +128,90 @@ drep =
 
 unitSpec :: Spec
 unitSpec = describe "HUnit" $ do
-  describe "Name" $ do
-    it "names" $ Name "a" `prettyPrintsTo` "a"
-  describe "Type0" $ do
-    it "name" $ Type0 @PrettyStage (t1Name :| []) `prettyPrintsTo` "a"
-  describe "Type1" $ do
-    it "name" $ t1Name `prettyPrintsTo` "a"
-  describe "Type2" $ do
-    it "T2Name" $ t2Name `prettyPrintsTo` "a"
-    describe "T2Array" $ do
-      let groupEntryName = GroupEntry Nothing (GERef (Name "a") Nothing) ""
-      it "one element" $
-        T2Array (Group (GrpChoice [groupEntryName] mempty :| [])) `prettyPrintsTo` "[a]"
-      it "two elements" $
-        T2Array
-          ( Group
-              ( GrpChoice
-                  [ GroupEntry Nothing (GEType Nothing (mkType0 . T2Value . value $ VUInt 1)) ""
-                  , groupEntryName
-                  ]
-                  mempty
-                  :| []
-              )
-          )
-          `prettyPrintsTo` "[1, a]"
-      it "two elements with comments" $
-        T2Array
-          ( Group
-              ( GrpChoice
-                  [ GroupEntry Nothing (GEType Nothing (mkType0 . T2Value . value $ VUInt 1)) "one"
-                  , GroupEntry Nothing (GEType Nothing (mkType0 . T2Value . value $ VUInt 2)) "two"
-                  ]
-                  mempty
-                  :| []
-              )
-          )
-          `prettyPrintsTo` "[ 1 ; one\n, 2 ; two\n]"
-      it "two elements with multiline comments" $
-        T2Array
-          ( Group
-              ( GrpChoice
-                  [ GroupEntry
-                      Nothing
-                      (GEType Nothing (mkType0 . T2Value . value $ VUInt 1))
-                      "first\nmultiline comment"
-                  , GroupEntry
-                      Nothing
-                      (GEType Nothing (mkType0 . T2Value . value $ VUInt 2))
-                      "second\nmultiline comment"
-                  ]
-                  mempty
-                  :| []
-              )
-          )
-          `prettyPrintsTo` "[ 1 ; first\n    ; multiline comment\n, 2 ; second\n    ; multiline comment\n]"
-  describe "Rule" $ do
-    it "simple assignment" $
-      Rule @PrettyStage
-        (Name "a")
-        Nothing
-        AssignEq
-        (TOGType (Type0 (Type1 (T2Name (Name "b") mempty) Nothing mempty :| [])))
-        def
-        `prettyPrintsTo` "a = b"
-    xit "drep" $
-      drep
-        `prettyPrintsTo` "drep = [0, addr_keyhash // 1, script_hash // 2 // 3]"
+  describe "CDDL" $ do
+    describe "Name" $ do
+      it "names" $ Name "a" `prettyPrintsTo` "a"
+    describe "Type0" $ do
+      it "name" $ Type0 @PrettyStage (t1Name :| []) `prettyPrintsTo` "a"
+    describe "Type1" $ do
+      it "name" $ t1Name `prettyPrintsTo` "a"
+    describe "Type2" $ do
+      it "T2Name" $ t2Name `prettyPrintsTo` "a"
+      describe "T2Array" $ do
+        let groupEntryName = GroupEntry Nothing (GERef (Name "a") Nothing) ""
+        it "one element" $
+          T2Array (Group (GrpChoice [groupEntryName] mempty :| [])) `prettyPrintsTo` "[a]"
+        it "two elements" $
+          T2Array
+            ( Group
+                ( GrpChoice
+                    [ GroupEntry Nothing (GEType Nothing (mkType0 . T2Value . value $ VUInt 1)) ""
+                    , groupEntryName
+                    ]
+                    mempty
+                    :| []
+                )
+            )
+            `prettyPrintsTo` "[1, a]"
+        it "two elements with comments" $
+          T2Array
+            ( Group
+                ( GrpChoice
+                    [ GroupEntry Nothing (GEType Nothing (mkType0 . T2Value . value $ VUInt 1)) "one"
+                    , GroupEntry Nothing (GEType Nothing (mkType0 . T2Value . value $ VUInt 2)) "two"
+                    ]
+                    mempty
+                    :| []
+                )
+            )
+            `prettyPrintsTo` "[ 1 ; one\n, 2 ; two\n]"
+        it "two elements with multiline comments" $
+          T2Array
+            ( Group
+                ( GrpChoice
+                    [ GroupEntry
+                        Nothing
+                        (GEType Nothing (mkType0 . T2Value . value $ VUInt 1))
+                        "first\nmultiline comment"
+                    , GroupEntry
+                        Nothing
+                        (GEType Nothing (mkType0 . T2Value . value $ VUInt 2))
+                        "second\nmultiline comment"
+                    ]
+                    mempty
+                    :| []
+                )
+            )
+            `prettyPrintsTo` "[ 1 ; first\n    ; multiline comment\n, 2 ; second\n    ; multiline comment\n]"
+    describe "Rule" $ do
+      it "simple assignment" $
+        Rule @PrettyStage
+          (Name "a")
+          Nothing
+          AssignEq
+          (TOGType (Type0 (Type1 (T2Name (Name "b") mempty) Nothing mempty :| [])))
+          def
+          `prettyPrintsTo` "a = b"
+      it "simple assignment with comment" $
+        Rule @PrettyStage
+          (Name "a")
+          Nothing
+          AssignEq
+          (TOGType (Type0 (Type1 (T2Name (Name "b") mempty) Nothing mempty :| [])))
+          (PrettyXRule "comment")
+          `prettyPrintsTo` "; comment\na = b"
+      xit "drep" $
+        drep
+          `prettyPrintsTo` "drep = [0, addr_keyhash // 1, script_hash // 2 // 3]"
+  describe "Huddle" $ do
+    let
+      huddlePrettyPrintsTo rs str =
+        mapIndex @_ @_ @PrettyStage (H.toCDDLNoRoot $ H.collectFrom rs) `prettyPrintsTo` str
+    describe "Rule" $ do
+      -- TODO get rid of trailing newline
+      it "simple assignment" $
+        [HIRule $ "a" =:= H.bool True]
+          `huddlePrettyPrintsTo` "a = true\n"
+      it "simple assignment with comment" $
+        [HIRule $ H.comment "comment" $ "a" =:= H.bool True]
+          `huddlePrettyPrintsTo` "; comment\na = true\n"
