@@ -63,7 +63,7 @@ import Data.TreeDiff (ToExpr)
 import Data.Word (Word64, Word8)
 import GHC.Base (Constraint, Type)
 import GHC.Generics (Generic)
-import Optics.Core (Lens', lens, (%), (%~), (&))
+import Optics.Core ((%), (%~), (&))
 
 data family XXTopLevel i
 
@@ -172,10 +172,10 @@ instance CollectComments Name where
 instance Hashable Name
 
 class HasName a where
-  nameL :: Lens' a Name
+  getName :: a -> Name
 
 instance HasName Name where
-  nameL = lens id const
+  getName = id
 
 -- |
 --   assignt = "=" / "/="
