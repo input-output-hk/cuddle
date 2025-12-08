@@ -22,7 +22,7 @@ import Codec.CBOR.Cuddle.CDDL (
   ValueVariant (..),
   value,
  )
-import Codec.CBOR.Cuddle.Huddle (HuddleItem (..), (=:=))
+import Codec.CBOR.Cuddle.Huddle (HuddleItem (..), a, (=:=), (=:~))
 import Codec.CBOR.Cuddle.Huddle qualified as H
 import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
 import Codec.CBOR.Cuddle.Pretty (PrettyStage, XRule (..))
@@ -215,3 +215,10 @@ unitSpec = describe "HUnit" $ do
       it "simple assignment with comment" $
         [HIRule $ H.comment "comment" $ "a" =:= H.bool True]
           `huddlePrettyPrintsTo` "; comment\na = true\n"
+    describe "GroupDef" $ do
+      it "simple pair" $
+        [HIGroup $ "a" =:~ [a $ H.bool True, a $ H.int 3]]
+          `huddlePrettyPrintsTo` "a = (true, 3)\n"
+      it "simple pair with comment" $
+        [HIGroup $ H.comment "comment" $ "a" =:~ [a $ H.bool True, a $ H.int 3]]
+          `huddlePrettyPrintsTo` "; comment\na = (true, 3)\n"

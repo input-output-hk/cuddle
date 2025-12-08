@@ -20,6 +20,7 @@ module Codec.CBOR.Cuddle.Huddle (
   HuddleItem (..),
   huddleAugment,
   Rule (..),
+  GroupDef (..),
   Named (..),
   IsType0 (..),
   Value (..),
@@ -83,7 +84,7 @@ module Codec.CBOR.Cuddle.Huddle (
 
   -- * Generics
   GRef,
-  GRuleDef,
+  GRuleDef (..),
   GRuleCall,
   binding,
   binding2,
@@ -146,6 +147,9 @@ data instance C.XRule HuddleStage = HuddleXRule
   }
   deriving (Generic)
 
+instance HasComment (C.XRule HuddleStage) where
+  commentL = #hxrComment
+
 instance Default (XRule HuddleStage)
 
 newtype instance C.XXTopLevel HuddleStage = HuddleXXTopLevel C.Comment
@@ -179,10 +183,22 @@ instance HasComment Rule where
 instance HasName Rule where
   getName = getName . ruleDefinition
 
+data GroupDef = GroupDef {gdNamed :: Named Group, gdExt :: XRule HuddleStage}
+  deriving (Generic)
+
+instance HasComment GroupDef where
+  commentL = #gdExt % commentL
+
+instance HasName GroupDef where
+  getName = getName . gdNamed
+
+instance IsType0 GroupDef where
+  toType0 = toType0 . gdNamed
+
 data HuddleItem
   = HIRule Rule
   | HIGRule GRuleDef
-  | HIGroup (Named Group)
+  | HIGroup GroupDef
   deriving (Generic)
 
 -- | Top-level Huddle type is a list of rules.
@@ -700,7 +716,7 @@ instance IsType0 a => IsType0 (Tagged a) where
 
 instance IsType0 HuddleItem where
   toType0 (HIRule r) = toType0 r
-  toType0 (HIGroup g) = toType0 g
+  toType0 (HIGroup (GroupDef g _)) = toType0 g
   toType0 (HIGRule g) =
     error $
       "Attempt to reference generic rule from HuddleItem not supported: "
@@ -774,8 +790,8 @@ n =:= b = Rule (Named n (toType0 b)) def
 
 infixl 1 =:=
 
-(=:~) :: Name -> Group -> Named Group
-n =:~ b = Named n b
+(=:~) :: Name -> Group -> GroupDef
+n =:~ b = GroupDef (Named n b) def
 
 infixl 1 =:~
 
@@ -971,7 +987,10 @@ data GRule a = GRule
 
 type GRuleCall = Named (GRule Type2)
 
-type GRuleDef = Named (GRule GRef)
+newtype GRuleDef = GRuleDef {unGRuleDef :: Named (GRule GRef)}
+
+instance HasName GRuleDef where
+  getName = getName . unGRuleDef
 
 callToDef :: GRule Type2 -> GRule GRef
 callToDef gr = gr {args = refs}
@@ -1026,10 +1045,10 @@ hiRule :: HuddleItem -> [Rule]
 hiRule (HIRule r) = [r]
 hiRule _ = []
 
-hiName :: HuddleItem -> Name
-hiName (HIRule (Rule (Named n _) _)) = n
-hiName (HIGroup (Named n _)) = n
-hiName (HIGRule (Named n _)) = n
+instance HasName HuddleItem where
+  getName (HIRule (Rule (Named n _) _)) = n
+  getName (HIGroup (GroupDef (Named n _) _)) = n
+  getName (HIGRule (GRuleDef (Named n _))) = n
 
 -- | Collect all rules starting from a given point. This will also insert a
 --   single pseudo-rule as the first element which references the specified
@@ -1048,7 +1067,7 @@ collectFrom topRs =
         }
     goHuddleItem (HIRule r) = goRule r
     goHuddleItem (HIGroup g) = goNamedGroup g
-    goHuddleItem (HIGRule (Named _ (GRule _ t0))) = goT0 t0
+    goHuddleItem (HIGRule (GRuleDef (Named _ (GRule _ t0)))) = goT0 t0
     goRule :: Rule -> State (OMap Name HuddleItem) ()
     goRule r@(Rule (Named n t0) _) = do
       items <- get
@@ -1058,15 +1077,15 @@ collectFrom topRs =
     goChoice f (NoChoice x) = f x
     goChoice f (ChoiceOf x xs) = f x >> goChoice f xs
     goT0 = goChoice goT2
-    goNamedGroup r@(Named n g) = do
+    goNamedGroup (GroupDef r@(Named n g) extra) = do
       items <- get
       when (OMap.notMember n items) $ do
-        modify (OMap.|> (n, HIGroup r))
+        modify (OMap.|> (n, HIGroup (GroupDef r extra)))
         goGroup g
     goGRule r@(Named n g) = do
       items <- get
       when (OMap.notMember n items) $ do
-        modify (OMap.|> (n, HIGRule $ fmap callToDef r))
+        modify (OMap.|> (n, HIGRule $ GRuleDef (fmap callToDef r)))
         goT0 (body g)
       -- Note that the parameters here may be different, so this doesn't live
       -- under the guard
@@ -1076,7 +1095,7 @@ collectFrom topRs =
     goT2 (T2Array m) = goChoice (mapM_ goArrayEntry . unArrayChoice) m
     goT2 (T2Tagged (Tagged _ t0)) = goT0 t0
     goT2 (T2Ref n) = goRule (Rule n $ HuddleXRule mempty Nothing)
-    goT2 (T2Group r) = goNamedGroup r
+    goT2 (T2Group r) = goNamedGroup $ GroupDef r def
     goT2 (T2Generic x) = goGRule x
     goT2 (T2Constrained (Constrained c _ refs)) =
       ( case c of
@@ -1102,7 +1121,7 @@ collectFrom topRs =
 --   the end in depth-first order.
 collectFromInit :: [HuddleItem] -> Huddle
 collectFromInit rules =
-  Huddle (concatMap hiRule rules) (OMap.fromList $ (\x -> (hiName x, x)) <$> rules)
+  Huddle (concatMap hiRule rules) (OMap.fromList $ (\x -> (getName x, x)) <$> rules)
     `huddleAugment` collectFrom rules
 
 --------------------------------------------------------------------------------
@@ -1157,7 +1176,7 @@ toCDDL' HuddleConfig {..} hdl =
             n = C.ruleName x
 
     toCDDLItem (HIRule r) = toCDDLRule r
-    toCDDLItem (HIGroup g) = toCDDLGroup g
+    toCDDLItem (HIGroup g) = toCDDLGroupDef g
     toCDDLItem (HIGRule g) = toGenRuleDef g
     toTopLevelPseudoRoot :: [Rule] -> C.Rule HuddleStage
     toTopLevelPseudoRoot topRs =
@@ -1274,8 +1293,8 @@ toCDDL' HuddleConfig {..} hdl =
     toCDDLRangeBound (RangeBoundLiteral l) = C.T2Value $ toCDDLValue l
     toCDDLRangeBound (RangeBoundRef (Named n _)) = C.T2Name n Nothing
 
-    toCDDLGroup :: Named Group -> C.Rule HuddleStage
-    toCDDLGroup (Named n (Group t0s)) =
+    toCDDLGroupDef :: GroupDef -> C.Rule HuddleStage
+    toCDDLGroupDef (GroupDef (Named n (Group t0s)) extra) =
       C.Rule
         n
         Nothing
@@ -1290,7 +1309,7 @@ toCDDL' HuddleConfig {..} hdl =
               arrayEntryToCDDL
               t0s
         )
-        def
+        extra
 
     toGenericCall :: GRuleCall -> C.Type2 HuddleStage
     toGenericCall (Named n gr) =
@@ -1299,7 +1318,7 @@ toCDDL' HuddleConfig {..} hdl =
         (Just . C.GenericArg $ fmap toCDDLType1 (args gr))
 
     toGenRuleDef :: GRuleDef -> C.Rule HuddleStage
-    toGenRuleDef (Named n gr) =
+    toGenRuleDef (GRuleDef (Named n gr)) =
       C.Rule
         n
         (Just gps)
