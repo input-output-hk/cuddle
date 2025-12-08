@@ -275,6 +275,9 @@ instance IndexMappable XXType2 HuddleStage PrettyStage where
 instance IndexMappable XTerm HuddleStage PrettyStage where
   mapIndex (HuddleXTerm c) = PrettyXTerm c
 
+instance IndexMappable XRule HuddleStage PrettyStage where
+  mapIndex (HuddleXRule c _) = PrettyXRule c
+
 -- ParserStage -> ParserStage
 
 instance IndexMappable XCddl ParserStage ParserStage
