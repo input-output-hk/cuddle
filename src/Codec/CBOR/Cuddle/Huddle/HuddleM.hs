@@ -80,20 +80,20 @@ instance Includable GroupDef where
 instance IsType0 t0 => Includable (t0 -> GRuleCall) where
   include gr =
     let fakeT0 = error "Attempting to unwrap fake value in generic call"
-        grDef = callToDef <$> gr fakeT0
-        n = grDef ^. field @"name"
+        GRuleCall g extra = gr fakeT0
+        grDef = callToDef <$> g
+        n = getName grDef
      in do
-          modify (field @"items" %~ (OMap.|> (n, HIGRule $ GRuleDef grDef)))
+          modify (field @"items" %~ (OMap.|> (n, HIGRule $ GRuleDef grDef extra)))
           pure gr
 
 instance Includable HuddleItem where
   include x@(HIRule r) = include r >> pure x
   include x@(HIGroup g) = include g >> pure x
   include x@(HIGRule g) =
-    let n = getName g
-     in do
-          modify (field @"items" %~ (OMap.|> (n, x)))
-          pure x
+    do
+      modify (field @"items" %~ (OMap.|> (getName g, x)))
+      pure x
 
 unsafeIncludeFromHuddle ::
   Huddle ->
