@@ -1248,11 +1248,7 @@ toCDDL' HuddleConfig {..} hdl =
       T2Array x -> C.Type1 (C.T2Array $ arrayToCDDLGroup x) Nothing mempty
       T2Tagged (Tagged mmin x) ->
         C.Type1 (C.T2Tag mmin $ toCDDLType0 x) Nothing mempty
-      T2Ref (Rule (Named n _) _) ->
-        C.Type1
-          (C.T2Name n Nothing)
-          Nothing
-          mempty
+      T2Ref (Rule (Named n _) _) -> C.Type1 (C.T2Name n Nothing) Nothing mempty
       T2Group (Named n _) -> C.Type1 (C.T2Name n Nothing) Nothing mempty
       T2Generic g -> C.Type1 (toGenericCall g) Nothing mempty
       T2GenericRef (GRef n) -> C.Type1 (C.T2Name (C.Name n) Nothing) Nothing mempty
