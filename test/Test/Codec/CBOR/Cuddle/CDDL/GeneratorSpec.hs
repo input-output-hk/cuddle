@@ -40,6 +40,12 @@ refTermExample =
     , HIRule $ "bar" =:= arr [0, a foo]
     ]
 
+bytesExample :: Huddle
+bytesExample =
+  collectFrom
+    [ HIRule $ "foo" =:= H.bstr "010203ff"
+    ]
+
 huddleShouldGenerate :: Huddle -> Term -> Expectation
 huddleShouldGenerate huddle term = do
   let g = mkStdGen 12345
@@ -56,3 +62,5 @@ spec = do
         simpleTermExample `huddleShouldGenerate` C.TInt 5
       it "Custom generator works when called via reference" $
         refTermExample `huddleShouldGenerate` C.TInt 5
+      it "Bytes are generated correctly" $
+        bytesExample `huddleShouldGenerate` C.TBytes "\x01\x02\x03\xff"

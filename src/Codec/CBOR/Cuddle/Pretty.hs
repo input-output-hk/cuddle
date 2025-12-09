@@ -32,6 +32,7 @@ import Codec.CBOR.Cuddle.Pretty.Columnar (
   singletonRow,
  )
 import Codec.CBOR.Cuddle.Pretty.Utils (renderedLen, softspace)
+import Data.ByteString.Base16 qualified as B16
 import Data.ByteString.Char8 qualified as BS
 import Data.Default.Class (Default)
 import Data.Foldable (Foldable (..))
@@ -252,6 +253,6 @@ instance Pretty ValueVariant where
   pretty (VFloat32 i) = pretty i
   pretty (VFloat64 i) = pretty i
   pretty (VText t) = enclose "\"" "\"" $ pretty t
-  pretty (VBytes b) = fromString $ "h" <> "'" <> BS.unpack b <> "'"
+  pretty (VBytes b) = fromString $ "h" <> "'" <> BS.unpack (B16.encode b) <> "'"
   pretty (VBool True) = "true"
   pretty (VBool False) = "false"

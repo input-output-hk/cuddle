@@ -112,6 +112,7 @@ import Codec.CBOR.Cuddle.Comments qualified as C
 import Control.Monad (when)
 import Control.Monad.State (MonadState (get), State, execState, modify)
 import Data.ByteString (ByteString)
+import Data.ByteString.Base16 qualified as Base16
 import Data.Default.Class (Default (..))
 import Data.Function (on)
 import Data.Generics.Product (field, getField)
@@ -431,7 +432,9 @@ int :: Integer -> Literal
 int = inferInteger
 
 bstr :: ByteString -> Literal
-bstr x = Literal (LBytes x) mempty
+bstr x = case Base16.decode x of
+  Right bs -> Literal (LBytes bs) mempty
+  Left e -> error $ "`bstr` expects a hex string, but received " <> show x <> " instead\n" <> e
 
 text :: T.Text -> Literal
 text x = Literal (LText x) mempty
