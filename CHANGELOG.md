@@ -2,8 +2,22 @@
 
 ## 1.1.0.0
 
+* Changed `T2Ref` to take a `Rule` instead of `Named Type0`
+* Add `GroupDef`, `HIGroup` constructor now expects a `GroupDef` instead of `Named Group`
+* Changed the following type synonyms to proper datatypes:
+  - `GRuleDef` 
+  - `GRuleCall`
+* Removed `Codec.CBOR.Cuddle.Huddle.Optics`
+* Changed the `comment` to take a `Comment` argument instead of `Text`
+* Changed the following functions to take a `Name` instead of `Text`:
+  - `(=:=)`
+  - `(=:~)`
+  - `(=::=)`
+  - `unsafeIncludeFromHuddle`
+* Changed the type of `name` field in `Named` to `Name`
+* Remove the description field from `Named`
+* Renamed the `name` field to `unName` in `Name`
 * Add `HasName`
-* Remove `HasComment` instance from `Named`
 * Add `bool` to `Huddle` module
 * Removed most `Show` instances from `Huddle` as they were unlawful
 * Added `ctrTerm` and `ctrResult` field accessors to `CBORTermResult`
