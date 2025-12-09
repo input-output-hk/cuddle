@@ -85,7 +85,7 @@ module Codec.CBOR.Cuddle.Huddle (
   -- * Generics
   GRef,
   GRuleDef (..),
-  GRuleCall,
+  GRuleCall (..),
   binding,
   binding2,
   callToDef,
@@ -361,7 +361,7 @@ data Type2
   | T2Map Map
   | T2Array Array
   | T2Tagged (Tagged Type0)
-  | T2Ref (Named Type0)
+  | T2Ref Rule
   | T2Group (Named Group)
   | -- | Call to a generic rule, binding arguments
     T2Generic GRuleCall
@@ -656,7 +656,7 @@ class IsType0 a where
   toType0 :: a -> Type0
 
 instance IsType0 Rule where
-  toType0 = NoChoice . T2Ref . ruleDefinition
+  toType0 = NoChoice . T2Ref
 
 instance IsType0 (Choice Type2) where
   toType0 = id
@@ -833,7 +833,7 @@ instance IsChoosable Type2 Type2 where
   toChoice = NoChoice
 
 instance IsChoosable Rule Type2 where
-  toChoice = toChoice . T2Ref . ruleDefinition
+  toChoice = toChoice . T2Ref
 
 instance IsChoosable GRuleCall Type2 where
   toChoice = toChoice . T2Generic
@@ -985,12 +985,18 @@ data GRule a = GRule
   , body :: Type0
   }
 
-type GRuleCall = Named (GRule Type2)
+data GRuleCall = GRuleCall
+  { grcBody :: Named (GRule Type2)
+  , grcExtra :: XRule HuddleStage
+  }
 
-newtype GRuleDef = GRuleDef {unGRuleDef :: Named (GRule GRef)}
+data GRuleDef = GRuleDef
+  { grdBody :: Named (GRule GRef)
+  , grdExtra :: XRule HuddleStage
+  }
 
 instance HasName GRuleDef where
-  getName = getName . unGRuleDef
+  getName = getName . grdBody
 
 callToDef :: GRule Type2 -> GRule GRef
 callToDef gr = gr {args = refs}
@@ -1007,14 +1013,17 @@ callToDef gr = gr {args = refs}
 -- | Bind a single variable into a generic call
 binding :: IsType0 t0 => (GRef -> Rule) -> t0 -> GRuleCall
 binding fRule t0 =
-  Named
-    (name $ ruleDefinition rule)
-    GRule
-      { args = t2 NE.:| []
-      , body = getField @"value" $ ruleDefinition rule
-      }
+  GRuleCall
+    ( Named
+        (name ruleDefinition)
+        GRule
+          { args = t2 NE.:| []
+          , body = getField @"value" ruleDefinition
+          }
+    )
+    ruleExtra
   where
-    rule = fRule (freshName 0)
+    Rule {..} = fRule (freshName 0)
     t2 = case toType0 t0 of
       NoChoice x -> x
       _ -> error "Cannot use a choice of types as a generic argument"
@@ -1022,14 +1031,17 @@ binding fRule t0 =
 -- | Bind two variables as a generic call
 binding2 :: (IsType0 t0, IsType0 t1) => (GRef -> GRef -> Rule) -> t0 -> t1 -> GRuleCall
 binding2 fRule t0 t1 =
-  Named
-    (name $ ruleDefinition rule)
-    GRule
-      { args = t02 NE.:| [t12]
-      , body = getField @"value" $ ruleDefinition rule
-      }
+  GRuleCall
+    ( Named
+        (name ruleDefinition)
+        GRule
+          { args = t02 NE.:| [t12]
+          , body = getField @"value" ruleDefinition
+          }
+    )
+    ruleExtra
   where
-    rule = fRule (freshName 0) (freshName 1)
+    Rule {..} = fRule (freshName 0) (freshName 1)
     t02 = case toType0 t0 of
       NoChoice x -> x
       _ -> error "Cannot use a choice of types as a generic argument"
@@ -1048,7 +1060,7 @@ hiRule _ = []
 instance HasName HuddleItem where
   getName (HIRule (Rule (Named n _) _)) = n
   getName (HIGroup (GroupDef (Named n _) _)) = n
-  getName (HIGRule (GRuleDef (Named n _))) = n
+  getName (HIGRule (GRuleDef (Named n _) _)) = n
 
 -- | Collect all rules starting from a given point. This will also insert a
 --   single pseudo-rule as the first element which references the specified
@@ -1067,7 +1079,7 @@ collectFrom topRs =
         }
     goHuddleItem (HIRule r) = goRule r
     goHuddleItem (HIGroup g) = goNamedGroup g
-    goHuddleItem (HIGRule (GRuleDef (Named _ (GRule _ t0)))) = goT0 t0
+    goHuddleItem (HIGRule (GRuleDef (Named _ (GRule _ t0)) _)) = goT0 t0
     goRule :: Rule -> State (OMap Name HuddleItem) ()
     goRule r@(Rule (Named n t0) _) = do
       items <- get
@@ -1077,15 +1089,15 @@ collectFrom topRs =
     goChoice f (NoChoice x) = f x
     goChoice f (ChoiceOf x xs) = f x >> goChoice f xs
     goT0 = goChoice goT2
-    goNamedGroup (GroupDef r@(Named n g) extra) = do
+    goNamedGroup gd@(GroupDef (Named n g) _) = do
       items <- get
       when (OMap.notMember n items) $ do
-        modify (OMap.|> (n, HIGroup (GroupDef r extra)))
+        modify (OMap.|> (n, HIGroup gd))
         goGroup g
-    goGRule r@(Named n g) = do
+    goGRule (GRuleCall r@(Named n g) extra) = do
       items <- get
       when (OMap.notMember n items) $ do
-        modify (OMap.|> (n, HIGRule $ GRuleDef (fmap callToDef r)))
+        modify (OMap.|> (n, HIGRule $ GRuleDef (fmap callToDef r) extra))
         goT0 (body g)
       -- Note that the parameters here may be different, so this doesn't live
       -- under the guard
@@ -1094,7 +1106,7 @@ collectFrom topRs =
     goT2 (T2Map m) = goChoice (mapM_ goMapEntry . unMapChoice) m
     goT2 (T2Array m) = goChoice (mapM_ goArrayEntry . unArrayChoice) m
     goT2 (T2Tagged (Tagged _ t0)) = goT0 t0
-    goT2 (T2Ref n) = goRule (Rule n $ HuddleXRule mempty Nothing)
+    goT2 (T2Ref r) = goRule r
     goT2 (T2Group r) = goNamedGroup $ GroupDef r def
     goT2 (T2Generic x) = goGRule x
     goT2 (T2Constrained (Constrained c _ refs)) =
@@ -1236,7 +1248,11 @@ toCDDL' HuddleConfig {..} hdl =
       T2Array x -> C.Type1 (C.T2Array $ arrayToCDDLGroup x) Nothing mempty
       T2Tagged (Tagged mmin x) ->
         C.Type1 (C.T2Tag mmin $ toCDDLType0 x) Nothing mempty
-      T2Ref (Named n _) -> C.Type1 (C.T2Name n Nothing) Nothing mempty
+      T2Ref (Rule (Named n _) _) ->
+        C.Type1
+          (C.T2Name n Nothing)
+          Nothing
+          mempty
       T2Group (Named n _) -> C.Type1 (C.T2Name n Nothing) Nothing mempty
       T2Generic g -> C.Type1 (toGenericCall g) Nothing mempty
       T2GenericRef (GRef n) -> C.Type1 (C.T2Name (C.Name n) Nothing) Nothing mempty
@@ -1312,13 +1328,13 @@ toCDDL' HuddleConfig {..} hdl =
         extra
 
     toGenericCall :: GRuleCall -> C.Type2 HuddleStage
-    toGenericCall (Named n gr) =
+    toGenericCall (GRuleCall (Named n gr) _) =
       C.T2Name
         n
         (Just . C.GenericArg $ fmap toCDDLType1 (args gr))
 
     toGenRuleDef :: GRuleDef -> C.Rule HuddleStage
-    toGenRuleDef (GRuleDef (Named n gr)) =
+    toGenRuleDef (GRuleDef (Named n gr) extra) =
       C.Rule
         n
         (Just gps)
@@ -1327,7 +1343,7 @@ toCDDL' HuddleConfig {..} hdl =
             . C.Type0
             $ toCDDLType1 <$> choiceToNE (body gr)
         )
-        def
+        extra
       where
         gps =
           C.GenericParameters $
