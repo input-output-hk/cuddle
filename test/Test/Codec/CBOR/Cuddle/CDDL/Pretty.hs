@@ -22,7 +22,7 @@ import Codec.CBOR.Cuddle.CDDL (
   ValueVariant (..),
   value,
  )
-import Codec.CBOR.Cuddle.Huddle (HuddleItem (..), a, (<+), (=:=), (=:~))
+import Codec.CBOR.Cuddle.Huddle (HuddleItem (..), a, bstr, (<+), (=:=), (=:~))
 import Codec.CBOR.Cuddle.Huddle qualified as H
 import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
 import Codec.CBOR.Cuddle.Pretty (PrettyStage, XRule (..))
@@ -222,6 +222,10 @@ unitSpec = describe "HUnit" $ do
           [ HIRule $ H.comment "comment" $ "a" =:= b
           ]
             `huddlePrettyPrintsTo` "; comment\na = b\n\n; this is rule 'b'\nb = \"bee\"\n"
+      it "bstr expects hex, not bytes" $
+        [ HIRule $ "a" =:= bstr "010200ff"
+        ]
+          `huddlePrettyPrintsTo` "a = h'010200ff'\n"
     describe "Generic rule" $ do
       it "comment and generic reference" $
         let

@@ -184,6 +184,8 @@ type2Spec = describe "type2" $ do
       parse pType2 "" "123" `shouldParse` T2Value (value $ VUInt 123)
       parse pType2 "" "true" `shouldParse` T2Value (value $ VBool True)
       parse pType2 "" "false" `shouldParse` T2Value (value $ VBool False)
+      parse pType2 "" "h'0042ff'"
+        `shouldParse` T2Value (value $ VBytes "\x00\x42\xff")
   describe "Map" $ do
     it "Parses a basic group" $
       parse pType2 "" "{ int => string }"
