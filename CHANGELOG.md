@@ -2,6 +2,8 @@
 
 ## 1.1.0.0
 
+* Change the type of field of `T2Group` to `GroupDef`
+* Remove `Named` from exports
 * Changed `T2Ref` to take a `Rule` instead of `Named Type0`
 * Add `GroupDef`, `HIGroup` constructor now expects a `GroupDef` instead of `Named Group`
 * Changed the following type synonyms to proper datatypes:
