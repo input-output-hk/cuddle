@@ -192,9 +192,6 @@ instance HasComment GroupDef where
 instance HasName GroupDef where
   getName = getName . gdNamed
 
-instance IsType0 GroupDef where
-  toType0 = toType0 . gdNamed
-
 data HuddleItem
   = HIRule Rule
   | HIGRule GRuleDef
@@ -362,7 +359,7 @@ data Type2
   | T2Array Array
   | T2Tagged (Tagged Type0)
   | T2Ref Rule
-  | T2Group (Named Group)
+  | T2Group GroupDef
   | -- | Call to a generic rule, binding arguments
     T2Generic GRuleCall
   | -- | Reference to a generic parameter within the body of the definition
@@ -702,7 +699,7 @@ instance IsType0 Double where
 instance IsType0 (Value a) where
   toType0 = NoChoice . T2Constrained . unconstrained
 
-instance IsType0 (Named Group) where
+instance IsType0 GroupDef where
   toType0 = NoChoice . T2Group
 
 instance IsType0 GRuleCall where
@@ -716,7 +713,7 @@ instance IsType0 a => IsType0 (Tagged a) where
 
 instance IsType0 HuddleItem where
   toType0 (HIRule r) = toType0 r
-  toType0 (HIGroup (GroupDef g _)) = toType0 g
+  toType0 (HIGroup g) = toType0 g
   toType0 (HIGRule g) =
     error $
       "Attempt to reference generic rule from HuddleItem not supported: "
@@ -856,7 +853,7 @@ instance IsChoosable Literal Type2 where
 instance IsChoosable (Value a) Type2 where
   toChoice = toChoice . T2Constrained . unconstrained
 
-instance IsChoosable (Named Group) Type2 where
+instance IsChoosable GroupDef Type2 where
   toChoice = toChoice . T2Group
 
 instance IsChoosable (Seal Array) Type2 where
@@ -1107,7 +1104,7 @@ collectFrom topRs =
     goT2 (T2Array m) = goChoice (mapM_ goArrayEntry . unArrayChoice) m
     goT2 (T2Tagged (Tagged _ t0)) = goT0 t0
     goT2 (T2Ref r) = goRule r
-    goT2 (T2Group r) = goNamedGroup $ GroupDef r def
+    goT2 (T2Group r) = goNamedGroup r
     goT2 (T2Generic x) = goGRule x
     goT2 (T2Constrained (Constrained c _ refs)) =
       ( case c of
@@ -1249,7 +1246,7 @@ toCDDL' HuddleConfig {..} hdl =
       T2Tagged (Tagged mmin x) ->
         C.Type1 (C.T2Tag mmin $ toCDDLType0 x) Nothing mempty
       T2Ref (Rule (Named n _) _) -> C.Type1 (C.T2Name n Nothing) Nothing mempty
-      T2Group (Named n _) -> C.Type1 (C.T2Name n Nothing) Nothing mempty
+      T2Group (GroupDef (Named n _) _) -> C.Type1 (C.T2Name n Nothing) Nothing mempty
       T2Generic g -> C.Type1 (toGenericCall g) Nothing mempty
       T2GenericRef (GRef n) -> C.Type1 (C.T2Name (C.Name n) Nothing) Nothing mempty
 

@@ -222,6 +222,7 @@ unitSpec = describe "HUnit" $ do
           [ HIRule $ H.comment "comment" $ "a" =:= b
           ]
             `huddlePrettyPrintsTo` "; comment\na = b\n\n; this is rule 'b'\nb = \"bee\"\n"
+    describe "Generic rule" $ do
       it "comment and generic reference" $
         let
           b :: H.IsType0 a => a -> H.GRuleCall
@@ -237,3 +238,10 @@ unitSpec = describe "HUnit" $ do
       it "simple pair with comment" $
         [HIGroup $ H.comment "comment" $ "a" =:~ [a $ H.bool True, a $ H.int 3]]
           `huddlePrettyPrintsTo` "; comment\na = (true, 3)\n"
+      it "comment and reference" $
+        let
+          b = H.comment "bar" $ "b" =:~ [a $ H.int 2, a $ H.text "bee"]
+         in
+          [ HIGroup . H.comment "foo" $ "a" =:~ [a $ H.bool True, a b]
+          ]
+            `huddlePrettyPrintsTo` "; foo\na = (true, b)\n\n; bar\nb = (2, \"bee\")\n"
