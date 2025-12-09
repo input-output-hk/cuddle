@@ -66,7 +66,7 @@ class Includable a where
 
 instance Includable Rule where
   include r@(Rule x _) =
-    modify (field @"items" %~ (OMap.|> (name x, HIRule r)))
+    modify (field @"items" %~ (OMap.|> (getName x, HIRule r)))
       >> pure r
 
 instance Includable GroupDef where

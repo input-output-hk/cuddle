@@ -21,7 +21,6 @@ module Codec.CBOR.Cuddle.Huddle (
   huddleAugment,
   Rule (..),
   GroupDef (..),
-  Named (..),
   IsType0 (..),
   Value (..),
 
