@@ -6,6 +6,7 @@
 
 module Codec.CBOR.Cuddle.CBOR.Validator (
   validateCBOR,
+  isValid,
   CDDLResult (..),
   CBORTermResult (..),
   ValidatorStage,
@@ -28,7 +29,6 @@ import Data.Maybe
 import Data.Text qualified as T
 import Data.Text.Lazy qualified as TL
 import Data.Word
-import Debug.Trace (trace, traceShow)
 import GHC.Float
 import GHC.Stack (HasCallStack)
 import Text.Regex.TDFA
@@ -36,10 +36,10 @@ import Text.Regex.TDFA
 type data ValidatorStage
 
 data instance XTerm ValidatorStage = ValidatorXTerm
-  deriving (Show)
+  deriving (Show, Eq)
 
 newtype instance XXCTree ValidatorStage = VRuleRef Name
-  deriving (Show)
+  deriving (Show, Eq)
 
 instance IndexMappable CTreeRoot MonoReferenced ValidatorStage where
   mapIndex (CTreeRoot m) = CTreeRoot $ mapIndex <$> m
@@ -57,7 +57,7 @@ data CBORTermResult = CBORTermResult
   { ctrTerm :: Term
   , ctrResult :: CDDLResult
   }
-  deriving (Show)
+  deriving (Show, Eq)
 
 data CDDLResult
   = -- | The rule was valid
@@ -111,7 +111,11 @@ data CDDLResult
       String
       -- | Rule we are trying
       Rule
-  deriving (Show)
+  deriving (Show, Eq)
+
+isValid :: CBORTermResult -> Bool
+isValid (CBORTermResult _ Valid {}) = True
+isValid _ = False
 
 data ANonMatchedItem = ANonMatchedItem
   { anmiKey :: Term
@@ -120,14 +124,14 @@ data ANonMatchedItem = ANonMatchedItem
   -- ^ For all the tried rules, either the key failed or the key succeeded and
   -- the value failed
   }
-  deriving (Show)
+  deriving (Show, Eq)
 
 data AMatchedItem = AMatchedItem
   { amiKey :: Term
   , amiValue :: Term
   , amiRule :: Rule
   }
-  deriving (Show)
+  deriving (Show, Eq)
 
 --------------------------------------------------------------------------------
 -- Main entry point
@@ -683,13 +687,13 @@ validateList cddl terms rule =
         OIOneOrMore -> case validateTermInList (t : ts) ct of
           (Valid {}, leftover) -> validate leftover (Occur ct OIZeroOrMore : rs)
           (err, _) -> err
-        OIBounded _ (Just ub) | ub < 0 -> trace ("out of bounds: " <> show ub) $ ListExpansionFail rule [] []
+        OIBounded _ (Just ub) | ub < 0 -> ListExpansionFail rule [] []
         OIBounded lb ub
           | (Valid {}, leftover) <- validateTermInList (t : ts) ct ->
               validate leftover (Occur ct (decrementBounds lb ub) : rs)
           | isWithinBoundsInclusive 0 lb ub ->
               validate (t : ts) rs
-          | otherwise -> trace "foo" $ UnapplicableRule "validateList" r
+          | otherwise -> UnapplicableRule "validateList" r
       _ -> case validateTermInList (t : ts) (resolveIfRef cddl r) of
         (Valid {}, leftover) -> validate leftover rs
         (err, _) -> err
@@ -718,11 +722,11 @@ validateMap cddl terms rule =
   where
     validate :: [Rule] -> [(Term, Term)] -> [Rule] -> CDDLResult
     validate [] [] [] = Valid rule
-    validate exhausted _ [] = trace (unlines $ show <$> exhausted) $ MapExpansionFail rule [] []
+    validate _ _ [] = MapExpansionFail rule [] []
     validate [] [] (r : rs)
       | isOptional r = validate [] [] rs
       | otherwise = UnapplicableRule "validateMap" r
-    validate exhausted ((k, v) : ts) (r : rs) = case r of
+    validate exhausted kvs@((k, v) : ts) (r : rs) = case r of
       Occur ct oi -> case oi of
         OIOptional
           | (Valid {}, leftover) <- validateKVInMap ((k, v) : ts) ct
@@ -737,7 +741,7 @@ validateMap cddl terms rule =
         OIOneOrMore -> case validateKVInMap ((k, v) : ts) ct of
           (Valid {}, leftover) -> validate [] leftover (Occur ct OIZeroOrMore : exhausted <> rs)
           (err, _) -> err
-        OIBounded _ (Just ub) | 0 > ub -> traceShow ub $ MapExpansionFail rule [] []
+        OIBounded _ (Just ub) | 0 > ub -> MapExpansionFail rule [] []
         OIBounded lb ub
           | (Valid {}, leftover) <- validateKVInMap ((k, v) : ts) ct
           , not (isWithinBoundsInclusive 0 lb ub) ->
@@ -747,7 +751,7 @@ validateMap cddl terms rule =
           | otherwise -> UnapplicableRule "validateMap" r
       _ -> case validateKVInMap ((k, v) : ts) r of
         (Valid {}, leftover) -> validate [] leftover (exhausted <> rs)
-        (err, _) -> err
+        _ -> validate (r : exhausted) kvs rs
     validate _ _ _ = error "Impossible happened"
 
     validateKVInMap ((tk, tv) : ts) (KV k v _) = case (validateTerm cddl tk k, validateTerm cddl tv v) of
