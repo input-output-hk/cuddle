@@ -1,5 +1,9 @@
 # Changelog for `cuddle`
 
+## 1.1.1.0
+
+* Add `Eq` instance to `XTerm ValidatorStage`, `XXCTree ValidatorStage` and `CBORTermResult`
+
 ## 1.1.0.0
 
 * Change the type of field of `T2Group` to `GroupDef`

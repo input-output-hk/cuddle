@@ -48,7 +48,6 @@ import Paths_cuddle (getDataFileName)
 import Test.Hspec (
   Spec,
   describe,
-  it,
   runIO,
   shouldSatisfy,
  )
@@ -56,11 +55,12 @@ import Test.Hspec.QuickCheck
 import Test.QuickCheck (
   Arbitrary (..),
   Gen,
-  Positive (..),
+  NonNegative (..),
   counterexample,
   elements,
   forAll,
   listOf,
+  listOf1,
   noShrinking,
   oneof,
   shuffle,
@@ -115,6 +115,52 @@ huddleMap =
             ]
     ]
 
+huddleArray :: Huddle
+huddleArray =
+  collectFrom
+    [ HIRule $
+        "a"
+          =:= arr
+            [ 0 <+ a VBool
+            , 1 <+ a VInt
+            , opt $ a VText
+            , a VUInt
+            ]
+    ]
+
+genHuddleArrayRequiredTerms :: Gen [Term]
+genHuddleArrayRequiredTerms = do
+  ints <- listOf1 $ TInt <$> arbitrary
+  text <-
+    oneof
+      [ (: []) <$> (genStringTerm . T.pack =<< arbitrary)
+      , pure []
+      ]
+  lastInt <- TInt . getNonNegative <$> arbitrary
+  pure $ ints <> text <> [lastInt]
+
+genHuddleArrayTerms :: Gen [Term]
+genHuddleArrayTerms = do
+  bools <- listOf $ TBool <$> arbitrary
+  required <- genHuddleArrayRequiredTerms
+  pure $ bools <> required
+
+genHuddleArray :: Gen Term
+genHuddleArray = genHuddleArrayTerms >>= genArrayTerm
+
+genBadArrayReversed :: Gen Term
+genBadArrayReversed = genHuddleArrayTerms >>= genArrayTerm . reverse . (TBool True :)
+
+genBadArrayMissingLastInt :: Gen Term
+genBadArrayMissingLastInt =
+  genHuddleArrayTerms >>= genArrayTerm . reverse . dropWhile isNonNegativeInt . reverse
+  where
+    isNonNegativeInt (TInt x) | x >= 0 = True
+    isNonNegativeInt _ = False
+
+genArrayTerm :: [Term] -> Gen Term
+genArrayTerm xs = elements [TList xs, TListI xs]
+
 genMapTerm :: [(Term, Term)] -> Gen Term
 genMapTerm x = elements [TMap x, TMapI x]
 
@@ -124,7 +170,7 @@ genStringTerm x = elements [TString x, TStringI (LT.fromStrict x)]
 genFullMap :: Gen Term
 genFullMap = do
   field1 <- do
-    es <- listOf $ TInt . getPositive <$> arbitrary
+    es <- listOf $ TInt . getNonNegative <$> arbitrary
     pure (TInt 1, TList es)
   lField2 <-
     oneof
@@ -170,8 +216,16 @@ spec = describe "Validator" $ do
     describe "Positive" $ do
       prop "Validates a full map" . forAll genFullMap $ \cbor ->
         validateHuddle cbor huddleMap "a" `shouldSatisfy` isValid
+      prop "Validates array" . forAll genHuddleArray $ \cbor ->
+        validateHuddle cbor huddleArray "a" `shouldSatisfy` isValid
     describe "Negative" $ do
-      it "Fails to validate a map with an unexpected index"
+      prop "Fails to validate a map with an unexpected index"
         . forAll genBadMapInvalidIndex
         $ \cbor ->
           validateHuddle cbor huddleMap "a" `shouldSatisfy` not . isValid
+      prop "Fails to validate reversed array" . forAll genBadArrayReversed $ \cbor ->
+        validateHuddle cbor huddleArray "a" `shouldSatisfy` not . isValid
+      prop "Fails to validate array with missing non-negative int at the end"
+        . forAll genBadArrayMissingLastInt
+        $ \cbor ->
+          validateHuddle cbor huddleArray "a" `shouldSatisfy` not . isValid
