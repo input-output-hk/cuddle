@@ -1,6 +1,6 @@
 cabal-version: 3.4
 name: cuddle
-version: 1.1.0.0
+version: 1.1.1.0
 synopsis: CDDL Generator and test utilities
 description:
   Cuddle is a library for generating and manipulating [CDDL](https://datatracker.ietf.org/doc/html/rfc8610).
@@ -133,6 +133,7 @@ test-suite cuddle-test
   default-language: GHC2021
   autogen-modules:
     Paths_cuddle
+
   other-modules:
     Paths_cuddle
     Test.Codec.CBOR.Cuddle.CDDL.Examples
