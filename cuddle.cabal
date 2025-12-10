@@ -131,6 +131,8 @@ executable cuddle
 test-suite cuddle-test
   import: warnings
   default-language: GHC2021
+  autogen-modules:
+    Paths_cuddle
   other-modules:
     Paths_cuddle
     Test.Codec.CBOR.Cuddle.CDDL.Examples
