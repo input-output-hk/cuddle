@@ -738,9 +738,11 @@ validateMap cddl terms rule =
           , res@Valid {} <- validate [] leftover (r : exhausted <> rs) ->
               res
           | otherwise -> validate (r : exhausted) ((k, v) : ts) rs
-        OIOneOrMore -> case validateKVInMap ((k, v) : ts) ct of
-          (Valid {}, leftover) -> validate [] leftover (Occur ct OIZeroOrMore : exhausted <> rs)
-          (err, _) -> err
+        OIOneOrMore
+          | (Valid {}, leftover) <- validateKVInMap ((k, v) : ts) ct
+          , res@Valid {} <- validate [] leftover (Occur ct OIZeroOrMore : exhausted <> rs) ->
+              res
+          | otherwise -> validate (r : exhausted) ((k, v) : ts) rs
         OIBounded _ (Just ub) | 0 > ub -> MapExpansionFail rule [] []
         OIBounded lb ub
           | (Valid {}, leftover) <- validateKVInMap ((k, v) : ts) ct

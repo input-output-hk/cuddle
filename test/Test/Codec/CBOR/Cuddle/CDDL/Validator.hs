@@ -72,6 +72,7 @@ import Test.QuickCheck (
   oneof,
   scale,
   shuffle,
+  vectorOf,
  )
 import Test.QuickCheck.Random (mkQCGen)
 import Text.Megaparsec (runParser)
@@ -185,6 +186,29 @@ genBadArrayMissingLastInt =
     isNonNegativeInt (TInt x) | x >= 0 = True
     isNonNegativeInt _ = False
 
+huddleRangeArray :: Huddle
+huddleRangeArray =
+  collectFrom
+    [ HIRule $
+        "a"
+          =:= arr
+            [ opt $ a VInt
+            , 2 <+ a VInt +> 3
+            , a VBool +> 3
+            , 3 <+ a VText
+            ]
+    ]
+
+genHuddleRangeArray :: Gen Term
+genHuddleRangeArray = do
+  numInts <- choose (3, 4)
+  ints <- vectorOf numInts $ TInt <$> arbitrary
+  numBools <- choose (0, 3)
+  bools <- vectorOf numBools $ TBool <$> arbitrary
+  numTexts <- choose (3, 10)
+  texts <- vectorOf numTexts $ genStringTerm . T.pack =<< arbitrary
+  genArrayTerm $ ints <> bools <> texts
+
 genArrayTerm :: [Term] -> Gen Term
 genArrayTerm xs = elements [TList xs, TListI xs]
 
@@ -254,15 +278,16 @@ spec = describe "Validator" $ do
     genAndValidateFromFile "example/cddl-files/validator.cddl"
   describe "Term tests" $ do
     describe "Positive" $ do
-      prop "Validates a full map" . forAll genFullMap $ \cbor -> do
-        pendingWith "Fails to validate"
+      prop "Validates a full map" . forAll genFullMap $ \cbor ->
         validateHuddle cbor huddleMap "a" `shouldSatisfy` isValid
       prop "Validates array" . forAll genHuddleArray $ \cbor ->
         validateHuddle cbor huddleArray "a" `shouldSatisfy` isValid
       prop "Validates map with correct number of range elements"
         . forAll (genHuddleRangeMap (5, 10))
-        $ \cbor -> do
+        $ \cbor ->
           validateHuddle cbor huddleRangeMap "a" `shouldSatisfy` isValid
+      prop "Validates array with ranges" . forAll genHuddleRangeArray $ \cbor ->
+        validateHuddle cbor huddleRangeArray "a" `shouldSatisfy` isValid
     describe "Negative" $ do
       prop "Fails to validate a map with an unexpected index"
         . forAll genBadMapInvalidIndex
@@ -276,9 +301,9 @@ spec = describe "Validator" $ do
           validateHuddle cbor huddleArray "a" `shouldSatisfy` not . isValid
       prop "Fails to validate map with too few range elements"
         . forAll (genHuddleRangeMap (0, 4))
-        $ \cbor -> do
+        $ \cbor ->
           validateHuddle cbor huddleRangeMap "a" `shouldSatisfy` not . isValid
       prop "Fails to validate map with too many range elements"
         . forAll (genHuddleRangeMap (11, 20))
-        $ \cbor -> do
+        $ \cbor ->
           validateHuddle cbor huddleRangeMap "a" `shouldSatisfy` not . isValid
