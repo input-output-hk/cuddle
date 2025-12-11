@@ -2,6 +2,8 @@
 
 ## 1.1.1.0
 
+* Removed traces from `Codec.CBOR.Cuddle.CBOR.Validator`
+* Add `isCBORTermResultValid`
 * Add `Eq` instance to `XTerm ValidatorStage`, `XXCTree ValidatorStage` and `CBORTermResult`
 
 ## 1.1.0.0

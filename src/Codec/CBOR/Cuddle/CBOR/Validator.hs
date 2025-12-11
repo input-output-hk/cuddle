@@ -6,7 +6,7 @@
 
 module Codec.CBOR.Cuddle.CBOR.Validator (
   validateCBOR,
-  isValid,
+  isCBORTermResultValid,
   CDDLResult (..),
   CBORTermResult (..),
   ValidatorStage,
@@ -113,9 +113,9 @@ data CDDLResult
       Rule
   deriving (Show, Eq)
 
-isValid :: CBORTermResult -> Bool
-isValid (CBORTermResult _ Valid {}) = True
-isValid _ = False
+isCBORTermResultValid :: CBORTermResult -> Bool
+isCBORTermResultValid (CBORTermResult _ Valid {}) = True
+isCBORTermResultValid _ = False
 
 data ANonMatchedItem = ANonMatchedItem
   { anmiKey :: Term
