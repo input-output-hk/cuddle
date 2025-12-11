@@ -8,7 +8,7 @@ import Codec.CBOR.Cuddle.CBOR.Gen (generateCBORTerm)
 import Codec.CBOR.Cuddle.CBOR.Validator (
   CBORTermResult (..),
   CDDLResult (..),
-  isValid,
+  isCBORTermResultValid,
   validateCBOR,
  )
 import Codec.CBOR.Cuddle.CDDL (Name (..))
@@ -279,31 +279,31 @@ spec = describe "Validator" $ do
   describe "Term tests" $ do
     describe "Positive" $ do
       prop "Validates a full map" . forAll genFullMap $ \cbor ->
-        validateHuddle cbor huddleMap "a" `shouldSatisfy` isValid
+        validateHuddle cbor huddleMap "a" `shouldSatisfy` isCBORTermResultValid
       prop "Validates array" . forAll genHuddleArray $ \cbor ->
-        validateHuddle cbor huddleArray "a" `shouldSatisfy` isValid
+        validateHuddle cbor huddleArray "a" `shouldSatisfy` isCBORTermResultValid
       prop "Validates map with correct number of range elements"
         . forAll (genHuddleRangeMap (5, 10))
         $ \cbor ->
-          validateHuddle cbor huddleRangeMap "a" `shouldSatisfy` isValid
+          validateHuddle cbor huddleRangeMap "a" `shouldSatisfy` isCBORTermResultValid
       prop "Validates array with ranges" . forAll genHuddleRangeArray $ \cbor ->
-        validateHuddle cbor huddleRangeArray "a" `shouldSatisfy` isValid
+        validateHuddle cbor huddleRangeArray "a" `shouldSatisfy` isCBORTermResultValid
     describe "Negative" $ do
       prop "Fails to validate a map with an unexpected index"
         . forAll genBadMapInvalidIndex
         $ \cbor ->
-          validateHuddle cbor huddleMap "a" `shouldSatisfy` not . isValid
+          validateHuddle cbor huddleMap "a" `shouldSatisfy` not . isCBORTermResultValid
       prop "Fails to validate reversed array" . forAll genBadArrayReversed $ \cbor ->
-        validateHuddle cbor huddleArray "a" `shouldSatisfy` not . isValid
+        validateHuddle cbor huddleArray "a" `shouldSatisfy` not . isCBORTermResultValid
       prop "Fails to validate array with missing non-negative int at the end"
         . forAll genBadArrayMissingLastInt
         $ \cbor ->
-          validateHuddle cbor huddleArray "a" `shouldSatisfy` not . isValid
+          validateHuddle cbor huddleArray "a" `shouldSatisfy` not . isCBORTermResultValid
       prop "Fails to validate map with too few range elements"
         . forAll (genHuddleRangeMap (0, 4))
         $ \cbor ->
-          validateHuddle cbor huddleRangeMap "a" `shouldSatisfy` not . isValid
+          validateHuddle cbor huddleRangeMap "a" `shouldSatisfy` not . isCBORTermResultValid
       prop "Fails to validate map with too many range elements"
         . forAll (genHuddleRangeMap (11, 20))
         $ \cbor ->
-          validateHuddle cbor huddleRangeMap "a" `shouldSatisfy` not . isValid
+          validateHuddle cbor huddleRangeMap "a" `shouldSatisfy` not . isCBORTermResultValid
