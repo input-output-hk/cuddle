@@ -712,7 +712,7 @@ validateList cddl terms rule =
 --------------------------------------------------------------------------------
 -- Maps
 
-validateMap :: CDDL -> [(Term, Term)] -> Rule -> CDDLResult
+validateMap :: HasCallStack => CDDL -> [(Term, Term)] -> Rule -> CDDLResult
 validateMap cddl terms rule =
   case resolveIfRef cddl rule of
     Postlude PTAny -> Valid rule
@@ -726,35 +726,40 @@ validateMap cddl terms rule =
     validate [] [] (r : rs)
       | isOptional r = validate [] [] rs
       | otherwise = UnapplicableRule "validateMap" r
-    validate exhausted kvs@((k, v) : ts) (r : rs) = case r of
+    validate exhausted kvs (r : rs) = case r of
       Occur ct oi -> case oi of
         OIOptional
-          | (Valid {}, leftover) <- validateKVInMap ((k, v) : ts) ct
+          | (Valid {}, leftover) <- validateKVInMap kvs ct
           , res@Valid {} <- validate [] leftover (exhausted <> rs) ->
               res
-          | otherwise -> validate (r : exhausted) ((k, v) : ts) rs
+          | otherwise -> validate (r : exhausted) kvs rs
         OIZeroOrMore
-          | (Valid {}, leftover) <- validateKVInMap ((k, v) : ts) ct
+          | (Valid {}, leftover) <- validateKVInMap kvs ct
           , res@Valid {} <- validate [] leftover (r : exhausted <> rs) ->
               res
-          | otherwise -> validate (r : exhausted) ((k, v) : ts) rs
+          | otherwise -> validate (r : exhausted) kvs rs
         OIOneOrMore
-          | (Valid {}, leftover) <- validateKVInMap ((k, v) : ts) ct
+          | (Valid {}, leftover) <- validateKVInMap kvs ct
           , res@Valid {} <- validate [] leftover (Occur ct OIZeroOrMore : exhausted <> rs) ->
               res
-          | otherwise -> validate (r : exhausted) ((k, v) : ts) rs
-        OIBounded _ (Just ub) | 0 > ub -> MapExpansionFail rule [] []
-        OIBounded lb ub
-          | (Valid {}, leftover) <- validateKVInMap ((k, v) : ts) ct
-          , not (isWithinBoundsInclusive 0 lb ub) ->
-              validate [] leftover (Occur ct (decrementBounds lb ub) : exhausted <> rs)
-          | isWithinBoundsInclusive 0 lb ub && not (isValidTerm ((k, v) : ts) ct) ->
-              validate (r : exhausted) ((k, v) : ts) rs
-          | otherwise -> UnapplicableRule "validateMap" r
-      _ -> case validateKVInMap ((k, v) : ts) r of
+          | otherwise -> validate (r : exhausted) kvs rs
+        OIBounded mlb mub
+          | Just lb <- mlb, Just ub <- mub, lb > ub -> error "Unsatisfiable range encountered"
+          | otherwise -> case compare 0 <$> mub of
+              Just EQ -> validate exhausted kvs rs
+              Just GT -> error "Unsatisfiable range encountered"
+              _
+                | (Valid {}, leftover) <- validateKVInMap kvs ct
+                , res@Valid {} <-
+                    validate
+                      []
+                      leftover
+                      (Occur ct (decrementBounds mlb mub) : exhausted <> rs) ->
+                    res
+                | otherwise -> validate (r : exhausted) kvs rs
+      _ -> case validateKVInMap kvs r of
         (Valid {}, leftover) -> validate [] leftover (exhausted <> rs)
         _ -> validate (r : exhausted) kvs rs
-    validate _ _ _ = error "Impossible happened"
 
     validateKVInMap ((tk, tv) : ts) (KV k v _) = case (validateTerm cddl tk k, validateTerm cddl tv v) of
       (CBORTermResult _ Valid {}, CBORTermResult _ x@Valid {}) -> (x, ts)
@@ -762,9 +767,6 @@ validateMap cddl terms rule =
       (CBORTermResult _ err, _) -> (err, ts)
     validateKVInMap [] _ = error "No remaining KV pairs"
     validateKVInMap _ x = error $ "Unexpected value in map: " <> show x
-    isValidTerm ts r = case validateKVInMap ts r of
-      (Valid {}, _) -> True
-      _ -> False
 
 --------------------------------------------------------------------------------
 -- Choices
