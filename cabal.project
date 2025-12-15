@@ -2,3 +2,6 @@ packages:
   .
 
 test-show-details: streaming
+
+program-options
+  ghc-options: -Werror
