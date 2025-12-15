@@ -36,7 +36,9 @@ flag example
   default: False
 
 common warnings
-  ghc-options: -Wall
+  ghc-options:
+    -Wall
+    -Werror
 
 library
   import: warnings
