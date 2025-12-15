@@ -52,7 +52,6 @@ import Paths_cuddle (getDataFileName)
 import Test.Hspec (
   Spec,
   describe,
-  pendingWith,
   runIO,
   shouldSatisfy,
  )
