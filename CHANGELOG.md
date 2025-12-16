@@ -1,5 +1,9 @@
 # Changelog for `cuddle`
 
+## 1.1.2.0
+
+* Export `Type0`
+
 ## 1.1.1.0
 
 * Removed traces from `Codec.CBOR.Cuddle.CBOR.Validator`

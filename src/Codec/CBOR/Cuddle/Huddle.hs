@@ -23,6 +23,7 @@ module Codec.CBOR.Cuddle.Huddle (
   GroupDef (..),
   IsType0 (..),
   Value (..),
+  Type0 (..),
 
   -- * AST extensions
   HuddleStage,
@@ -271,8 +272,8 @@ idx x = LiteralKey $ Literal (LInt x) mempty
 
 asKey :: IsType0 r => r -> Key
 asKey r = case toType0 r of
-  NoChoice x -> TypeKey x
-  ChoiceOf _ _ -> error "Cannot use a choice of types as a map key"
+  Type0 (NoChoice x) -> TypeKey x
+  Type0 (ChoiceOf _ _) -> error "Cannot use a choice of types as a map key"
 
 data MapEntry = MapEntry
   { key :: Key
@@ -312,7 +313,7 @@ instance Num ArrayEntry where
   fromInteger i =
     ArrayEntry
       Nothing
-      (NoChoice . T2Range . Unranged $ Literal (LInt (fromIntegral i)) mempty)
+      (Type0 . NoChoice . T2Range . Unranged $ Literal (LInt (fromIntegral i)) mempty)
       def
       mempty
   (+) = error "Cannot treat ArrayEntry as a number"
@@ -365,10 +366,10 @@ data Type2
   | -- | Reference to a generic parameter within the body of the definition
     T2GenericRef GRef
 
-type Type0 = Choice Type2
+newtype Type0 = Type0 {unType0 :: Choice Type2}
 
 instance Num Type0 where
-  fromInteger i = NoChoice . T2Range . Unranged $ Literal (LInt (fromIntegral i)) mempty
+  fromInteger i = Type0 . NoChoice . T2Range . Unranged $ Literal (LInt (fromIntegral i)) mempty
   (+) = error "Cannot treat Type0 as a number"
   (*) = error "Cannot treat Type0 as a number"
   abs = error "Cannot treat Type0 as a number"
@@ -655,63 +656,63 @@ class IsType0 a where
   toType0 :: a -> Type0
 
 instance IsType0 Rule where
-  toType0 = NoChoice . T2Ref
+  toType0 = Type0 . NoChoice . T2Ref
 
 instance IsType0 (Choice Type2) where
-  toType0 = id
+  toType0 = Type0
 
 instance IsType0 Constrained where
-  toType0 = NoChoice . T2Constrained
+  toType0 = Type0 . NoChoice . T2Constrained
 
 instance IsType0 Map where
-  toType0 = NoChoice . T2Map
+  toType0 = Type0 . NoChoice . T2Map
 
 instance IsType0 MapChoice where
-  toType0 = NoChoice . T2Map . NoChoice
+  toType0 = Type0 . NoChoice . T2Map . NoChoice
 
 instance IsType0 Array where
-  toType0 = NoChoice . T2Array
+  toType0 = Type0 . NoChoice . T2Array
 
 instance IsType0 ArrayChoice where
-  toType0 = NoChoice . T2Array . NoChoice
+  toType0 = Type0 . NoChoice . T2Array . NoChoice
 
 instance IsType0 Ranged where
-  toType0 = NoChoice . T2Range
+  toType0 = Type0 . NoChoice . T2Range
 
 instance IsType0 Literal where
-  toType0 = NoChoice . T2Range . Unranged
+  toType0 = Type0 . NoChoice . T2Range . Unranged
 
 -- We also allow going directly from primitive types to Type2
 instance IsType0 Integer where
-  toType0 = NoChoice . T2Range . Unranged . inferInteger
+  toType0 = Type0 . NoChoice . T2Range . Unranged . inferInteger
 
 instance IsType0 T.Text where
   toType0 :: T.Text -> Type0
-  toType0 x = NoChoice . T2Range . Unranged $ Literal (LText x) mempty
+  toType0 x = Type0 . NoChoice . T2Range . Unranged $ Literal (LText x) mempty
 
 instance IsType0 ByteString where
-  toType0 x = NoChoice . T2Range . Unranged $ Literal (LBytes x) mempty
+  toType0 x = Type0 . NoChoice . T2Range . Unranged $ Literal (LBytes x) mempty
 
 instance IsType0 Float where
-  toType0 x = NoChoice . T2Range . Unranged $ Literal (LFloat x) mempty
+  toType0 x = Type0 . NoChoice . T2Range . Unranged $ Literal (LFloat x) mempty
 
 instance IsType0 Double where
-  toType0 x = NoChoice . T2Range . Unranged $ Literal (LDouble x) mempty
+  toType0 x = Type0 . NoChoice . T2Range . Unranged $ Literal (LDouble x) mempty
 
 instance IsType0 (Value a) where
-  toType0 = NoChoice . T2Constrained . unconstrained
+  toType0 = Type0 . NoChoice . T2Constrained . unconstrained
 
 instance IsType0 GroupDef where
-  toType0 = NoChoice . T2Group
+  toType0 = Type0 . NoChoice . T2Group
 
 instance IsType0 GRuleCall where
-  toType0 = NoChoice . T2Generic
+  toType0 = Type0 . NoChoice . T2Generic
 
 instance IsType0 GRef where
-  toType0 = NoChoice . T2GenericRef
+  toType0 = Type0 . NoChoice . T2GenericRef
 
 instance IsType0 a => IsType0 (Tagged a) where
-  toType0 = NoChoice . T2Tagged . fmap toType0
+  toType0 = Type0 . NoChoice . T2Tagged . fmap toType0
 
 instance IsType0 HuddleItem where
   toType0 (HIRule r) = toType0 r
@@ -1024,7 +1025,7 @@ binding fRule t0 =
   where
     Rule {..} = fRule (freshName 0)
     t2 = case toType0 t0 of
-      NoChoice x -> x
+      Type0 (NoChoice x) -> x
       _ -> error "Cannot use a choice of types as a generic argument"
 
 -- | Bind two variables as a generic call
@@ -1042,10 +1043,10 @@ binding2 fRule t0 t1 =
   where
     Rule {..} = fRule (freshName 0) (freshName 1)
     t02 = case toType0 t0 of
-      NoChoice x -> x
+      Type0 (NoChoice x) -> x
       _ -> error "Cannot use a choice of types as a generic argument"
     t12 = case toType0 t1 of
-      NoChoice x -> x
+      Type0 (NoChoice x) -> x
       _ -> error "Cannot use a choice of types as a generic argument"
 
 --------------------------------------------------------------------------------
@@ -1087,7 +1088,7 @@ collectFrom topRs =
         goT0 t0
     goChoice f (NoChoice x) = f x
     goChoice f (ChoiceOf x xs) = f x >> goChoice f xs
-    goT0 = goChoice goT2
+    goT0 = goChoice goT2 . unType0
     goNamedGroup gd@(GroupDef (Named n g) _) = do
       items <- get
       when (OMap.notMember n items) $ do
@@ -1195,7 +1196,7 @@ toCDDL' HuddleConfig {..} hdl =
         comment "Pseudo-rule introduced by Cuddle to collect root elements" $
           "huddle_root_defs" =:= arr (fromList (fmap a topRs))
     toCDDLRule :: Rule -> C.Rule HuddleStage
-    toCDDLRule (Rule (Named n t0) extra) =
+    toCDDLRule (Rule (Named n (Type0 t0)) extra) =
       ( \x ->
           C.Rule n Nothing C.AssignEq x extra
       )
@@ -1258,7 +1259,7 @@ toCDDL' HuddleConfig {..} hdl =
     toMemberKey (TypeKey t) = C.MKType (toCDDLType1 t)
 
     toCDDLType0 :: Type0 -> C.Type0 HuddleStage
-    toCDDLType0 = C.Type0 . fmap toCDDLType1 . choiceToNE
+    toCDDLType0 = C.Type0 . fmap toCDDLType1 . choiceToNE . unType0
 
     arrayToCDDLGroup :: Array -> C.Group HuddleStage
     arrayToCDDLGroup xs = C.Group $ arrayChoiceToCDDL <$> choiceToNE xs
@@ -1336,7 +1337,7 @@ toCDDL' HuddleConfig {..} hdl =
         C.AssignEq
         ( C.TOGType
             . C.Type0
-            $ toCDDLType1 <$> choiceToNE (body gr)
+            $ toCDDLType1 <$> choiceToNE (unType0 $ body gr)
         )
         extra
       where
