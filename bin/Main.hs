@@ -29,6 +29,7 @@ import Prettyprinter (
   Pretty (pretty),
   defaultLayoutOptions,
   layoutPretty,
+  removeTrailingWhitespace,
  )
 import Prettyprinter.Render.Text qualified as PT
 import System.Exit (exitFailure, exitSuccess)
@@ -198,11 +199,10 @@ run (Opts cmd cddlFile) = do
               | otherwise = res
             layoutOptions = defaultLayoutOptions {layoutPageWidth = AvailablePerLine 80 1}
             formattedText =
-              PT.renderStrict . layoutPretty layoutOptions . pretty $
+              PT.renderStrict . removeTrailingWhitespace . layoutPretty layoutOptions . pretty $
                 mapIndex @_ @_ @PrettyStage defs
-            strippedText = T.unlines . fmap (T.dropWhileEnd (== ' ')) $ T.lines formattedText
            in
-            T.putStr strippedText
+            T.putStr formattedText
         Validate vOpts ->
           let
             cddl
