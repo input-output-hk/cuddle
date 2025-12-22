@@ -59,58 +59,15 @@ data CBORTermResult = CBORTermResult
   }
   deriving (Show, Eq)
 
+data ValidationTree
+  = RuleMatch Rule
+  | RuleFail Rule
+  deriving (Show, Eq)
+
 data CDDLResult
   = -- | The rule was valid
-    Valid Rule
-  | -- | All alternatives failed
-    ChoiceFail
-      -- | Rule we are trying
-      Rule
-      -- | The alternatives that arise from said rule
-      (NE.NonEmpty Rule)
-      -- | For each alternative, the result
-      (NE.NonEmpty (Rule, CDDLResult))
-  | -- | All expansions failed
-    --
-    -- An expansion is: Given a CBOR @TList@ of @N@ elements, we will expand the
-    -- rules in a list spec to match the number of items in the list.
-    ListExpansionFail
-      -- | Rule we are trying
-      Rule
-      -- | List of expansions of rules
-      [[Rule]]
-      -- | For each expansion, for each of the rules in the expansion, the result
-      [[(Rule, CBORTermResult)]]
-  | -- | All expansions failed
-    --
-    -- An expansion is: Given a CBOR @TMap@ of @N@ elements, we will expand the
-    -- rules in a map spec to match the number of items in the map.
-    MapExpansionFail
-      -- | Rule we are trying
-      Rule
-      -- | List of expansions
-      [[Rule]]
-      -- | A list of matched items @(key, value, rule)@ and the unmatched item
-      [([AMatchedItem], ANonMatchedItem)]
-  | -- | The rule was valid but the control failed
-    InvalidControl
-      -- | Control we are trying
-      Rule
-      -- | If it is a .cbor, the result of the underlying validation
-      (Maybe CBORTermResult)
-  | InvalidRule Rule
-  | -- | A tagged was invalid
-    InvalidTagged
-      -- | Rule we are trying
-      Rule
-      -- | Either the tag is wrong, or the contents are wrong
-      (Either Word64 CBORTermResult)
-  | -- | The rule we are trying is not applicable to the CBOR term
-    UnapplicableRule
-      -- | Extra information
-      String
-      -- | Rule we are trying
-      Rule
+    Valid ValidationTree
+  | Invalid ValidationTree
   deriving (Show, Eq)
 
 isCBORTermResultValid :: CBORTermResult -> Bool
@@ -202,9 +159,9 @@ validateInteger cddl i rule =
     -- and they are both bigints?
 
     -- a = any
-    Postlude PTAny -> Valid rule
+    Postlude PTAny -> Valid $ RuleMatch rule
     -- a = int
-    Postlude PTInt -> Valid rule
+    Postlude PTInt -> Valid $ RuleMatch rule
     -- a = uint
     Postlude PTUInt -> check (i >= 0) rule
     -- a = nint
@@ -237,18 +194,18 @@ validateInteger cddl i rule =
     -- a = &(x, y, z)
     Enum g ->
       case resolveIfRef cddl g of
-        Group g' -> replaceRule (validateInteger cddl i (Choice (NE.fromList g'))) rule
+        Group g' -> validateInteger cddl i (Choice (NE.fromList g'))
         _ -> error "Not yet implemented"
     -- a = x: y
     -- Note KV cannot appear on its own, but we will use this when validating
     -- lists.
-    KV _ v _ -> replaceRule (validateInteger cddl i v) rule
+    KV _ v _ -> validateInteger cddl i v
     Tag 2 x -> validateBigInt x
     Tag 3 x -> validateBigInt x
-    _ -> UnapplicableRule "validateInteger" rule
+    _ -> Invalid $ RuleFail rule
   where
     validateBigInt x = case resolveIfRef cddl x of
-      Postlude PTBytes -> Valid rule
+      Postlude PTBytes -> Valid $ RuleMatch rule
       Control op tgt@(Postlude PTBytes) ctrl ->
         ctrlDispatch (validateBytes cddl bs) op tgt ctrl (controlBytes cddl bs) rule
         where
@@ -329,9 +286,9 @@ validateHalf :: HasCallStack => CDDL -> Float -> Rule -> CDDLResult
 validateHalf cddl f rule =
   case resolveIfRef cddl rule of
     -- a = any
-    Postlude PTAny -> Valid rule
+    Postlude PTAny -> Valid $ RuleMatch rule
     -- a = float16
-    Postlude PTHalf -> Valid rule
+    Postlude PTHalf -> Valid $ RuleMatch rule
     -- a = 0.5
     Literal (Value (VFloat16 f') _) -> check (f == f') rule
     -- a = foo / bar
@@ -346,7 +303,7 @@ validateHalf cddl f rule =
             _ -> error "Not yet implemented"
         )
         rule
-    _ -> UnapplicableRule "validateHalf" rule
+    _ -> Invalid $ RuleFail rule
 
 -- | Controls for `Float16`
 controlHalf :: HasCallStack => CDDL -> Float -> CtlOp -> Rule -> Either (Maybe CBORTermResult) ()
@@ -366,9 +323,9 @@ validateFloat cddl f rule =
   ($ rule) $ do
     case resolveIfRef cddl rule of
       -- a = any
-      Postlude PTAny -> Valid
+      Postlude PTAny -> Valid . RuleMatch
       -- a = float32
-      Postlude PTFloat -> Valid
+      Postlude PTFloat -> Valid . RuleMatch
       -- a = 0.000000005
       -- TODO: it is unclear if smaller floats should also validate
       Literal (Value (VFloat32 f') _) -> check $ f == f'
@@ -383,7 +340,7 @@ validateFloat cddl f rule =
           (Literal (Value (VFloat16 n) _), Literal (Value (VFloat16 m) _)) -> n <= f && range bound f m
           (Literal (Value (VFloat32 n) _), Literal (Value (VFloat32 m) _)) -> n <= f && range bound f m
           _ -> error "Not yet implemented"
-      _ -> UnapplicableRule "validateFloat"
+      _ -> Invalid . RuleFail
 
 -- | Controls for `Float32`
 controlFloat :: HasCallStack => CDDL -> Float -> CtlOp -> Rule -> Either (Maybe CBORTermResult) ()
@@ -405,9 +362,9 @@ validateDouble cddl f rule =
   ($ rule) $ do
     case resolveIfRef cddl rule of
       -- a = any
-      Postlude PTAny -> Valid
+      Postlude PTAny -> Valid . RuleMatch
       -- a = float64
-      Postlude PTDouble -> Valid
+      Postlude PTDouble -> Valid . RuleMatch
       -- a = 0.0000000000000000000000000000000000000000000005
       -- TODO: it is unclear if smaller floats should also validate
       Literal (Value (VFloat64 f') _) -> check $ f == f'
@@ -423,7 +380,7 @@ validateDouble cddl f rule =
           (Literal (Value (VFloat32 (float2Double -> n)) _), Literal (Value (VFloat32 (float2Double -> m)) _)) -> n <= f && range bound f m
           (Literal (Value (VFloat64 n) _), Literal (Value (VFloat64 m) _)) -> n <= f && range bound f m
           _ -> error "Not yet implemented"
-      _ -> UnapplicableRule "validateDouble"
+      _ -> Invalid . RuleFail
 
 -- | Controls for `Float64`
 controlDouble :: HasCallStack => CDDL -> Double -> CtlOp -> Rule -> Either (Maybe CBORTermResult) ()
@@ -450,16 +407,16 @@ validateBool cddl b rule =
   ($ rule) $ do
     case resolveIfRef cddl rule of
       -- a = any
-      Postlude PTAny -> Valid
+      Postlude PTAny -> Valid . RuleMatch
       -- a = bool
-      Postlude PTBool -> Valid
+      Postlude PTBool -> Valid . RuleMatch
       -- a = true
       Literal (Value (VBool b') _) -> check $ b == b'
       -- a = foo .ctrl bar
       Control op tgt ctrl -> ctrlDispatch (validateBool cddl b) op tgt ctrl (controlBool cddl b)
       -- a = foo / bar
       Choice opts -> validateChoice (validateBool cddl b) opts
-      _ -> UnapplicableRule "validateBool"
+      _ -> Invalid . RuleFail
 
 -- | Controls for `Bool`
 controlBool :: HasCallStack => CDDL -> Bool -> CtlOp -> Rule -> Either (Maybe CBORTermResult) ()
@@ -482,12 +439,12 @@ validateSimple cddl 23 rule =
   do
     case resolveIfRef cddl rule of
       -- a = any
-      Postlude PTAny -> Valid rule
+      Postlude PTAny -> Valid $ RuleMatch rule
       -- a = undefined
-      Postlude PTUndefined -> Valid rule
+      Postlude PTUndefined -> Valid $ RuleMatch rule
       -- a = foo / bar
       Choice opts -> validateChoice (validateSimple cddl 23) opts rule
-      _ -> UnapplicableRule "validateSimple" rule
+      _ -> Invalid $ RuleFail rule
 validateSimple _ n _ = error $ "Found simple different to 23! please report this somewhere! Found: " <> show n
 
 --------------------------------------------------------------------------------
@@ -498,11 +455,11 @@ validateNull :: CDDL -> Rule -> CDDLResult
 validateNull cddl rule =
   case resolveIfRef cddl rule of
     -- a = any
-    Postlude PTAny -> Valid rule
+    Postlude PTAny -> Valid $ RuleMatch rule
     -- a = nil
-    Postlude PTNil -> Valid rule
+    Postlude PTNil -> Valid $ RuleMatch rule
     Choice opts -> validateChoice (validateNull cddl) opts rule
-    _ -> UnapplicableRule "validateNull" rule
+    _ -> Invalid $ RuleFail rule
 
 --------------------------------------------------------------------------------
 -- Bytes
@@ -512,16 +469,16 @@ validateBytes :: CDDL -> BS.ByteString -> Rule -> CDDLResult
 validateBytes cddl bs rule =
   case resolveIfRef cddl rule of
     -- a = any
-    Postlude PTAny -> Valid rule
+    Postlude PTAny -> Valid $ RuleMatch rule
     -- a = bytes
-    Postlude PTBytes -> Valid rule
+    Postlude PTBytes -> Valid $ RuleMatch rule
     -- a = h'123456'
     Literal (Value (VBytes bs') _) -> check (bs == bs') rule
     -- a = foo .ctrl bar
     Control op tgt ctrl -> ctrlDispatch (validateBytes cddl bs) op tgt ctrl (controlBytes cddl bs) rule
     -- a = foo / bar
     Choice opts -> validateChoice (validateBytes cddl bs) opts rule
-    _ -> UnapplicableRule "validateBytes" rule
+    _ -> Invalid $ RuleFail rule
 
 -- | Controls for byte strings
 controlBytes ::
@@ -589,16 +546,16 @@ validateText :: CDDL -> T.Text -> Rule -> CDDLResult
 validateText cddl txt rule =
   case resolveIfRef cddl rule of
     -- a = any
-    Postlude PTAny -> Valid rule
+    Postlude PTAny -> Valid $ RuleMatch rule
     -- a = text
-    Postlude PTText -> Valid rule
+    Postlude PTText -> Valid $ RuleMatch rule
     -- a = "foo"
     Literal (Value (VText txt') _) -> check (txt == txt') rule
     -- a = foo .ctrl bar
     Control op tgt ctrl -> ctrlDispatch (validateText cddl txt) op tgt ctrl (controlText cddl txt) rule
     -- a = foo / bar
     Choice opts -> validateChoice (validateText cddl txt) opts rule
-    _ -> UnapplicableRule "validateText" rule
+    _ -> Invalid $ RuleFail rule
 
 -- | Controls for text strings
 controlText :: HasCallStack => CDDL -> T.Text -> CtlOp -> Rule -> Either (Maybe CBORTermResult) ()
@@ -627,16 +584,16 @@ controlText _ _ _ _ = error "Not yet implemented"
 validateTagged :: CDDL -> Word64 -> Term -> Rule -> CDDLResult
 validateTagged cddl tag term rule =
   case resolveIfRef cddl rule of
-    Postlude PTAny -> Valid rule
+    Postlude PTAny -> Valid $ RuleMatch rule
     Tag tag' rule' ->
       -- If the tag does not match, this is a direct fail
       if tag == tag'
         then case validateTerm cddl term rule' of
-          CBORTermResult _ (Valid _) -> Valid rule
-          err -> InvalidTagged rule (Right err)
-        else InvalidTagged rule (Left tag)
+          CBORTermResult _ (Valid _) -> Valid $ RuleMatch rule
+          CBORTermResult _ err -> err
+        else Invalid $ RuleFail rule
     Choice opts -> validateChoice (validateTagged cddl tag term) opts rule
-    _ -> UnapplicableRule "validateTagged" rule
+    _ -> Invalid $ RuleFail rule
 
 -- --------------------------------------------------------------------------------
 -- -- Lists
@@ -661,17 +618,17 @@ decrementBounds lb ub = OIBounded (clampedPred <$> lb) (clampedPred <$> ub)
 validateList :: CDDL -> [Term] -> Rule -> CDDLResult
 validateList cddl terms rule =
   case resolveIfRef cddl rule of
-    Postlude PTAny -> Valid rule
+    Postlude PTAny -> Valid $ RuleMatch rule
     Array rules -> validate terms rules
     Choice opts -> validateChoice (validateList cddl terms) opts rule
-    r -> UnapplicableRule "validateList" r
+    r -> Invalid $ RuleFail r
   where
     validate :: [Term] -> [CTree ValidatorStage] -> CDDLResult
-    validate [] [] = Valid rule
-    validate _ [] = ListExpansionFail rule [] []
+    validate [] [] = Valid $ RuleMatch rule
+    validate _ [] = Invalid $ RuleFail rule
     validate [] (r : rs)
       | isOptional r = validate [] rs
-      | otherwise = UnapplicableRule "validateList" r
+      | otherwise = Invalid $ RuleFail r
     validate (t : ts) (r : rs) = case r of
       Occur ct oi -> case oi of
         OIOptional
@@ -687,13 +644,13 @@ validateList cddl terms rule =
         OIOneOrMore -> case validateTermInList (t : ts) ct of
           (Valid {}, leftover) -> validate leftover (Occur ct OIZeroOrMore : rs)
           (err, _) -> err
-        OIBounded _ (Just ub) | ub < 0 -> ListExpansionFail rule [] []
+        OIBounded _ (Just ub) | ub < 0 -> Invalid $ RuleFail r
         OIBounded lb ub
           | (Valid {}, leftover) <- validateTermInList (t : ts) ct ->
               validate leftover (Occur ct (decrementBounds lb ub) : rs)
           | isWithinBoundsInclusive 0 lb ub ->
               validate (t : ts) rs
-          | otherwise -> UnapplicableRule "validateList" r
+          | otherwise -> Invalid $ RuleFail r
       _ -> case validateTermInList (t : ts) (resolveIfRef cddl r) of
         (Valid {}, leftover) -> validate leftover rs
         (err, _) -> err
@@ -702,8 +659,8 @@ validateList cddl terms rule =
     validateTermInList ts (Group grp) = case grp of
       (resolveIfRef cddl -> g) : gs
         | (Valid {}, leftover) <- validateTermInList ts g -> validateTermInList leftover (Group gs)
-        | otherwise -> (UnapplicableRule "validateTermInList group" g, ts)
-      [] -> (Valid rule, ts)
+        | otherwise -> (Invalid $ RuleFail g, ts)
+      [] -> (Valid $ RuleMatch rule, ts)
     validateTermInList (t : ts) r =
       let CBORTermResult _ res = validateTerm cddl t r
        in (res, ts)
@@ -715,17 +672,17 @@ validateList cddl terms rule =
 validateMap :: HasCallStack => CDDL -> [(Term, Term)] -> Rule -> CDDLResult
 validateMap cddl terms rule =
   case resolveIfRef cddl rule of
-    Postlude PTAny -> Valid rule
+    Postlude PTAny -> Valid $ RuleMatch rule
     Map rules -> validate [] terms rules
     Choice opts -> validateChoice (validateMap cddl terms) opts rule
-    r -> UnapplicableRule "validateMap" r
+    r -> Invalid $ RuleFail r
   where
     validate :: [Rule] -> [(Term, Term)] -> [Rule] -> CDDLResult
-    validate [] [] [] = Valid rule
-    validate _ _ [] = MapExpansionFail rule [] []
+    validate [] [] [] = Valid $ RuleMatch rule
+    validate _ _ [] = Invalid $ RuleFail rule
     validate [] [] (r : rs)
       | isOptional r = validate [] [] rs
-      | otherwise = UnapplicableRule "validateMap" r
+      | otherwise = Invalid $ RuleFail r
     validate exhausted kvs (r : rs) = case r of
       Occur ct oi -> case oi of
         OIOptional
@@ -777,14 +734,13 @@ validateChoice v rules = go rules
     go :: NE.NonEmpty Rule -> Rule -> CDDLResult
     go (choice NE.:| xs) rule = do
       case v choice of
-        Valid _ -> Valid rule
+        Valid _ -> Valid $ RuleMatch rule
         err -> case NE.nonEmpty xs of
-          Nothing -> ChoiceFail rule rules ((choice, err) NE.:| [])
+          Nothing -> err
           Just choices ->
             case go choices rule of
-              Valid _ -> Valid rule
-              ChoiceFail _ _ errors -> ChoiceFail rule rules ((choice, err) NE.<| errors)
-              _ -> error "Not yet implemented"
+              Valid _ -> Valid $ RuleMatch rule
+              e -> e
 
 --------------------------------------------------------------------------------
 -- Control helpers
@@ -793,11 +749,8 @@ validateChoice v rules = go rules
 ctrlAnd :: (Rule -> CDDLResult) -> Rule -> Rule -> Rule -> CDDLResult
 ctrlAnd v tgt ctrl rule =
   case v tgt of
-    Valid _ ->
-      case v ctrl of
-        Valid _ -> Valid rule
-        _ -> InvalidControl rule Nothing
-    _ -> InvalidRule rule
+    Valid {} | Valid {} <- v ctrl -> Valid $ RuleMatch rule
+    _ -> Invalid $ RuleFail rule
 
 -- | Dispatch to the appropriate control
 ctrlDispatch ::
@@ -814,9 +767,9 @@ ctrlDispatch v op tgt ctrl vctrl rule =
   case v tgt of
     Valid _ ->
       case vctrl op ctrl of
-        Left err -> InvalidControl rule err
-        Right () -> Valid rule
-    _ -> InvalidRule rule
+        Left _err -> Invalid $ RuleFail rule
+        Right () -> Valid $ RuleMatch rule
+    _ -> Invalid $ RuleFail rule
 
 -- | A boolean control
 boolCtrl :: Bool -> Either (Maybe CBORTermResult) ()
@@ -873,18 +826,8 @@ resolveIfRef _ r = r
 --------------------------------------------------------------------------------
 -- Utils
 
-replaceRule :: CDDLResult -> Rule -> CDDLResult
-replaceRule (ChoiceFail _ a b) r = ChoiceFail r a b
-replaceRule (ListExpansionFail _ a b) r = ListExpansionFail r a b
-replaceRule (MapExpansionFail _ a b) r = MapExpansionFail r a b
-replaceRule (InvalidTagged _ a) r = InvalidTagged r a
-replaceRule InvalidRule {} r = InvalidRule r
-replaceRule (InvalidControl _ a) r = InvalidControl r a
-replaceRule (UnapplicableRule m _) r = UnapplicableRule m r
-replaceRule Valid {} r = Valid r
-
 check :: Bool -> Rule -> CDDLResult
-check c = if c then Valid else InvalidRule
+check c = if c then Valid . RuleMatch else Invalid . RuleFail
 
 range :: Ord a => RangeBound -> a -> a -> Bool
 range Closed = (<=)
