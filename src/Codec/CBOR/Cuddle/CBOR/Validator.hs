@@ -10,6 +10,7 @@ module Codec.CBOR.Cuddle.CBOR.Validator (
   CDDLResult (..),
   CBORTermResult (..),
   ValidatorStage,
+  ValidationTree (..),
 ) where
 
 import Codec.CBOR.Cuddle.CDDL hiding (CDDL, Group, Rule)
@@ -60,8 +61,10 @@ data CBORTermResult = CBORTermResult
   deriving (Show, Eq)
 
 data ValidationTree
-  = RuleMatch Rule
+  = ConsumeTerm Term
   | RuleFail Rule
+  | MapFail Int [Rule] [Rule]
+  | ArrayFail Int [Rule] [Rule]
   deriving (Show, Eq)
 
 data CDDLResult
@@ -73,22 +76,6 @@ data CDDLResult
 isCBORTermResultValid :: CBORTermResult -> Bool
 isCBORTermResultValid (CBORTermResult _ Valid {}) = True
 isCBORTermResultValid _ = False
-
-data ANonMatchedItem = ANonMatchedItem
-  { anmiKey :: Term
-  , anmiValue :: Term
-  , anmiResults :: [Either (Rule, CDDLResult) (Rule, CDDLResult, CDDLResult)]
-  -- ^ For all the tried rules, either the key failed or the key succeeded and
-  -- the value failed
-  }
-  deriving (Show, Eq)
-
-data AMatchedItem = AMatchedItem
-  { amiKey :: Term
-  , amiValue :: Term
-  , amiRule :: Rule
-  }
-  deriving (Show, Eq)
 
 --------------------------------------------------------------------------------
 -- Main entry point
