@@ -10,15 +10,19 @@ module Codec.CBOR.Cuddle.CBOR.Validator (
   CDDLResult (..),
   CBORTermResult (..),
   ValidatorStage,
+  ValidatorStageSimple,
+  showSimple,
 ) where
 
 import Codec.CBOR.Cuddle.CDDL hiding (CDDL, Group, Rule)
+import Codec.CBOR.Cuddle.CDDL.CBORGenerator (CBORValidator (..), CustomValidatorResult (..))
 import Codec.CBOR.Cuddle.CDDL.CTree
 import Codec.CBOR.Cuddle.CDDL.CtlOp
 import Codec.CBOR.Cuddle.CDDL.Resolve (MonoReferenced, XXCTree (..))
 import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
 import Codec.CBOR.Read
 import Codec.CBOR.Term
+import Data.Bifunctor (Bifunctor (..))
 import Data.Bits hiding (And)
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as BSL
@@ -38,8 +42,9 @@ type data ValidatorStage
 data instance XTerm ValidatorStage = ValidatorXTerm
   deriving (Show, Eq)
 
-newtype instance XXCTree ValidatorStage = VRuleRef Name
-  deriving (Show, Eq)
+data instance XXCTree ValidatorStage
+  = VRuleRef Name
+  | VValidator CBORValidator (CTree ValidatorStage)
 
 instance IndexMappable CTreeRoot MonoReferenced ValidatorStage where
   mapIndex (CTreeRoot m) = CTreeRoot $ mapIndex <$> m
@@ -49,94 +54,150 @@ instance IndexMappable CTree MonoReferenced ValidatorStage where
     where
       mapExt (MRuleRef n) = CTreeE $ VRuleRef n
       mapExt (MGenerator _ x) = mapIndex x
+      mapExt (MValidator v x) = CTreeE . VValidator v $ mapIndex x
 
-type CDDL = CTreeRoot ValidatorStage
-type Rule = CTree ValidatorStage
+type data ValidatorStageSimple
 
-data CBORTermResult = CBORTermResult
+newtype instance XXCTree ValidatorStageSimple = VRuleRefSimple Name
+
+instance IndexMappable CTreeRoot ValidatorStage ValidatorStageSimple where
+  mapIndex (CTreeRoot m) = CTreeRoot $ mapIndex <$> m
+
+instance IndexMappable CTree ValidatorStage ValidatorStageSimple where
+  mapIndex = foldCTree mapExt mapIndex
+    where
+      mapExt (VRuleRef n) = CTreeE $ VRuleRefSimple n
+      mapExt (VValidator _ x) = mapIndex x
+
+instance IndexMappable AMatchedItem ValidatorStage ValidatorStageSimple where
+  mapIndex (AMatchedItem x y z) = AMatchedItem x y $ mapIndex z
+
+instance IndexMappable ANonMatchedItem ValidatorStage ValidatorStageSimple where
+  mapIndex (ANonMatchedItem x y z) =
+    ANonMatchedItem x y $
+      bimap (bimap mapIndex mapIndex) (\(a, b, c) -> (mapIndex a, mapIndex b, mapIndex c)) <$> z
+
+instance IndexMappable CDDLResult ValidatorStage ValidatorStageSimple where
+  mapIndex (Valid x) = Valid $ mapIndex x
+  mapIndex (ChoiceFail x y z) = ChoiceFail (mapIndex x) (mapIndex <$> y) (bimap mapIndex mapIndex <$> z)
+  mapIndex (ListExpansionFail x y z) =
+    ListExpansionFail
+      (mapIndex x)
+      (fmap mapIndex <$> y)
+      (fmap (bimap mapIndex mapIndex) <$> z)
+  mapIndex (MapExpansionFail x y z) = MapExpansionFail (mapIndex x) (fmap mapIndex <$> y) (bimap (fmap mapIndex) mapIndex <$> z)
+  mapIndex (InvalidControl x y) = InvalidControl (mapIndex x) (mapIndex <$> y)
+  mapIndex (InvalidRule x) = InvalidRule $ mapIndex x
+  mapIndex (InvalidTagged x y) = InvalidTagged (mapIndex x) (mapIndex <$> y)
+  mapIndex (UnapplicableRule x y) = UnapplicableRule x $ mapIndex y
+  mapIndex (CustomValidatorFailure x y) = CustomValidatorFailure x $ mapIndex y
+
+instance IndexMappable CBORTermResult ValidatorStage ValidatorStageSimple where
+  mapIndex (CBORTermResult x y) = CBORTermResult x $ mapIndex y
+
+showSimple ::
+  ( IndexMappable a ValidatorStage ValidatorStageSimple
+  , Show (a ValidatorStageSimple)
+  ) =>
+  a ValidatorStage -> String
+showSimple = show . mapIndex @_ @_ @ValidatorStageSimple
+
+deriving instance Show (Node ValidatorStageSimple)
+
+deriving instance Show (CBORTermResult ValidatorStageSimple)
+
+deriving instance Show (AMatchedItem ValidatorStageSimple)
+
+deriving instance Show (ANonMatchedItem ValidatorStageSimple)
+
+deriving instance Show (CDDLResult ValidatorStageSimple)
+
+data CBORTermResult i = CBORTermResult
   { ctrTerm :: Term
-  , ctrResult :: CDDLResult
+  , ctrResult :: CDDLResult i
   }
-  deriving (Show, Eq)
 
-data CDDLResult
+data CDDLResult i
   = -- | The rule was valid
-    Valid Rule
+    Valid (CTree i)
   | -- | All alternatives failed
     ChoiceFail
       -- | Rule we are trying
-      Rule
+      (CTree i)
       -- | The alternatives that arise from said rule
-      (NE.NonEmpty Rule)
+      (NE.NonEmpty (CTree i))
       -- | For each alternative, the result
-      (NE.NonEmpty (Rule, CDDLResult))
+      (NE.NonEmpty (CTree i, CDDLResult i))
   | -- | All expansions failed
     --
     -- An expansion is: Given a CBOR @TList@ of @N@ elements, we will expand the
     -- rules in a list spec to match the number of items in the list.
     ListExpansionFail
       -- | Rule we are trying
-      Rule
+      (CTree i)
       -- | List of expansions of rules
-      [[Rule]]
+      [[CTree i]]
       -- | For each expansion, for each of the rules in the expansion, the result
-      [[(Rule, CBORTermResult)]]
+      [[(CTree i, CBORTermResult i)]]
   | -- | All expansions failed
     --
     -- An expansion is: Given a CBOR @TMap@ of @N@ elements, we will expand the
     -- rules in a map spec to match the number of items in the map.
     MapExpansionFail
       -- | Rule we are trying
-      Rule
+      (CTree i)
       -- | List of expansions
-      [[Rule]]
+      [[CTree i]]
       -- | A list of matched items @(key, value, rule)@ and the unmatched item
-      [([AMatchedItem], ANonMatchedItem)]
+      [([AMatchedItem i], ANonMatchedItem i)]
   | -- | The rule was valid but the control failed
     InvalidControl
       -- | Control we are trying
-      Rule
+      (CTree i)
       -- | If it is a .cbor, the result of the underlying validation
-      (Maybe CBORTermResult)
-  | InvalidRule Rule
+      (Maybe (CBORTermResult i))
+  | InvalidRule (CTree i)
   | -- | A tagged was invalid
     InvalidTagged
       -- | Rule we are trying
-      Rule
+      (CTree i)
       -- | Either the tag is wrong, or the contents are wrong
-      (Either Word64 CBORTermResult)
+      (Either Word64 (CBORTermResult i))
   | -- | The rule we are trying is not applicable to the CBOR term
     UnapplicableRule
       -- | Extra information
-      String
+      T.Text
       -- | Rule we are trying
-      Rule
-  deriving (Show, Eq)
+      (CTree i)
+  | -- | A user-provided validator failed to validate the term
+    CustomValidatorFailure
+      -- | Extra information
+      T.Text
+      -- | Rule we are trying
+      (CTree i)
 
-isCBORTermResultValid :: CBORTermResult -> Bool
+isCBORTermResultValid :: CBORTermResult ValidatorStage -> Bool
 isCBORTermResultValid (CBORTermResult _ Valid {}) = True
 isCBORTermResultValid _ = False
 
-data ANonMatchedItem = ANonMatchedItem
+data ANonMatchedItem i = ANonMatchedItem
   { anmiKey :: Term
   , anmiValue :: Term
-  , anmiResults :: [Either (Rule, CDDLResult) (Rule, CDDLResult, CDDLResult)]
+  , anmiResults :: [Either (CTree i, CDDLResult i) (CTree i, CDDLResult i, CDDLResult i)]
   -- ^ For all the tried rules, either the key failed or the key succeeded and
   -- the value failed
   }
-  deriving (Show, Eq)
 
-data AMatchedItem = AMatchedItem
+data AMatchedItem i = AMatchedItem
   { amiKey :: Term
   , amiValue :: Term
-  , amiRule :: Rule
+  , amiRule :: CTree i
   }
-  deriving (Show, Eq)
 
 --------------------------------------------------------------------------------
 -- Main entry point
 
-validateCBOR :: BS.ByteString -> Name -> CDDL -> CBORTermResult
+validateCBOR :: BS.ByteString -> Name -> CTreeRoot ValidatorStage -> CBORTermResult ValidatorStage
 validateCBOR bs rule cddl@(CTreeRoot tree) =
   case deserialiseFromBytes decodeTerm (BSL.fromStrict bs) of
     Left e -> error $ show e
@@ -149,26 +210,35 @@ validateCBOR bs rule cddl@(CTreeRoot tree) =
 
 -- | Core function that validates a CBOR term to a particular rule of the CDDL
 -- spec
-validateTerm :: CDDL -> Term -> Rule -> CBORTermResult
-validateTerm cddl term rule =
-  CBORTermResult term $ case term of
-    TInt i -> validateInteger cddl (fromIntegral i) rRule
-    TInteger i -> validateInteger cddl i rRule
-    TBytes b -> validateBytes cddl b rRule
-    TBytesI b -> validateBytes cddl (BSL.toStrict b) rRule
-    TString s -> validateText cddl s rRule
-    TStringI s -> validateText cddl (TL.toStrict s) rRule
-    TList ts -> validateList cddl ts rRule
-    TListI ts -> validateList cddl ts rRule
-    TMap ts -> validateMap cddl ts rRule
-    TMapI ts -> validateMap cddl ts rRule
-    TTagged w t -> validateTagged cddl w t rRule
-    TBool b -> validateBool cddl b rRule
-    TNull -> validateNull cddl rRule
-    TSimple s -> validateSimple cddl s rRule
-    THalf h -> validateHalf cddl h rRule
-    TFloat h -> validateFloat cddl h rRule
-    TDouble d -> validateDouble cddl d rRule
+validateTerm ::
+  CTreeRoot ValidatorStage ->
+  Term ->
+  CTree ValidatorStage ->
+  CBORTermResult ValidatorStage
+validateTerm cddl term rule
+  | CTreeE (VValidator (CBORValidator validator) _) <- rRule =
+      case validator term of
+        ValidatorSuccess -> CBORTermResult term $ Valid rule
+        ValidatorFailure e -> CBORTermResult term $ CustomValidatorFailure e rule
+  | otherwise =
+      CBORTermResult term $ case term of
+        TInt i -> validateInteger cddl (fromIntegral i) rRule
+        TInteger i -> validateInteger cddl i rRule
+        TBytes b -> validateBytes cddl b rRule
+        TBytesI b -> validateBytes cddl (BSL.toStrict b) rRule
+        TString s -> validateText cddl s rRule
+        TStringI s -> validateText cddl (TL.toStrict s) rRule
+        TList ts -> validateList cddl ts rRule
+        TListI ts -> validateList cddl ts rRule
+        TMap ts -> validateMap cddl ts rRule
+        TMapI ts -> validateMap cddl ts rRule
+        TTagged w t -> validateTagged cddl w t rRule
+        TBool b -> validateBool cddl b rRule
+        TNull -> validateNull cddl rRule
+        TSimple s -> validateSimple cddl s rRule
+        THalf h -> validateHalf cddl h rRule
+        TFloat h -> validateFloat cddl h rRule
+        TDouble d -> validateDouble cddl d rRule
   where
     rRule = resolveIfRef cddl rule
 
@@ -186,7 +256,12 @@ validateTerm cddl term rule =
 --
 -- For this reason, we cannot assume that bounds or literals are going to be
 -- Ints, so we convert everything to Integer.
-validateInteger :: HasCallStack => CDDL -> Integer -> Rule -> CDDLResult
+validateInteger ::
+  HasCallStack =>
+  CTreeRoot ValidatorStage ->
+  Integer ->
+  CTree ValidatorStage ->
+  CDDLResult ValidatorStage
 validateInteger cddl i rule =
   case resolveIfRef cddl rule of
     -- echo "C24101" | xxd -r -p - example.cbor
@@ -231,7 +306,7 @@ validateInteger cddl i rule =
             (Literal (Value (VBignum n) _), Literal (Value (VNInt (fromIntegral -> m)) _)) -> n <= i && range bound i (-m)
             (Literal (Value (VUInt (fromIntegral -> n)) _), Literal (Value (VBignum m) _)) -> n <= i && range bound i m
             (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VBignum m) _)) -> (-n) <= i && range bound i m
-            x -> error $ "Unable to validate range: " <> show x
+            (lo, hi) -> error $ "Unable to validate range: (" <> showSimple lo <> ", " <> showSimple hi <> ")"
         )
         rule
     -- a = &(x, y, z)
@@ -255,11 +330,16 @@ validateInteger cddl i rule =
           -- TODO figure out a way to turn Integer into bytes or figure out why
           -- tagged bigints are decoded as integers in the first place
           bs = mempty
-      e -> error $ "Not yet implemented" <> show e
+      _ -> error "Not yet implemented"
 
 -- | Controls for an Integer
 controlInteger ::
-  HasCallStack => CDDL -> Integer -> CtlOp -> Rule -> Either (Maybe CBORTermResult) ()
+  HasCallStack =>
+  CTreeRoot ValidatorStage ->
+  Integer ->
+  CtlOp ->
+  CTree ValidatorStage ->
+  Either (Maybe (CBORTermResult ValidatorStage)) ()
 controlInteger cddl i Size ctrl =
   case resolveIfRef cddl ctrl of
     Literal (Value (VUInt sz) _) ->
@@ -325,7 +405,12 @@ controlInteger _ _ _ _ = error "Not yet implemented"
 -- and decoding floating-point numbers.
 
 -- | Validating a `Float16`
-validateHalf :: HasCallStack => CDDL -> Float -> Rule -> CDDLResult
+validateHalf ::
+  HasCallStack =>
+  CTreeRoot ValidatorStage ->
+  Float ->
+  CTree ValidatorStage ->
+  CDDLResult ValidatorStage
 validateHalf cddl f rule =
   case resolveIfRef cddl rule of
     -- a = any
@@ -349,7 +434,13 @@ validateHalf cddl f rule =
     _ -> UnapplicableRule "validateHalf" rule
 
 -- | Controls for `Float16`
-controlHalf :: HasCallStack => CDDL -> Float -> CtlOp -> Rule -> Either (Maybe CBORTermResult) ()
+controlHalf ::
+  HasCallStack =>
+  CTreeRoot ValidatorStage ->
+  Float ->
+  CtlOp ->
+  CTree ValidatorStage ->
+  Either (Maybe (CBORTermResult ValidatorStage)) ()
 controlHalf cddl f Eq ctrl =
   boolCtrl $ case resolveIfRef cddl ctrl of
     Literal (Value (VFloat16 f') _) -> f == f'
@@ -361,7 +452,12 @@ controlHalf cddl f Ne ctrl =
 controlHalf _ _ _ _ = error "Not yet implemented"
 
 -- | Validating a `Float32`
-validateFloat :: HasCallStack => CDDL -> Float -> Rule -> CDDLResult
+validateFloat ::
+  HasCallStack =>
+  CTreeRoot ValidatorStage ->
+  Float ->
+  CTree ValidatorStage ->
+  CDDLResult ValidatorStage
 validateFloat cddl f rule =
   ($ rule) $ do
     case resolveIfRef cddl rule of
@@ -386,7 +482,13 @@ validateFloat cddl f rule =
       _ -> UnapplicableRule "validateFloat"
 
 -- | Controls for `Float32`
-controlFloat :: HasCallStack => CDDL -> Float -> CtlOp -> Rule -> Either (Maybe CBORTermResult) ()
+controlFloat ::
+  HasCallStack =>
+  CTreeRoot ValidatorStage ->
+  Float ->
+  CtlOp ->
+  CTree ValidatorStage ->
+  Either (Maybe (CBORTermResult ValidatorStage)) ()
 controlFloat cddl f Eq ctrl =
   boolCtrl $ case resolveIfRef cddl ctrl of
     Literal (Value (VFloat16 f') _) -> f == f'
@@ -400,7 +502,12 @@ controlFloat cddl f Ne ctrl =
 controlFloat _ _ _ _ = error "Not yet implemented"
 
 -- | Validating a `Float64`
-validateDouble :: HasCallStack => CDDL -> Double -> Rule -> CDDLResult
+validateDouble ::
+  HasCallStack =>
+  CTreeRoot ValidatorStage ->
+  Double ->
+  CTree ValidatorStage ->
+  CDDLResult ValidatorStage
 validateDouble cddl f rule =
   ($ rule) $ do
     case resolveIfRef cddl rule of
@@ -426,7 +533,13 @@ validateDouble cddl f rule =
       _ -> UnapplicableRule "validateDouble"
 
 -- | Controls for `Float64`
-controlDouble :: HasCallStack => CDDL -> Double -> CtlOp -> Rule -> Either (Maybe CBORTermResult) ()
+controlDouble ::
+  HasCallStack =>
+  CTreeRoot ValidatorStage ->
+  Double ->
+  CtlOp ->
+  CTree ValidatorStage ->
+  Either (Maybe (CBORTermResult ValidatorStage)) ()
 controlDouble cddl f Eq ctrl =
   boolCtrl $ case resolveIfRef cddl ctrl of
     Literal (Value (VFloat16 f') _) -> f == float2Double f'
@@ -445,7 +558,11 @@ controlDouble _ _ _ _ = error "Not yet implmented"
 -- Bool
 
 -- | Validating a boolean
-validateBool :: CDDL -> Bool -> Rule -> CDDLResult
+validateBool ::
+  CTreeRoot ValidatorStage ->
+  Bool ->
+  CTree ValidatorStage ->
+  CDDLResult ValidatorStage
 validateBool cddl b rule =
   ($ rule) $ do
     case resolveIfRef cddl rule of
@@ -462,7 +579,13 @@ validateBool cddl b rule =
       _ -> UnapplicableRule "validateBool"
 
 -- | Controls for `Bool`
-controlBool :: HasCallStack => CDDL -> Bool -> CtlOp -> Rule -> Either (Maybe CBORTermResult) ()
+controlBool ::
+  HasCallStack =>
+  CTreeRoot ValidatorStage ->
+  Bool ->
+  CtlOp ->
+  CTree ValidatorStage ->
+  Either (Maybe (CBORTermResult ValidatorStage)) ()
 controlBool cddl b Eq ctrl =
   boolCtrl $ case resolveIfRef cddl ctrl of
     Literal (Value (VBool b') _) -> b == b'
@@ -477,7 +600,11 @@ controlBool _ _ _ _ = error "Not yet implemented"
 -- Simple
 
 -- | Validating a `TSimple`. It is unclear if this is used for anything else than undefined.
-validateSimple :: CDDL -> Word8 -> Rule -> CDDLResult
+validateSimple ::
+  CTreeRoot ValidatorStage ->
+  Word8 ->
+  CTree ValidatorStage ->
+  CDDLResult ValidatorStage
 validateSimple cddl 23 rule =
   do
     case resolveIfRef cddl rule of
@@ -494,7 +621,7 @@ validateSimple _ n _ = error $ "Found simple different to 23! please report this
 -- Null/nil
 
 -- | Validating nil
-validateNull :: CDDL -> Rule -> CDDLResult
+validateNull :: CTreeRoot ValidatorStage -> CTree ValidatorStage -> CDDLResult ValidatorStage
 validateNull cddl rule =
   case resolveIfRef cddl rule of
     -- a = any
@@ -508,7 +635,8 @@ validateNull cddl rule =
 -- Bytes
 
 -- | Validating a byte sequence
-validateBytes :: CDDL -> BS.ByteString -> Rule -> CDDLResult
+validateBytes ::
+  CTreeRoot ValidatorStage -> BS.ByteString -> CTree ValidatorStage -> CDDLResult ValidatorStage
 validateBytes cddl bs rule =
   case resolveIfRef cddl rule of
     -- a = any
@@ -526,11 +654,11 @@ validateBytes cddl bs rule =
 -- | Controls for byte strings
 controlBytes ::
   HasCallStack =>
-  CDDL ->
+  CTreeRoot ValidatorStage ->
   BS.ByteString ->
   CtlOp ->
-  Rule ->
-  Either (Maybe CBORTermResult) ()
+  CTree ValidatorStage ->
+  Either (Maybe (CBORTermResult ValidatorStage)) ()
 controlBytes cddl bs Size ctrl =
   case resolveIfRef cddl ctrl of
     Literal (Value (VUInt (fromIntegral -> sz)) _) -> boolCtrl $ BS.length bs == sz
@@ -577,7 +705,7 @@ controlBytes cddl bs Cborseq ctrl =
     Right (BSL.null -> True, TListI terms) ->
       case validateTerm cddl (TList terms) (Array [Occur ctrl OIZeroOrMore]) of
         CBORTermResult _ (Valid _) -> Right ()
-        CBORTermResult _ err -> error $ show err
+        CBORTermResult _ err -> error . showSimple $ err
     _ -> error "Not yet implemented"
 controlBytes _ _ _ _ = error "Not yet implmented"
 
@@ -585,7 +713,11 @@ controlBytes _ _ _ _ = error "Not yet implmented"
 -- Text
 
 -- | Validating text strings
-validateText :: CDDL -> T.Text -> Rule -> CDDLResult
+validateText ::
+  CTreeRoot ValidatorStage ->
+  T.Text ->
+  CTree ValidatorStage ->
+  CDDLResult ValidatorStage
 validateText cddl txt rule =
   case resolveIfRef cddl rule of
     -- a = any
@@ -601,7 +733,13 @@ validateText cddl txt rule =
     _ -> UnapplicableRule "validateText" rule
 
 -- | Controls for text strings
-controlText :: HasCallStack => CDDL -> T.Text -> CtlOp -> Rule -> Either (Maybe CBORTermResult) ()
+controlText ::
+  HasCallStack =>
+  CTreeRoot ValidatorStage ->
+  T.Text ->
+  CtlOp ->
+  CTree ValidatorStage ->
+  Either (Maybe (CBORTermResult ValidatorStage)) ()
 controlText cddl bs Size ctrl =
   case resolveIfRef cddl ctrl of
     Literal (Value (VUInt (fromIntegral -> sz)) _) -> boolCtrl $ T.length bs == sz
@@ -624,7 +762,8 @@ controlText _ _ _ _ = error "Not yet implemented"
 -- Tagged values
 
 -- | Validating a `TTagged`
-validateTagged :: CDDL -> Word64 -> Term -> Rule -> CDDLResult
+validateTagged ::
+  CTreeRoot ValidatorStage -> Word64 -> Term -> CTree ValidatorStage -> CDDLResult ValidatorStage
 validateTagged cddl tag term rule =
   case resolveIfRef cddl rule of
     Postlude PTAny -> Valid rule
@@ -658,7 +797,11 @@ decrementBounds lb ub = OIBounded (clampedPred <$> lb) (clampedPred <$> ub)
     clampedPred 0 = 0
     clampedPred x = pred x
 
-validateList :: CDDL -> [Term] -> Rule -> CDDLResult
+validateList ::
+  CTreeRoot ValidatorStage ->
+  [Term] ->
+  CTree ValidatorStage ->
+  CDDLResult ValidatorStage
 validateList cddl terms rule =
   case resolveIfRef cddl rule of
     Postlude PTAny -> Valid rule
@@ -666,7 +809,7 @@ validateList cddl terms rule =
     Choice opts -> validateChoice (validateList cddl terms) opts rule
     r -> UnapplicableRule "validateList" r
   where
-    validate :: [Term] -> [CTree ValidatorStage] -> CDDLResult
+    validate :: [Term] -> [CTree ValidatorStage] -> CDDLResult ValidatorStage
     validate [] [] = Valid rule
     validate _ [] = ListExpansionFail rule [] []
     validate [] (r : rs)
@@ -712,7 +855,12 @@ validateList cddl terms rule =
 --------------------------------------------------------------------------------
 -- Maps
 
-validateMap :: HasCallStack => CDDL -> [(Term, Term)] -> Rule -> CDDLResult
+validateMap ::
+  HasCallStack =>
+  CTreeRoot ValidatorStage ->
+  [(Term, Term)] ->
+  CTree ValidatorStage ->
+  CDDLResult ValidatorStage
 validateMap cddl terms rule =
   case resolveIfRef cddl rule of
     Postlude PTAny -> Valid rule
@@ -720,7 +868,8 @@ validateMap cddl terms rule =
     Choice opts -> validateChoice (validateMap cddl terms) opts rule
     r -> UnapplicableRule "validateMap" r
   where
-    validate :: [Rule] -> [(Term, Term)] -> [Rule] -> CDDLResult
+    validate ::
+      [CTree ValidatorStage] -> [(Term, Term)] -> [CTree ValidatorStage] -> CDDLResult ValidatorStage
     validate [] [] [] = Valid rule
     validate _ _ [] = MapExpansionFail rule [] []
     validate [] [] (r : rs)
@@ -766,15 +915,19 @@ validateMap cddl terms rule =
       (CBORTermResult _ Valid {}, CBORTermResult _ err) -> (err, ts)
       (CBORTermResult _ err, _) -> (err, ts)
     validateKVInMap [] _ = error "No remaining KV pairs"
-    validateKVInMap _ x = error $ "Unexpected value in map: " <> show x
+    validateKVInMap _ x = error $ "Unexpected value in map: " <> showSimple x
 
 --------------------------------------------------------------------------------
 -- Choices
 
-validateChoice :: (Rule -> CDDLResult) -> NE.NonEmpty Rule -> Rule -> CDDLResult
+validateChoice ::
+  (CTree ValidatorStage -> CDDLResult ValidatorStage) ->
+  NE.NonEmpty (CTree ValidatorStage) ->
+  CTree ValidatorStage ->
+  CDDLResult ValidatorStage
 validateChoice v rules = go rules
   where
-    go :: NE.NonEmpty Rule -> Rule -> CDDLResult
+    go :: NE.NonEmpty (CTree ValidatorStage) -> CTree ValidatorStage -> CDDLResult ValidatorStage
     go (choice NE.:| xs) rule = do
       case v choice of
         Valid _ -> Valid rule
@@ -790,7 +943,12 @@ validateChoice v rules = go rules
 -- Control helpers
 
 -- | Validate both rules
-ctrlAnd :: (Rule -> CDDLResult) -> Rule -> Rule -> Rule -> CDDLResult
+ctrlAnd ::
+  (CTree ValidatorStage -> CDDLResult ValidatorStage) ->
+  CTree ValidatorStage ->
+  CTree ValidatorStage ->
+  CTree ValidatorStage ->
+  CDDLResult ValidatorStage
 ctrlAnd v tgt ctrl rule =
   case v tgt of
     Valid _ ->
@@ -801,13 +959,13 @@ ctrlAnd v tgt ctrl rule =
 
 -- | Dispatch to the appropriate control
 ctrlDispatch ::
-  (Rule -> CDDLResult) ->
+  (CTree ValidatorStage -> CDDLResult ValidatorStage) ->
   CtlOp ->
-  Rule ->
-  Rule ->
-  (CtlOp -> Rule -> Either (Maybe CBORTermResult) ()) ->
-  Rule ->
-  CDDLResult
+  CTree ValidatorStage ->
+  CTree ValidatorStage ->
+  (CtlOp -> CTree ValidatorStage -> Either (Maybe (CBORTermResult ValidatorStage)) ()) ->
+  CTree ValidatorStage ->
+  CDDLResult ValidatorStage
 ctrlDispatch v And tgt ctrl _ rule = ctrlAnd v tgt ctrl rule
 ctrlDispatch v Within tgt ctrl _ rule = ctrlAnd v tgt ctrl rule
 ctrlDispatch v op tgt ctrl vctrl rule =
@@ -819,13 +977,13 @@ ctrlDispatch v op tgt ctrl vctrl rule =
     _ -> InvalidRule rule
 
 -- | A boolean control
-boolCtrl :: Bool -> Either (Maybe CBORTermResult) ()
+boolCtrl :: Bool -> Either (Maybe (CBORTermResult ValidatorStage)) ()
 boolCtrl c = if c then Right () else Left Nothing
 
 --------------------------------------------------------------------------------
 -- Bits control
 
-getIndicesOfChoice :: CDDL -> NE.NonEmpty Rule -> [Word64]
+getIndicesOfChoice :: CTreeRoot ValidatorStage -> NE.NonEmpty (CTree ValidatorStage) -> [Word64]
 getIndicesOfChoice cddl =
   concatMap $ \case
     Literal (Value (VUInt v) _) -> [fromIntegral v]
@@ -835,15 +993,16 @@ getIndicesOfChoice cddl =
         somethingElse ->
           error $
             "Malformed value in KV in choice in .bits: "
-              <> show somethingElse
+              <> showSimple somethingElse
     Range ff tt incl -> getIndicesOfRange cddl ff tt incl
     Enum g -> getIndicesOfEnum cddl g
     somethingElse ->
       error $
         "Malformed alternative in choice in .bits: "
-          <> show somethingElse
+          <> showSimple somethingElse
 
-getIndicesOfRange :: CDDL -> Rule -> Rule -> RangeBound -> [Word64]
+getIndicesOfRange ::
+  CTreeRoot ValidatorStage -> CTree ValidatorStage -> CTree ValidatorStage -> RangeBound -> [Word64]
 getIndicesOfRange cddl ff tt incl =
   case (resolveIfRef cddl ff, resolveIfRef cddl tt) of
     (Literal (Value (VUInt ff') _), Literal (Value (VUInt tt') _)) ->
@@ -852,18 +1011,18 @@ getIndicesOfRange cddl ff tt incl =
         Closed -> rng
       where
         rng = [ff' .. tt']
-    somethingElse -> error $ "Malformed range in .bits: " <> show somethingElse
+    (lo, hi) -> error $ "Malformed range in .bits: (" <> showSimple lo <> ", " <> showSimple hi <> ")"
 
-getIndicesOfEnum :: CDDL -> Rule -> [Word64]
+getIndicesOfEnum :: CTreeRoot ValidatorStage -> CTree ValidatorStage -> [Word64]
 getIndicesOfEnum cddl g =
   case resolveIfRef cddl g of
     Group g' -> getIndicesOfChoice cddl (fromJust $ NE.nonEmpty g')
-    somethingElse -> error $ "Malformed enum in .bits: " <> show somethingElse
+    somethingElse -> error $ "Malformed enum in .bits: " <> showSimple somethingElse
 
 --------------------------------------------------------------------------------
 -- Resolving rules from the CDDL spec
 
-resolveIfRef :: CDDL -> Rule -> Rule
+resolveIfRef :: CTreeRoot ValidatorStage -> CTree ValidatorStage -> CTree ValidatorStage
 resolveIfRef ct@(CTreeRoot cddl) (CTreeE (VRuleRef n)) = do
   case Map.lookup n cddl of
     Nothing -> error $ "Unbound reference: " <> show n
@@ -873,7 +1032,7 @@ resolveIfRef _ r = r
 --------------------------------------------------------------------------------
 -- Utils
 
-replaceRule :: CDDLResult -> Rule -> CDDLResult
+replaceRule :: CDDLResult ValidatorStage -> CTree ValidatorStage -> CDDLResult ValidatorStage
 replaceRule (ChoiceFail _ a b) r = ChoiceFail r a b
 replaceRule (ListExpansionFail _ a b) r = ListExpansionFail r a b
 replaceRule (MapExpansionFail _ a b) r = MapExpansionFail r a b
@@ -882,8 +1041,9 @@ replaceRule InvalidRule {} r = InvalidRule r
 replaceRule (InvalidControl _ a) r = InvalidControl r a
 replaceRule (UnapplicableRule m _) r = UnapplicableRule m r
 replaceRule Valid {} r = Valid r
+replaceRule (CustomValidatorFailure e r) _ = CustomValidatorFailure e r
 
-check :: Bool -> Rule -> CDDLResult
+check :: Bool -> CTree ValidatorStage -> CDDLResult ValidatorStage
 check c = if c then Valid else InvalidRule
 
 range :: Ord a => RangeBound -> a -> a -> Bool

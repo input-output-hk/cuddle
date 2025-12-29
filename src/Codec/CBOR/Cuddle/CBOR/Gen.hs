@@ -64,16 +64,17 @@ import System.Random.Stateful (
   uniformByteStringM,
  )
 
-type data MonoDropGen
+type data MonoSimple
 
-newtype instance XXCTree MonoDropGen = MDGRef Name
+newtype instance XXCTree MonoSimple = MDGRef Name
   deriving (Show)
 
-instance IndexMappable CTree MonoReferenced MonoDropGen where
+instance IndexMappable CTree MonoReferenced MonoSimple where
   mapIndex = foldCTree mapExt mapIndex
     where
       mapExt (MRuleRef n) = CTreeE $ MDGRef n
       mapExt (MGenerator _ x) = mapIndex x
+      mapExt (MValidator _ x) = mapIndex x
 
 --------------------------------------------------------------------------------
 -- Generator infrastructure
@@ -246,8 +247,8 @@ pairTermList [] = Just []
 pairTermList (P x y : xs) = ((x, y) :) <$> pairTermList xs
 pairTermList _ = Nothing
 
-showDropGen :: CTree MonoReferenced -> String
-showDropGen = show . mapIndex @_ @_ @MonoDropGen
+showSimple :: CTree MonoReferenced -> String
+showSimple = show . mapIndex @_ @_ @MonoSimple
 
 --------------------------------------------------------------------------------
 -- Generator functions
@@ -286,9 +287,9 @@ genForCTree (CTree.KV key value _cut) = do
     _ ->
       error $
         "Non single-term generated outside of group context: "
-          <> showDropGen key
+          <> showSimple key
           <> " => "
-          <> showDropGen value
+          <> showSimple value
 genForCTree (CTree.Occur item occurs) =
   applyOccurenceIndicator occurs (genForCTree item)
 genForCTree (CTree.Range from to _bounds) = do
@@ -317,11 +318,11 @@ genForCTree (CTree.Control op target controller) = do
     (CtlOp.Le, CTree.Literal (Value (VUInt n) _)) -> case target of
       CTree.Postlude PTUInt -> S . TInteger <$> genUniformRM (0, fromIntegral n)
       _ -> error "Cannot apply le operator to target"
-    (CtlOp.Le, _) -> error $ "Invalid controller for .le operator: " <> showDropGen controller
+    (CtlOp.Le, _) -> error $ "Invalid controller for .le operator: " <> showSimple controller
     (CtlOp.Lt, CTree.Literal (Value (VUInt n) _)) -> case target of
       CTree.Postlude PTUInt -> S . TInteger <$> genUniformRM (0, fromIntegral n - 1)
       _ -> error "Cannot apply lt operator to target"
-    (CtlOp.Lt, _) -> error $ "Invalid controller for .lt operator: " <> showDropGen controller
+    (CtlOp.Lt, _) -> error $ "Invalid controller for .lt operator: " <> showSimple controller
     (CtlOp.Size, CTree.Literal (Value (VUInt n) _)) -> case target of
       CTree.Postlude PTText -> S . TString <$> genText (fromIntegral n)
       CTree.Postlude PTBytes -> S . TBytes <$> genBytes (fromIntegral n)
@@ -339,15 +340,15 @@ genForCTree (CTree.Control op target controller) = do
           CTree.Postlude PTUInt ->
             S . TInteger
               <$> genUniformRM (fromIntegral f1, fromIntegral t1)
-          _ -> error $ "Cannot apply size operator to target: " <> showDropGen target
+          _ -> error $ "Cannot apply size operator to target: " <> showSimple target
         _ ->
           error $
             "Invalid controller for .size operator: "
-              <> showDropGen controller
+              <> showSimple controller
     (CtlOp.Size, _) ->
       error $
         "Invalid controller for .size operator: "
-          <> showDropGen controller
+          <> showSimple controller
     (CtlOp.Cbor, _) -> do
       enc <- genForCTree controller
       case enc of
@@ -368,6 +369,7 @@ genForCTree (CTree.Tag tag node) = do
     _ -> error "Tag controller does not correspond to a single term"
 genForCTree (CTree.CTreeE (MRuleRef n)) = genForNode n
 genForCTree (CTree.CTreeE (MGenerator (CBORGenerator gen) _)) = gen StateGenM
+genForCTree (CTree.CTreeE (MValidator _ x)) = genForCTree x
 
 genForNode :: (HasCallStack, RandomGen g) => Name -> M g WrappedTerm
 genForNode = genForCTree <=< resolveRef
