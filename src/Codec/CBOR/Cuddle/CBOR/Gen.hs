@@ -79,16 +79,17 @@ instance StatefulGen QC Gen where
     MkGen (\r _n -> runStateGen_ r (uniformShortByteString k))
 #endif
 
-type data MonoDropGen
+type data MonoSimple
 
-newtype instance XXCTree MonoDropGen = MDGRef Name
+newtype instance XXCTree MonoSimple = MDGRef Name
   deriving (Show)
 
-instance IndexMappable CTree MonoReferenced MonoDropGen where
+instance IndexMappable CTree MonoReferenced MonoSimple where
   mapIndex = foldCTree mapExt mapIndex
     where
       mapExt (MRuleRef n) = CTreeE $ MDGRef n
       mapExt (MGenerator _ x) = mapIndex x
+      mapExt (MValidator _ x) = mapIndex x
 
 --------------------------------------------------------------------------------
 -- Generator infrastructure
@@ -210,8 +211,8 @@ pairTermList [] = Just []
 pairTermList (P x y : xs) = ((x, y) :) <$> pairTermList xs
 pairTermList _ = Nothing
 
-showDropGen :: CTree MonoReferenced -> String
-showDropGen = show . mapIndex @_ @_ @MonoDropGen
+showSimple :: CTree MonoReferenced -> String
+showSimple = show . mapIndex @_ @_ @MonoSimple
 
 --------------------------------------------------------------------------------
 -- Generator functions
@@ -250,9 +251,9 @@ genForCTree cddl (CTree.KV key value _cut) = do
     _ ->
       error $
         "Non single-term generated outside of group context: "
-          <> showDropGen key
+          <> showSimple key
           <> " => "
-          <> showDropGen value
+          <> showSimple value
 genForCTree cddl (CTree.Occur item occurs) =
   applyOccurenceIndicator occurs (genForCTree cddl item)
 genForCTree cddl (CTree.Range from to _bounds) = do
@@ -281,11 +282,11 @@ genForCTree cddl (CTree.Control op target controller) = do
     (CtlOp.Le, CTree.Literal (Value (VUInt n) _)) -> case target of
       CTree.Postlude PTUInt -> S . TInteger <$> choose (0, fromIntegral n)
       _ -> error "Cannot apply le operator to target"
-    (CtlOp.Le, _) -> error $ "Invalid controller for .le operator: " <> showDropGen controller
+    (CtlOp.Le, _) -> error $ "Invalid controller for .le operator: " <> showSimple controller
     (CtlOp.Lt, CTree.Literal (Value (VUInt n) _)) -> case target of
       CTree.Postlude PTUInt -> S . TInteger <$> choose (0, fromIntegral n - 1)
       _ -> error "Cannot apply lt operator to target"
-    (CtlOp.Lt, _) -> error $ "Invalid controller for .lt operator: " <> showDropGen controller
+    (CtlOp.Lt, _) -> error $ "Invalid controller for .lt operator: " <> showSimple controller
     (CtlOp.Size, CTree.Literal (Value (VUInt n) _)) -> case target of
       CTree.Postlude PTText -> S . TString <$> genNText (fromIntegral n)
       CTree.Postlude PTBytes -> S . TBytes <$> genNBytes (fromIntegral n)
@@ -300,15 +301,15 @@ genForCTree cddl (CTree.Control op target controller) = do
             choose (fromIntegral f1, fromIntegral t1) >>= (fmap (S . TBytes) . genNBytes)
           CTree.Postlude PTUInt ->
             S . TInteger <$> choose (fromIntegral f1, fromIntegral t1)
-          _ -> error $ "Cannot apply size operator to target: " <> showDropGen target
+          _ -> error $ "Cannot apply size operator to target: " <> showSimple target
         _ ->
           error $
             "Invalid controller for .size operator: "
-              <> showDropGen controller
+              <> showSimple controller
     (CtlOp.Size, _) ->
       error $
         "Invalid controller for .size operator: "
-          <> showDropGen controller
+          <> showSimple controller
     (CtlOp.Cbor, _) -> do
       enc <- genForCTree cddl controller
       case enc of
@@ -329,6 +330,7 @@ genForCTree cddl (CTree.Tag tag node) = do
     _ -> error "Tag controller does not correspond to a single term"
 genForCTree cddl (CTree.CTreeE (MRuleRef n)) = genForNode cddl n
 genForCTree _ (CTree.CTreeE (MGenerator (CBORGenerator gen) _)) = gen
+genForCTree cddl (CTree.CTreeE (MValidator _ x)) = genForCTree cddl x
 
 genForNode :: HasCallStack => CTreeRoot MonoReferenced -> Name -> Gen WrappedTerm
 genForNode cddl = genForCTree cddl <=< resolveRef cddl
