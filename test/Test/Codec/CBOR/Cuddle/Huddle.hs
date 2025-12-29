@@ -48,7 +48,7 @@ instance IndexMappable XRule ParserStage TestStage where
   mapIndex (ParserXRule x) = TestXRule x
 
 instance IndexMappable XRule HuddleStage TestStage where
-  mapIndex (HuddleXRule x _) = TestXRule x
+  mapIndex (HuddleXRule x _ _) = TestXRule x
 
 newtype instance XXTopLevel TestStage = TestXXTopLevel Comment
   deriving (Generic, Show, Eq)
