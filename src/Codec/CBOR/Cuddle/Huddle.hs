@@ -106,7 +106,12 @@ where
 
 import Codec.CBOR.Cuddle.CDDL (CDDL, GenericParameter (..), HasName (..), Name (..), XRule)
 import Codec.CBOR.Cuddle.CDDL qualified as C
-import Codec.CBOR.Cuddle.CDDL.CBORGenerator (CBORGenerator (..), HasGenerator (..), WrappedTerm)
+import Codec.CBOR.Cuddle.CDDL.CBORGenerator (
+  CBORGenerator (..),
+  CBORValidator,
+  HasGenerator (..),
+  WrappedTerm,
+ )
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
 import Codec.CBOR.Cuddle.Comments (Comment (..), HasComment (..))
 import Codec.CBOR.Cuddle.Comments qualified as C
@@ -145,6 +150,7 @@ newtype instance C.XCddl HuddleStage = HuddleXCddl [C.Comment]
 data instance C.XRule HuddleStage = HuddleXRule
   { hxrComment :: C.Comment
   , hxrGenerator :: Maybe CBORGenerator
+  , hxrValidator :: Maybe CBORValidator
   }
   deriving (Generic)
 
@@ -1126,7 +1132,7 @@ collectFrom topRs =
     goRanged (Unranged _) = pure ()
     goRanged (Ranged lb ub _) = goRangeBound lb >> goRangeBound ub
     goRangeBound (RangeBoundLiteral _) = pure ()
-    goRangeBound (RangeBoundRef n r) = goRule . Rule n r $ HuddleXRule mempty Nothing
+    goRangeBound (RangeBoundRef n r) = goRule . Rule n r $ HuddleXRule mempty Nothing Nothing
 
 -- | Same as `collectFrom`, but the rules passed into this function will be put
 --   at the top of the Huddle, and all of their dependencies will be added at
