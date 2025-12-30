@@ -179,8 +179,15 @@ buildRefCTree rules = PartialCTreeRoot $ toCTreeRule <$> rules
     toCTreeRule :: CDDLMapEntry -> ProvidedParameters (CTree OrReferenced)
     toCTreeRule CDDLMapEntry {..} =
       fmap
-        (maybe id (\g x -> CTreeE $ OGenerator g x) cmeCustomGenerator . toCTreeTOG)
+        (applyValidator . applyGenerator . toCTreeTOG)
         cmeProvidedParameters
+      where
+        applyGenerator = case cmeCustomGenerator of
+          Just g -> CTreeE . OGenerator g
+          Nothing -> id
+        applyValidator = case cmeCustomValidator of
+          Just v -> CTreeE . OValidator v
+          Nothing -> id
 
     toCTreeTOG :: TypeOrGroup CTreePhase -> CTree OrReferenced
     toCTreeTOG (TOGType t0) = toCTreeT0 t0
@@ -360,9 +367,9 @@ type data DistReferenced
 
 data DistRef i
   = -- | Reference to a generic parameter
-    GenericRef (Name)
+    GenericRef Name
   | -- | Reference to a rule definition, possibly with generic arguments
-    RuleRef (Name) [CTree i]
+    RuleRef Name [CTree i]
   deriving (Generic)
 
 deriving instance Eq (CTree.Node i) => Eq (DistRef i)
