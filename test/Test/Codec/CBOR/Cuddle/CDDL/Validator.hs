@@ -53,9 +53,11 @@ import Data.Text.Lazy qualified as LT
 import Paths_cuddle (getDataFileName)
 import Test.Hspec (
   Expectation,
+  HasCallStack,
   Spec,
   describe,
   expectationFailure,
+  it,
   runIO,
  )
 import Test.Hspec.QuickCheck
@@ -92,7 +94,7 @@ genAndValidateFromFile path = do
         mapCDDLDropExt cddl
     isRule CTree.Group {} = False
     isRule _ = True
-  describe path $
+  describe path $ do
     forM_ (Map.keys $ Map.filter isRule m) $ \name@(Name n) ->
       prop (T.unpack n) . noShrinking $ \seed -> do
         let
@@ -226,9 +228,28 @@ genBytesTerm x = elements [TBytes x, TBytesI $ LBS.fromStrict x]
 arbitraryByteString :: Gen ByteString
 arbitraryByteString = BS.pack <$> arbitrary
 
--- TODO make this complete
 arbitraryTerm :: Gen Term
-arbitraryTerm = oneof [TBool <$> arbitrary, TInt <$> arbitrary, TString . T.pack <$> arbitrary]
+arbitraryTerm =
+  oneof
+    [ TInt <$> arbitrary
+    , TInteger <$> arbitrary
+    , TBytes . BS.pack <$> arbitrary
+    , TBytesI . LBS.pack <$> arbitrary
+    , TString . T.pack <$> arbitrary
+    , TStringI . LT.pack <$> arbitrary
+    , TList <$> listOf (scale (`div` 2) arbitraryTerm)
+    , TListI <$> listOf (scale (`div` 2) arbitraryTerm)
+    , TMap <$> listOf (scale (`div` 2) $ (,) <$> arbitraryTerm <*> arbitraryTerm)
+    , TMapI <$> listOf (scale (`div` 2) $ (,) <$> arbitraryTerm <*> arbitraryTerm)
+    , -- TODO properly implement tagged generation
+      -- , TTagged <$> arbitrary <*> arbitraryTerm
+      TBool <$> arbitrary
+    , pure TNull
+    , pure $ TSimple 23 -- TODO add other values once they are supported by cuddle
+    , THalf <$> arbitrary
+    , TFloat <$> arbitrary
+    , TDouble <$> arbitrary
+    ]
 
 genFullMap :: Gen Term
 genFullMap = do
@@ -259,7 +280,13 @@ genBadMapInvalidIndex =
       , (TBytes "foo", TBytes "bar")
       ]
 
-validateHuddle :: Term -> Huddle -> Name -> (CBORTermResult ValidatorStage -> Bool) -> Expectation
+validateHuddle ::
+  HasCallStack =>
+  Term ->
+  Huddle ->
+  Name ->
+  (CBORTermResult ValidatorStage -> Bool) ->
+  Expectation
 validateHuddle term huddle name predicate = do
   let
     resolvedCddl = case fullResolveCDDL . mapCDDLDropExt $ toCDDL huddle of
@@ -269,6 +296,27 @@ validateHuddle term huddle name predicate = do
     res = validateCBOR bs name (mapIndex resolvedCddl)
   unless (predicate res) $ do
     expectationFailure $ "Predicate failed on result:\n" <> showSimple res
+
+-- negateValidator :: CBORValidator -> CBORValidator
+-- negateValidator (CBORValidator v) = CBORValidator $ \t -> case v t of
+--  ValidatorSuccess -> ValidatorFailure "negateValidator"
+--  ValidatorFailure _ -> ValidatorSuccess
+--
+-- sampleNonEmpty :: (Monad m, StatefulGen g m) => NonEmpty a -> g -> m a
+-- sampleNonEmpty l g = do
+--  i <- uniformRM (0 :: Int, length l - 1) g
+--  pure $ l NE.!! i
+--
+-- genValidatorGeneratorPair :: Gen (CBORValidator, CBORGenerator)
+-- genValidatorGeneratorPair = do
+--  terms <- fmap S . NE.fromList . nubOrd <$> listOf1 arbitraryTerm
+--  pure
+--    ( CBORValidator $ \t ->
+--        if S t `elem` terms
+--          then ValidatorSuccess
+--          else ValidatorFailure "Not a valid term"
+--    , CBORGenerator $ \g -> sampleNonEmpty terms g
+--    )
 
 spec :: Spec
 spec = describe "Validator" $ do
@@ -281,33 +329,41 @@ spec = describe "Validator" $ do
     genAndValidateFromFile "example/cddl-files/shelley.cddl"
     genAndValidateFromFile "example/cddl-files/validator.cddl"
   describe "Term tests" $ do
-    describe "Positive" $ do
-      prop "Validates a full map" . forAll genFullMap $ \cbor ->
-        validateHuddle cbor huddleMap "a" isCBORTermResultValid
-      prop "Validates array" . forAll genHuddleArray $ \cbor ->
-        validateHuddle cbor huddleArray "a" isCBORTermResultValid
-      prop "Validates map with correct number of range elements"
-        . forAll (genHuddleRangeMap (5, 10))
-        $ \cbor ->
-          validateHuddle cbor huddleRangeMap "a" isCBORTermResultValid
-      prop "Validates array with ranges" . forAll genHuddleRangeArray $ \cbor ->
-        validateHuddle cbor huddleRangeArray "a" isCBORTermResultValid
-    describe "Negative" $ do
-      prop "Fails to validate a map with an unexpected index"
-        . forAll genBadMapInvalidIndex
-        $ \cbor ->
-          validateHuddle cbor huddleMap "a" (not . isCBORTermResultValid)
-      prop "Fails to validate reversed array" . forAll genBadArrayReversed $ \cbor ->
-        validateHuddle cbor huddleArray "a" (not . isCBORTermResultValid)
-      prop "Fails to validate array with missing non-negative int at the end"
-        . forAll genBadArrayMissingLastInt
-        $ \cbor ->
+    describe "Maps and arrays" $ do
+      describe "Positive" $ do
+        prop "Validates a full map" . forAll genFullMap $ \cbor ->
+          validateHuddle cbor huddleMap "a" isCBORTermResultValid
+        prop "Validates array" . forAll genHuddleArray $ \cbor ->
+          validateHuddle cbor huddleArray "a" isCBORTermResultValid
+        prop "Validates map with correct number of range elements"
+          . forAll (genHuddleRangeMap (5, 10))
+          $ \cbor ->
+            validateHuddle cbor huddleRangeMap "a" isCBORTermResultValid
+        prop "Validates array with ranges" . forAll genHuddleRangeArray $ \cbor ->
+          validateHuddle cbor huddleRangeArray "a" isCBORTermResultValid
+      describe "Negative" $ do
+        prop "Fails to validate a map with an unexpected index"
+          . forAll genBadMapInvalidIndex
+          $ \cbor ->
+            validateHuddle cbor huddleMap "a" (not . isCBORTermResultValid)
+        prop "Fails to validate reversed array" . forAll genBadArrayReversed $ \cbor ->
           validateHuddle cbor huddleArray "a" (not . isCBORTermResultValid)
-      prop "Fails to validate map with too few range elements"
-        . forAll (genHuddleRangeMap (0, 4))
-        $ \cbor ->
-          validateHuddle cbor huddleRangeMap "a" (not . isCBORTermResultValid)
-      prop "Fails to validate map with too many range elements"
-        . forAll (genHuddleRangeMap (11, 20))
-        $ \cbor ->
-          validateHuddle cbor huddleRangeMap "a" (not . isCBORTermResultValid)
+        prop "Fails to validate array with missing non-negative int at the end"
+          . forAll genBadArrayMissingLastInt
+          $ \cbor ->
+            validateHuddle cbor huddleArray "a" (not . isCBORTermResultValid)
+        prop "Fails to validate map with too few range elements"
+          . forAll (genHuddleRangeMap (0, 4))
+          $ \cbor ->
+            validateHuddle cbor huddleRangeMap "a" (not . isCBORTermResultValid)
+        prop "Fails to validate map with too many range elements"
+          . forAll (genHuddleRangeMap (11, 20))
+          $ \cbor ->
+            validateHuddle cbor huddleRangeMap "a" (not . isCBORTermResultValid)
+
+  describe "Custom validator" $ do
+    describe "Positive" $ do
+      it "Validates with cutsom validator and generator" $ do
+        validateHuddle undefined undefined "a" isCBORTermResultValid
+    describe "Negative" $ do
+      undefined

@@ -197,7 +197,12 @@ data AMatchedItem i = AMatchedItem
 --------------------------------------------------------------------------------
 -- Main entry point
 
-validateCBOR :: BS.ByteString -> Name -> CTreeRoot ValidatorStage -> CBORTermResult ValidatorStage
+validateCBOR ::
+  HasCallStack =>
+  BS.ByteString ->
+  Name ->
+  CTreeRoot ValidatorStage ->
+  CBORTermResult ValidatorStage
 validateCBOR bs rule cddl@(CTreeRoot tree) =
   case deserialiseFromBytes decodeTerm (BSL.fromStrict bs) of
     Left e -> error $ show e
