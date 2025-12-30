@@ -7,6 +7,7 @@ module Test.Codec.CBOR.Cuddle.CDDL.Validator (spec) where
 import Codec.CBOR.Cuddle.CBOR.Gen (generateCBORTerm)
 import Codec.CBOR.Cuddle.CBOR.Validator (
   CBORTermResult (..),
+  CDDLResult (..),
   ValidatorStage,
   ValidatorStageSimple,
   isCBORTermResultValid,
@@ -14,7 +15,8 @@ import Codec.CBOR.Cuddle.CBOR.Validator (
   validateCBOR,
  )
 import Codec.CBOR.Cuddle.CDDL (Name (..))
-import Codec.CBOR.Cuddle.CDDL.CTree (CTreeRoot (..))
+import Codec.CBOR.Cuddle.CDDL.CBORGenerator (CustomValidatorResult (..))
+import Codec.CBOR.Cuddle.CDDL.CTree (CTree (..), CTreeRoot (..), PTerm (..))
 import Codec.CBOR.Cuddle.CDDL.CTree qualified as CTree
 import Codec.CBOR.Cuddle.CDDL.Postlude (appendPostlude)
 import Codec.CBOR.Cuddle.CDDL.Resolve (fullResolveCDDL)
@@ -27,9 +29,11 @@ import Codec.CBOR.Cuddle.Huddle (
   asKey,
   collectFrom,
   idx,
+  int,
   mp,
   opt,
   toCDDL,
+  withValidator,
   (+>),
   (<+),
   (=:=),
@@ -53,6 +57,7 @@ import Data.Text.Lazy qualified as LT
 import Paths_cuddle (getDataFileName)
 import Test.Hspec (
   Expectation,
+  HasCallStack,
   Spec,
   describe,
   expectationFailure,
@@ -92,7 +97,7 @@ genAndValidateFromFile path = do
         mapCDDLDropExt cddl
     isRule CTree.Group {} = False
     isRule _ = True
-  describe path $
+  describe path $ do
     forM_ (Map.keys $ Map.filter isRule m) $ \name@(Name n) ->
       prop (T.unpack n) . noShrinking $ \seed -> do
         let
@@ -226,9 +231,28 @@ genBytesTerm x = elements [TBytes x, TBytesI $ LBS.fromStrict x]
 arbitraryByteString :: Gen ByteString
 arbitraryByteString = BS.pack <$> arbitrary
 
--- TODO make this complete
 arbitraryTerm :: Gen Term
-arbitraryTerm = oneof [TBool <$> arbitrary, TInt <$> arbitrary, TString . T.pack <$> arbitrary]
+arbitraryTerm =
+  oneof
+    [ TInt <$> arbitrary
+    , TInteger <$> arbitrary
+    , TBytes . BS.pack <$> arbitrary
+    , TBytesI . LBS.pack <$> arbitrary
+    , TString . T.pack <$> arbitrary
+    , TStringI . LT.pack <$> arbitrary
+    , TList <$> listOf (scale (`div` 2) arbitraryTerm)
+    , TListI <$> listOf (scale (`div` 2) arbitraryTerm)
+    , TMap <$> listOf (scale (`div` 2) $ (,) <$> arbitraryTerm <*> arbitraryTerm)
+    , TMapI <$> listOf (scale (`div` 2) $ (,) <$> arbitraryTerm <*> arbitraryTerm)
+    , -- TODO properly implement tagged generation
+      -- , TTagged <$> arbitrary <*> arbitraryTerm
+      TBool <$> arbitrary
+    , pure TNull
+    , pure $ TSimple 23 -- TODO add other values once they are supported by cuddle
+    , THalf <$> arbitrary
+    , TFloat <$> arbitrary
+    , TDouble <$> arbitrary
+    ]
 
 genFullMap :: Gen Term
 genFullMap = do
@@ -259,16 +283,48 @@ genBadMapInvalidIndex =
       , (TBytes "foo", TBytes "bar")
       ]
 
-validateHuddle :: Term -> Huddle -> Name -> (CBORTermResult ValidatorStage -> Bool) -> Expectation
+validateHuddle ::
+  HasCallStack =>
+  Term ->
+  Huddle ->
+  Name ->
+  (CBORTermResult ValidatorStage -> Expectation) ->
+  Expectation
 validateHuddle term huddle name predicate = do
   let
     resolvedCddl = case fullResolveCDDL . mapCDDLDropExt $ toCDDL huddle of
       Right root -> root
       Left err -> error $ show err
     bs = toStrictByteString $ encodeTerm term
-    res = validateCBOR bs name (mapIndex resolvedCddl)
-  unless (predicate res) $ do
-    expectationFailure $ "Predicate failed on result:\n" <> showSimple res
+  predicate $ validateCBOR bs name (mapIndex resolvedCddl)
+
+shouldBeValid :: CBORTermResult ValidatorStage -> Expectation
+shouldBeValid x | True <- isCBORTermResultValid x = pure ()
+shouldBeValid x = expectationFailure $ "Expected a success, got\n" <> showSimple x
+
+shouldNotBeValid :: CBORTermResult ValidatorStage -> Expectation
+shouldNotBeValid x | False <- isCBORTermResultValid x = pure ()
+shouldNotBeValid _ = expectationFailure "Expected a failure, but got a success"
+
+shouldResultIn :: CBORTermResult ValidatorStage -> CBORTermResult ValidatorStage -> Expectation
+shouldResultIn got expected
+  | let gotSimple = mapIndex @_ @_ @ValidatorStageSimple got
+  , let expectedSimple = mapIndex @_ @_ @ValidatorStageSimple expected
+  , gotSimple == expectedSimple =
+      pure ()
+shouldResultIn got expected =
+  expectationFailure $
+    "Expected:\n" <> showSimple expected <> "\nActual:\n" <> showSimple got
+
+stringValidator :: Term -> CustomValidatorResult
+stringValidator (TString _) = ValidatorSuccess
+stringValidator (TStringI _) = ValidatorSuccess
+stringValidator t = ValidatorFailure $ "Expected a string, got\n" <> T.pack (show t)
+
+bytesValidator :: Term -> CustomValidatorResult
+bytesValidator (TBytes _) = ValidatorSuccess
+bytesValidator (TBytesI _) = ValidatorSuccess
+bytesValidator _ = ValidatorFailure "Expected bytes"
 
 spec :: Spec
 spec = describe "Validator" $ do
@@ -281,33 +337,85 @@ spec = describe "Validator" $ do
     genAndValidateFromFile "example/cddl-files/shelley.cddl"
     genAndValidateFromFile "example/cddl-files/validator.cddl"
   describe "Term tests" $ do
+    describe "Maps and arrays" $ do
+      describe "Positive" $ do
+        prop "Validates a full map" . forAll genFullMap $ \cbor ->
+          validateHuddle cbor huddleMap "a" shouldBeValid
+        prop "Validates array" . forAll genHuddleArray $ \cbor ->
+          validateHuddle cbor huddleArray "a" shouldBeValid
+        prop "Validates map with correct number of range elements"
+          . forAll (genHuddleRangeMap (5, 10))
+          $ \cbor ->
+            validateHuddle cbor huddleRangeMap "a" shouldBeValid
+        prop "Validates array with ranges" . forAll genHuddleRangeArray $ \cbor ->
+          validateHuddle cbor huddleRangeArray "a" shouldBeValid
+      describe "Negative" $ do
+        prop "Fails to validate a map with an unexpected index"
+          . forAll genBadMapInvalidIndex
+          $ \cbor ->
+            validateHuddle cbor huddleMap "a" shouldNotBeValid
+        prop "Fails to validate reversed array" . forAll genBadArrayReversed $ \cbor ->
+          validateHuddle cbor huddleArray "a" shouldNotBeValid
+        prop "Fails to validate array with missing non-negative int at the end"
+          . forAll genBadArrayMissingLastInt
+          $ \cbor ->
+            validateHuddle cbor huddleArray "a" shouldNotBeValid
+        prop "Fails to validate map with too few range elements"
+          . forAll (genHuddleRangeMap (0, 4))
+          $ \cbor ->
+            validateHuddle cbor huddleRangeMap "a" shouldNotBeValid
+        prop "Fails to validate map with too many range elements"
+          . forAll (genHuddleRangeMap (11, 20))
+          $ \cbor ->
+            validateHuddle cbor huddleRangeMap "a" shouldNotBeValid
+
+  describe "Custom validator" $ do
     describe "Positive" $ do
-      prop "Validates a full map" . forAll genFullMap $ \cbor ->
-        validateHuddle cbor huddleMap "a" isCBORTermResultValid
-      prop "Validates array" . forAll genHuddleArray $ \cbor ->
-        validateHuddle cbor huddleArray "a" isCBORTermResultValid
-      prop "Validates map with correct number of range elements"
-        . forAll (genHuddleRangeMap (5, 10))
-        $ \cbor ->
-          validateHuddle cbor huddleRangeMap "a" isCBORTermResultValid
-      prop "Validates array with ranges" . forAll genHuddleRangeArray $ \cbor ->
-        validateHuddle cbor huddleRangeArray "a" isCBORTermResultValid
+      prop "Validates with cutsom validator" $ do
+        term <- genStringTerm . T.pack =<< arbitrary
+        num <- arbitrary
+        let
+          huddle =
+            collectFrom
+              [ HIRule . withValidator stringValidator $ "a" =:= int num
+              ]
+        pure $ validateHuddle term huddle "a" shouldBeValid
+      prop "Validates with cutsom validator behind a reference" $ do
+        stringTerm <- genStringTerm . T.pack =<< arbitrary
+        arrTerm <- genArrayTerm [stringTerm]
+        num <- arbitrary
+        let
+          ruleA = withValidator stringValidator $ "a" =:= int num
+          huddle =
+            collectFrom
+              [ HIRule ruleA
+              , HIRule $ "b" =:= arr [a ruleA]
+              ]
+        pure $ validateHuddle arrTerm huddle "b" shouldBeValid
     describe "Negative" $ do
-      prop "Fails to validate a map with an unexpected index"
-        . forAll genBadMapInvalidIndex
-        $ \cbor ->
-          validateHuddle cbor huddleMap "a" (not . isCBORTermResultValid)
-      prop "Fails to validate reversed array" . forAll genBadArrayReversed $ \cbor ->
-        validateHuddle cbor huddleArray "a" (not . isCBORTermResultValid)
-      prop "Fails to validate array with missing non-negative int at the end"
-        . forAll genBadArrayMissingLastInt
-        $ \cbor ->
-          validateHuddle cbor huddleArray "a" (not . isCBORTermResultValid)
-      prop "Fails to validate map with too few range elements"
-        . forAll (genHuddleRangeMap (0, 4))
-        $ \cbor ->
-          validateHuddle cbor huddleRangeMap "a" (not . isCBORTermResultValid)
-      prop "Fails to validate map with too many range elements"
-        . forAll (genHuddleRangeMap (11, 20))
-        $ \cbor ->
-          validateHuddle cbor huddleRangeMap "a" (not . isCBORTermResultValid)
+      prop "Fails if term is valid against the Huddle, but not the custom validator" $ do
+        stringTerm <- genStringTerm . T.pack =<< arbitrary
+        let
+          huddle =
+            collectFrom
+              [ HIRule . withValidator bytesValidator $ "a" =:= VText
+              ]
+        pure $ validateHuddle stringTerm huddle "a" shouldNotBeValid
+      prop "Fails if term is valid against the Huddle, but not the custom validator, behind a reference" $ do
+        stringTerm <- genStringTerm . T.pack =<< arbitrary
+        let
+          ruleA = withValidator bytesValidator $ "a" =:= VText
+          ruleB = "b" =:= arr [a ruleA]
+          huddle =
+            collectFrom
+              [ HIRule ruleA
+              , HIRule ruleB
+              ]
+        pure $
+          validateHuddle
+            stringTerm
+            huddle
+            "a"
+            ( `shouldResultIn`
+                CBORTermResult stringTerm (CustomValidatorFailure "Expected bytes" (Postlude PTText))
+            )
