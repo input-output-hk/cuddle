@@ -93,6 +93,9 @@ module Codec.CBOR.Cuddle.Huddle (
   -- * Generators
   withGenerator,
 
+  -- * Validators
+  withValidator,
+
   -- * Name
   HasName (..),
 
@@ -108,13 +111,16 @@ import Codec.CBOR.Cuddle.CDDL (CDDL, GenericParameter (..), HasName (..), Name (
 import Codec.CBOR.Cuddle.CDDL qualified as C
 import Codec.CBOR.Cuddle.CDDL.CBORGenerator (
   CBORGenerator (..),
-  CBORValidator,
+  CBORValidator (..),
+  CustomValidatorResult,
   HasGenerator (..),
+  HasValidator (..),
   WrappedTerm,
  )
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
 import Codec.CBOR.Cuddle.Comments (Comment (..), HasComment (..))
 import Codec.CBOR.Cuddle.Comments qualified as C
+import Codec.CBOR.Term (Term)
 import Control.Monad (when)
 import Control.Monad.State (MonadState (get), State, execState, modify)
 import Data.ByteString (ByteString)
@@ -157,6 +163,12 @@ data instance C.XRule HuddleStage = HuddleXRule
 instance HasComment (C.XRule HuddleStage) where
   commentL = #hxrComment
 
+instance HasValidator (C.XRule HuddleStage) where
+  validatorL = #hxrValidator
+
+instance HasGenerator (C.XRule HuddleStage) where
+  generatorL = #hxrGenerator
+
 instance Default (XRule HuddleStage)
 
 newtype instance C.XXTopLevel HuddleStage = HuddleXXTopLevel C.Comment
@@ -177,10 +189,13 @@ data Rule = Rule
   deriving (Generic)
 
 instance HasGenerator Rule where
-  generatorL = #ruleExtra % #hxrGenerator
+  generatorL = #ruleExtra % generatorL
 
 instance HasComment Rule where
-  commentL = #ruleExtra % #hxrComment
+  commentL = #ruleExtra % commentL
+
+instance HasValidator Rule where
+  validatorL = #ruleExtra % validatorL
 
 instance HasName Rule where
   getName = ruleName
@@ -662,6 +677,9 @@ infixl 9 ...
 
 class IsType0 a where
   toType0 :: a -> Type0
+
+instance IsType0 Type0 where
+  toType0 = id
 
 instance IsType0 Rule where
   toType0 = Type0 . NoChoice . T2Ref
@@ -1353,3 +1371,6 @@ toCDDL' HuddleConfig {..} hdl =
 
 withGenerator :: HasGenerator a => (forall g m. StatefulGen g m => g -> m WrappedTerm) -> a -> a
 withGenerator f = L.set generatorL (Just $ CBORGenerator f)
+
+withValidator :: HasValidator a => (Term -> CustomValidatorResult) -> a -> a
+withValidator p = L.set validatorL . Just $ CBORValidator p

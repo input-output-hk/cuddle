@@ -102,6 +102,16 @@ showSimple ::
   a ValidatorStage -> String
 showSimple = show . mapIndex @_ @_ @ValidatorStageSimple
 
+deriving instance Eq (Node ValidatorStageSimple)
+
+deriving instance Eq (CBORTermResult ValidatorStageSimple)
+
+deriving instance Eq (AMatchedItem ValidatorStageSimple)
+
+deriving instance Eq (ANonMatchedItem ValidatorStageSimple)
+
+deriving instance Eq (CDDLResult ValidatorStageSimple)
+
 deriving instance Show (Node ValidatorStageSimple)
 
 deriving instance Show (CBORTermResult ValidatorStageSimple)
@@ -197,7 +207,12 @@ data AMatchedItem i = AMatchedItem
 --------------------------------------------------------------------------------
 -- Main entry point
 
-validateCBOR :: BS.ByteString -> Name -> CTreeRoot ValidatorStage -> CBORTermResult ValidatorStage
+validateCBOR ::
+  HasCallStack =>
+  BS.ByteString ->
+  Name ->
+  CTreeRoot ValidatorStage ->
+  CBORTermResult ValidatorStage
 validateCBOR bs rule cddl@(CTreeRoot tree) =
   case deserialiseFromBytes decodeTerm (BSL.fromStrict bs) of
     Left e -> error $ show e
@@ -215,32 +230,30 @@ validateTerm ::
   Term ->
   CTree ValidatorStage ->
   CBORTermResult ValidatorStage
-validateTerm cddl term rule
-  | CTreeE (VValidator (CBORValidator validator) _) <- rRule =
-      case validator term of
-        ValidatorSuccess -> CBORTermResult term $ Valid rule
-        ValidatorFailure e -> CBORTermResult term $ CustomValidatorFailure e rule
+validateTerm cddl term (resolveIfRef cddl -> rule)
+  | CTreeE (VValidator (CBORValidator validator) _) <- rule =
+      CBORTermResult term $ case validator term of
+        ValidatorSuccess -> Valid rule
+        ValidatorFailure e -> CustomValidatorFailure e rule
   | otherwise =
       CBORTermResult term $ case term of
-        TInt i -> validateInteger cddl (fromIntegral i) rRule
-        TInteger i -> validateInteger cddl i rRule
-        TBytes b -> validateBytes cddl b rRule
-        TBytesI b -> validateBytes cddl (BSL.toStrict b) rRule
-        TString s -> validateText cddl s rRule
-        TStringI s -> validateText cddl (TL.toStrict s) rRule
-        TList ts -> validateList cddl ts rRule
-        TListI ts -> validateList cddl ts rRule
-        TMap ts -> validateMap cddl ts rRule
-        TMapI ts -> validateMap cddl ts rRule
-        TTagged w t -> validateTagged cddl w t rRule
-        TBool b -> validateBool cddl b rRule
-        TNull -> validateNull cddl rRule
-        TSimple s -> validateSimple cddl s rRule
-        THalf h -> validateHalf cddl h rRule
-        TFloat h -> validateFloat cddl h rRule
-        TDouble d -> validateDouble cddl d rRule
-  where
-    rRule = resolveIfRef cddl rule
+        TInt i -> validateInteger cddl (fromIntegral i) rule
+        TInteger i -> validateInteger cddl i rule
+        TBytes b -> validateBytes cddl b rule
+        TBytesI b -> validateBytes cddl (BSL.toStrict b) rule
+        TString s -> validateText cddl s rule
+        TStringI s -> validateText cddl (TL.toStrict s) rule
+        TList ts -> validateList cddl ts rule
+        TListI ts -> validateList cddl ts rule
+        TMap ts -> validateMap cddl ts rule
+        TMapI ts -> validateMap cddl ts rule
+        TTagged w t -> validateTagged cddl w t rule
+        TBool b -> validateBool cddl b rule
+        TNull -> validateNull cddl rule
+        TSimple s -> validateSimple cddl s rule
+        THalf h -> validateHalf cddl h rule
+        TFloat h -> validateFloat cddl h rule
+        TDouble d -> validateDouble cddl d rule
 
 --------------------------------------------------------------------------------
 -- Ints and integers
