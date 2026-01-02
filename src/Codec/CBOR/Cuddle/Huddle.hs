@@ -159,18 +159,13 @@ newtype instance C.XXTopLevel HuddleStage = HuddleXXTopLevel C.Comment
 newtype instance C.XXType2 HuddleStage = HuddleXXType2 Void
   deriving (Generic, Semigroup, Show, Eq)
 
-data Named a = Named
-  { name :: Name
-  , value :: a
-  }
-  deriving (Functor, Generic, Show)
-
 -- | Add a description to a rule or group entry, to be included as a comment.
 comment :: HasComment a => Comment -> a -> a
 comment desc n = n & commentL %~ (<> desc)
 
 data Rule = Rule
-  { ruleDefinition :: Named Type0
+  { ruleName :: Name
+  , ruleDefinition :: Type0
   , ruleExtra :: XRule HuddleStage
   }
   deriving (Generic)
@@ -182,16 +177,20 @@ instance HasComment Rule where
   commentL = #ruleExtra % #hxrComment
 
 instance HasName Rule where
-  getName = getName . ruleDefinition
+  getName = ruleName
 
-data GroupDef = GroupDef {gdNamed :: Named Group, gdExt :: XRule HuddleStage}
+data GroupDef = GroupDef
+  { gdName :: Name
+  , gdDefinition :: Group
+  , gdExt :: XRule HuddleStage
+  }
   deriving (Generic)
 
 instance HasComment GroupDef where
   commentL = #gdExt % commentL
 
 instance HasName GroupDef where
-  getName = getName . gdNamed
+  getName = gdName
 
 data HuddleItem
   = HIRule Rule
@@ -212,7 +211,7 @@ data Huddle = Huddle
 -- definition from the `Huddle` value on the left.
 huddleAugment :: Huddle -> Huddle -> Huddle
 huddleAugment (Huddle rootsL itemsL) (Huddle rootsR itemsR) =
-  Huddle (L.nubBy ((==) `on` name . ruleDefinition) $ rootsL <> rootsR) (itemsL |<> itemsR)
+  Huddle (L.nubBy ((==) `on` ruleName) $ rootsL <> rootsR) (itemsL |<> itemsR)
 
 -- | This semigroup instance:
 --   - Takes takes the roots from the RHS unless they are empty, in which case
@@ -237,8 +236,8 @@ instance Semigroup Huddle where
 instance IsList Huddle where
   type Item Huddle = Rule
   fromList [] = Huddle mempty OMap.empty
-  fromList (r@(Rule x _) : xs) =
-    (#items %~ (OMap.|> (getName x, HIRule r))) $ fromList xs
+  fromList (r@(Rule n _ _) : xs) =
+    (#items %~ (OMap.|> (n, HIRule r))) $ fromList xs
 
   toList = const []
 
@@ -454,11 +453,17 @@ inferInteger i
 --------------------------------------------------------------------------------
 
 -- | A reference can be to any type, so we allow it to inhabit all
-type AnyRef a = Named Type0
+data AnyRef = AnyRef
+  { arName :: Name
+  , arDefinition :: Type0
+  }
+
+instance HasName AnyRef where
+  getName = arName
 
 data Constrainable a
   = CValue (Value a)
-  | CRef (AnyRef a)
+  | CRef AnyRef
   | CGRef GRef
 
 -- | Uninhabited type used as marker for the type of thing a CRef sizes
@@ -484,7 +489,7 @@ data Constrained where
 class IsConstrainable a x | a -> x where
   toConstrainable :: a -> Constrainable x
 
-instance IsConstrainable (AnyRef a) CRefType where
+instance IsConstrainable AnyRef CRefType where
   toConstrainable = CRef
 
 instance IsConstrainable (Value a) a where
@@ -576,11 +581,11 @@ sized v sz =
 
 class IsCborable a
 instance IsCborable ByteString
-instance IsCborable (AnyRef a)
+instance IsCborable AnyRef
 instance IsCborable GRef
 
 cbor :: (IsCborable b, IsConstrainable c b) => c -> Rule -> Constrained
-cbor v r@(Rule (Named n _) _) =
+cbor v r@(Rule n _ _) =
   Constrained
     (toConstrainable v)
     ValueConstraint
@@ -595,7 +600,7 @@ cbor v r@(Rule (Named n _) _) =
 
 class IsComparable a
 instance IsComparable Int
-instance IsComparable (AnyRef a)
+instance IsComparable AnyRef
 instance IsComparable GRef
 
 le :: (IsComparable a, IsConstrainable c a) => c -> Word64 -> Constrained
@@ -616,7 +621,7 @@ le v bound =
 
 data RangeBound
   = RangeBoundLiteral Literal
-  | RangeBoundRef (Named Type0)
+  | RangeBoundRef Name Type0
 
 class IsRangeBound a where
   toRangeBound :: a -> RangeBound
@@ -627,11 +632,8 @@ instance IsRangeBound Literal where
 instance IsRangeBound Integer where
   toRangeBound = RangeBoundLiteral . inferInteger
 
-instance IsRangeBound (Named Type0) where
-  toRangeBound = RangeBoundRef
-
 instance IsRangeBound Rule where
-  toRangeBound (Rule x _) = toRangeBound x
+  toRangeBound (Rule n x _) = RangeBoundRef n x
 
 data Ranged where
   Ranged ::
@@ -786,12 +788,12 @@ infixl 8 ==>
 
 -- | Assign a rule
 (=:=) :: IsType0 a => Name -> a -> Rule
-n =:= b = Rule (Named n (toType0 b)) def
+n =:= b = Rule n (toType0 b) def
 
 infixl 1 =:=
 
 (=:~) :: Name -> Group -> GroupDef
-n =:~ b = GroupDef (Named n b) def
+n =:~ b = GroupDef n b def
 
 infixl 1 =:~
 
@@ -986,17 +988,19 @@ data GRule a = GRule
   }
 
 data GRuleCall = GRuleCall
-  { grcBody :: Named (GRule Type2)
+  { grcName :: Name
+  , grcBody :: GRule Type2
   , grcExtra :: XRule HuddleStage
   }
 
 data GRuleDef = GRuleDef
-  { grdBody :: Named (GRule GRef)
+  { grdName :: Name
+  , grdBody :: GRule GRef
   , grdExtra :: XRule HuddleStage
   }
 
 instance HasName GRuleDef where
-  getName = getName . grdBody
+  getName = grdName
 
 callToDef :: GRule Type2 -> GRule GRef
 callToDef gr = gr {args = refs}
@@ -1014,13 +1018,11 @@ callToDef gr = gr {args = refs}
 binding :: IsType0 t0 => (GRef -> Rule) -> t0 -> GRuleCall
 binding fRule t0 =
   GRuleCall
-    ( Named
-        (name ruleDefinition)
-        GRule
-          { args = t2 NE.:| []
-          , body = getField @"value" ruleDefinition
-          }
-    )
+    ruleName
+    GRule
+      { args = t2 NE.:| []
+      , body = ruleDefinition
+      }
     ruleExtra
   where
     Rule {..} = fRule (freshName 0)
@@ -1032,13 +1034,11 @@ binding fRule t0 =
 binding2 :: (IsType0 t0, IsType0 t1) => (GRef -> GRef -> Rule) -> t0 -> t1 -> GRuleCall
 binding2 fRule t0 t1 =
   GRuleCall
-    ( Named
-        (name ruleDefinition)
-        GRule
-          { args = t02 NE.:| [t12]
-          , body = getField @"value" ruleDefinition
-          }
-    )
+    ruleName
+    GRule
+      { args = t02 NE.:| [t12]
+      , body = ruleDefinition
+      }
     ruleExtra
   where
     Rule {..} = fRule (freshName 0) (freshName 1)
@@ -1058,9 +1058,9 @@ hiRule (HIRule r) = [r]
 hiRule _ = []
 
 instance HasName HuddleItem where
-  getName (HIRule (Rule (Named n _) _)) = n
-  getName (HIGroup (GroupDef (Named n _) _)) = n
-  getName (HIGRule (GRuleDef (Named n _) _)) = n
+  getName (HIRule (Rule n _ _)) = n
+  getName (HIGroup (GroupDef n _ _)) = n
+  getName (HIGRule (GRuleDef n _ _)) = n
 
 -- | Collect all rules starting from a given point. This will also insert a
 --   single pseudo-rule as the first element which references the specified
@@ -1079,9 +1079,9 @@ collectFrom topRs =
         }
     goHuddleItem (HIRule r) = goRule r
     goHuddleItem (HIGroup g) = goNamedGroup g
-    goHuddleItem (HIGRule (GRuleDef (Named _ (GRule _ t0)) _)) = goT0 t0
+    goHuddleItem (HIGRule (GRuleDef _ (GRule _ t0) _)) = goT0 t0
     goRule :: Rule -> State (OMap Name HuddleItem) ()
-    goRule r@(Rule (Named n t0) _) = do
+    goRule r@(Rule n t0 _) = do
       items <- get
       when (OMap.notMember n items) $ do
         modify (OMap.|> (n, HIRule r))
@@ -1089,15 +1089,15 @@ collectFrom topRs =
     goChoice f (NoChoice x) = f x
     goChoice f (ChoiceOf x xs) = f x >> goChoice f xs
     goT0 = goChoice goT2 . unType0
-    goNamedGroup gd@(GroupDef (Named n g) _) = do
+    goNamedGroup gd@(GroupDef n g _) = do
       items <- get
       when (OMap.notMember n items) $ do
         modify (OMap.|> (n, HIGroup gd))
         goGroup g
-    goGRule (GRuleCall r@(Named n g) extra) = do
+    goGRule (GRuleCall n g extra) = do
       items <- get
       when (OMap.notMember n items) $ do
-        modify (OMap.|> (n, HIGRule $ GRuleDef (fmap callToDef r) extra))
+        modify (OMap.|> (n, HIGRule $ GRuleDef n (callToDef g) extra))
         goT0 (body g)
       -- Note that the parameters here may be different, so this doesn't live
       -- under the guard
@@ -1112,7 +1112,7 @@ collectFrom topRs =
     goT2 (T2Constrained (Constrained c _ refs)) =
       ( case c of
           CValue _ -> pure ()
-          CRef r -> goRule $ Rule r def
+          CRef AnyRef {..} -> goRule $ Rule arName arDefinition def
           CGRef _ -> pure ()
       )
         >> mapM_ goRule refs
@@ -1126,7 +1126,7 @@ collectFrom topRs =
     goRanged (Unranged _) = pure ()
     goRanged (Ranged lb ub _) = goRangeBound lb >> goRangeBound ub
     goRangeBound (RangeBoundLiteral _) = pure ()
-    goRangeBound (RangeBoundRef r) = goRule . Rule r $ HuddleXRule mempty Nothing
+    goRangeBound (RangeBoundRef n r) = goRule . Rule n r $ HuddleXRule mempty Nothing
 
 -- | Same as `collectFrom`, but the rules passed into this function will be put
 --   at the top of the Huddle, and all of their dependencies will be added at
@@ -1196,7 +1196,7 @@ toCDDL' HuddleConfig {..} hdl =
         comment "Pseudo-rule introduced by Cuddle to collect root elements" $
           "huddle_root_defs" =:= arr (fromList (fmap a topRs))
     toCDDLRule :: Rule -> C.Rule HuddleStage
-    toCDDLRule (Rule (Named n (Type0 t0)) extra) =
+    toCDDLRule (Rule n (Type0 t0) extra) =
       ( \x ->
           C.Rule n Nothing C.AssignEq x extra
       )
@@ -1248,8 +1248,8 @@ toCDDL' HuddleConfig {..} hdl =
       T2Array x -> C.Type1 (C.T2Array $ arrayToCDDLGroup x) Nothing mempty
       T2Tagged (Tagged mmin x) ->
         C.Type1 (C.T2Tag mmin $ toCDDLType0 x) Nothing mempty
-      T2Ref (Rule (Named n _) _) -> C.Type1 (C.T2Name n Nothing) Nothing mempty
-      T2Group (GroupDef (Named n _) _) -> C.Type1 (C.T2Name n Nothing) Nothing mempty
+      T2Ref (Rule n _ _) -> C.Type1 (C.T2Name n Nothing) Nothing mempty
+      T2Group (GroupDef n _ _) -> C.Type1 (C.T2Name n Nothing) Nothing mempty
       T2Generic g -> C.Type1 (toGenericCall g) Nothing mempty
       T2GenericRef (GRef n) -> C.Type1 (C.T2Name (C.Name n) Nothing) Nothing mempty
 
@@ -1289,7 +1289,7 @@ toCDDL' HuddleConfig {..} hdl =
 
     toCDDLConstrainable c = case c of
       CValue v -> toCDDLPostlude v
-      CRef r -> name r
+      CRef r -> getName r
       CGRef (GRef n) -> C.Name n
 
     toCDDLRanged :: Ranged -> C.Type1 HuddleStage
@@ -1303,10 +1303,10 @@ toCDDL' HuddleConfig {..} hdl =
 
     toCDDLRangeBound :: RangeBound -> C.Type2 HuddleStage
     toCDDLRangeBound (RangeBoundLiteral l) = C.T2Value $ toCDDLValue l
-    toCDDLRangeBound (RangeBoundRef (Named n _)) = C.T2Name n Nothing
+    toCDDLRangeBound (RangeBoundRef n _) = C.T2Name n Nothing
 
     toCDDLGroupDef :: GroupDef -> C.Rule HuddleStage
-    toCDDLGroupDef (GroupDef (Named n (Group t0s)) extra) =
+    toCDDLGroupDef (GroupDef n (Group t0s) extra) =
       C.Rule
         n
         Nothing
@@ -1324,13 +1324,13 @@ toCDDL' HuddleConfig {..} hdl =
         extra
 
     toGenericCall :: GRuleCall -> C.Type2 HuddleStage
-    toGenericCall (GRuleCall (Named n gr) _) =
+    toGenericCall (GRuleCall n gr _) =
       C.T2Name
         n
         (Just . C.GenericArg $ fmap toCDDLType1 (args gr))
 
     toGenRuleDef :: GRuleDef -> C.Rule HuddleStage
-    toGenRuleDef (GRuleDef (Named n gr) extra) =
+    toGenRuleDef (GRuleDef n gr extra) =
       C.Rule
         n
         (Just gps)
@@ -1347,6 +1347,3 @@ toCDDL' HuddleConfig {..} hdl =
 
 withGenerator :: HasGenerator a => (forall g m. StatefulGen g m => g -> m WrappedTerm) -> a -> a
 withGenerator f = L.set generatorL (Just $ CBORGenerator f)
-
-instance HasName (Named a) where
-  getName = name
