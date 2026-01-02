@@ -1,6 +1,6 @@
 cabal-version: 3.4
 name: cuddle
-version: 1.1.2.0
+version: 1.2.0.0
 synopsis: CDDL Generator and test utilities
 description:
   Cuddle is a library for generating and manipulating [CDDL](https://datatracker.ietf.org/doc/html/rfc8610).
@@ -51,7 +51,6 @@ library
     Codec.CBOR.Cuddle.CDDL.Resolve
     Codec.CBOR.Cuddle.Comments
     Codec.CBOR.Cuddle.Huddle
-    Codec.CBOR.Cuddle.Huddle.HuddleM
     Codec.CBOR.Cuddle.IndexMappable
     Codec.CBOR.Cuddle.Parser
     Codec.CBOR.Cuddle.Parser.Lexer
