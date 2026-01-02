@@ -1,8 +1,9 @@
 # Changelog for `cuddle`
 
-## 1.1.2.0
+## 1.2.0.0
 
 * Export `Type0`
+* Removed `Codec.CBOR.Cuddle.Huddle.HuddleM`
 
 ## 1.1.1.0
 
