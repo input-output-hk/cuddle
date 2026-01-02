@@ -18,7 +18,7 @@ import Codec.CBOR.Cuddle.CDDL (
   XXTopLevel,
   XXType2,
  )
-import Codec.CBOR.Cuddle.CDDL.CBORGenerator (CBORGenerator)
+import Codec.CBOR.Cuddle.CDDL.CBORGenerator (CBORGenerator, CBORValidator)
 import Codec.CBOR.Cuddle.CDDL.CtlOp
 import Control.Monad.Identity (Identity (..))
 import Data.Default.Class (Default)
@@ -53,7 +53,7 @@ newtype instance XXTopLevel CTreePhase = CTreeXXTopLevel Void
 data instance XCddl CTreePhase = CTreeXCddl
   deriving (Generic, Show, Eq, Ord)
 
-newtype instance XRule CTreePhase = CTreeXRule (Maybe CBORGenerator)
+data instance XRule CTreePhase = CTreeXRule (Maybe CBORGenerator) (Maybe CBORValidator)
   deriving (Generic)
 
 newtype instance XXType2 CTreePhase = CTreeXXType2 Void
