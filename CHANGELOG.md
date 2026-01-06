@@ -4,6 +4,12 @@
 
 * Export `Type0`
 * Removed `Codec.CBOR.Cuddle.Huddle.HuddleM`
+* Add `withValidator`
+* Add `showSimple`, `ValidatorStageSimple`
+* Add `CBORValidator`, `CustomValidatorResult`, `HasValidator`
+* Add custom validator field to `XRule CTreePhase`
+* Added index type parameter to `CDDLResult`, `CBORTermResult`, `AMatchedItem`, `ANonMatchedItem`
+* Remove `CDDL` and `Rule` type synonyms from `Codec.CBOR.Cuddle.CBOR.Validator`
 
 ## 1.1.1.0
 
