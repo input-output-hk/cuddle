@@ -17,6 +17,12 @@
 * Remove `generateCBORTerm'`
 * Change the type of `withGenerator` and `CBORGenerator`
 * Change `--rule` option of `gen` to an argument
+* Add `withValidator`
+* Add `showSimple`, `ValidatorStageSimple`
+* Add `CBORValidator`, `CustomValidatorResult`, `HasValidator`
+* Add custom validator field to `XRule CTreePhase`
+* Added index type parameter to `CDDLResult`, `CBORTermResult`, `AMatchedItem`, `ANonMatchedItem`
+* Remove `CDDL` and `Rule` type synonyms from `Codec.CBOR.Cuddle.CBOR.Validator`
 
 ## 1.1.1.0
 
