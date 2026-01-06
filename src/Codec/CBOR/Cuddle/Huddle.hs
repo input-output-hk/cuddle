@@ -1058,9 +1058,9 @@ hiRule (HIRule r) = [r]
 hiRule _ = []
 
 instance HasName HuddleItem where
-  getName (HIRule (Rule n _ _)) = n
-  getName (HIGroup (GroupDef n _ _)) = n
-  getName (HIGRule (GRuleDef n _ _)) = n
+  getName (HIRule rule) = getName rule
+  getName (HIGroup group) = getName group
+  getName (HIGRule gRule) = getName gRule
 
 -- | Collect all rules starting from a given point. This will also insert a
 --   single pseudo-rule as the first element which references the specified
