@@ -234,7 +234,7 @@ run (Opts cmd cddlFile) = do
           let
             cddl
               | vcNoPrelude vcOpts = res
-              | otherwise = res
+              | otherwise = appendPostlude res
            in
             case fullResolveCDDL $ mapCDDLDropExt cddl of
               Left err -> putStrLnErr (show err) >> exitFailure
