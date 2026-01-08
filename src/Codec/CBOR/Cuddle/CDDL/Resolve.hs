@@ -49,12 +49,9 @@ import Capability.State (HasState, MonadState (..), modify)
 import Codec.CBOR.Cuddle.CDDL as CDDL
 import Codec.CBOR.Cuddle.CDDL.CTree (
   CTree (..),
-  CTreePhase,
   CTreeRoot (..),
   PTerm (..),
-  XRule (..),
   XXCTree,
-  XXType2 (..),
   foldCTree,
  )
 import Codec.CBOR.Cuddle.CDDL.CTree qualified as CTree
@@ -67,7 +64,8 @@ import Data.Hashable
 #if __GLASGOW_HASKELL__ < 910
 import Data.List (foldl')
 #endif
-import Codec.CBOR.Cuddle.CDDL.CBORGenerator (CBORGenerator, CBORValidator)
+import Codec.CBOR.Cuddle.CDDL.CBORGenerator (CBORGenerator, CBORValidator, GenPhase, XXCTree (..))
+import Codec.CBOR.Cuddle.CDDL.CTreePhase (CTreePhase, XRule (..), XXType2 (..))
 import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as Map
@@ -595,3 +593,15 @@ instance IndexMappable CTree DistReferenced DistReferencedNoGen where
 instance IndexMappable DistRef DistReferenced DistReferencedNoGen where
   mapIndex (GenericRef n) = GenericRef n
   mapIndex (RuleRef n args) = RuleRef n $ mapIndex <$> args
+
+-- MonoReferenced -> GenPhase
+
+instance IndexMappable CTreeRoot MonoReferenced GenPhase where
+  mapIndex (CTreeRoot m) = CTreeRoot $ mapIndex <$> m
+
+instance IndexMappable CTree MonoReferenced GenPhase where
+  mapIndex = foldCTree mapExt mapIndex
+    where
+      mapExt (MRuleRef x) = CTreeE $ GenRef x
+      mapExt (MGenerator g x) = CTreeE . GenCustom g $ mapIndex x
+      mapExt (MValidator _ x) = mapIndex x

@@ -83,7 +83,7 @@ module Codec.CBOR.Cuddle.Huddle (
   tag,
 
   -- * Generics
-  GRef,
+  GRef (..),
   GRuleDef (..),
   GRuleCall (..),
   binding,
@@ -113,10 +113,12 @@ import Codec.CBOR.Cuddle.CDDL.CBORGenerator (
   CBORGenerator (..),
   CBORValidator (..),
   CustomValidatorResult,
+  GenPhase,
   HasGenerator (..),
   HasValidator (..),
   WrappedTerm,
  )
+import Codec.CBOR.Cuddle.CDDL.CTree (CTreeRoot)
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
 import Codec.CBOR.Cuddle.Comments (Comment (..), HasComment (..))
 import Codec.CBOR.Cuddle.Comments qualified as C
@@ -1369,7 +1371,9 @@ toCDDL' HuddleConfig {..} hdl =
           C.GenericParameters $
             fmap (\(GRef t) -> GenericParameter (C.Name t) $ HuddleXTerm mempty) (args gr)
 
-withGenerator :: HasGenerator a => (forall g m. StatefulGen g m => g -> m WrappedTerm) -> a -> a
+withGenerator ::
+  HasGenerator a =>
+  (forall g m. StatefulGen g m => CTreeRoot GenPhase -> g -> m WrappedTerm) -> a -> a
 withGenerator f = L.set generatorL (Just $ CBORGenerator f)
 
 withValidator :: HasValidator a => (Term -> CustomValidatorResult) -> a -> a

@@ -24,7 +24,7 @@ import Codec.CBOR.Cuddle.CDDL (
   XXTopLevel,
   XXType2,
  )
-import Codec.CBOR.Cuddle.CDDL.CTree (
+import Codec.CBOR.Cuddle.CDDL.CTreePhase (
   CTreePhase,
   XCddl (..),
   XRule (..),
