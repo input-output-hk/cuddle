@@ -102,7 +102,7 @@ genAndValidateFromFile path = do
       prop (T.unpack n) . noShrinking $ \seed -> do
         let
           gen = mkQCGen seed
-          cborTerm = generateCBORTerm resolvedCddl name gen
+          cborTerm = generateCBORTerm (mapIndex resolvedCddl) name gen
           generatedCbor = toStrictByteString $ encodeTerm cborTerm
           res = validateCBOR generatedCbor name (mapIndex resolvedCddl)
           extraInfo =

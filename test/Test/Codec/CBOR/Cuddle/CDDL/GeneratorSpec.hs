@@ -17,7 +17,7 @@ import Codec.CBOR.Cuddle.Huddle (
   (=:=),
  )
 import Codec.CBOR.Cuddle.Huddle qualified as H
-import Codec.CBOR.Cuddle.IndexMappable (mapCDDLDropExt)
+import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..), mapCDDLDropExt)
 import Codec.CBOR.Term (Term)
 import Codec.CBOR.Term qualified as C
 import System.Random (mkStdGen)
@@ -25,7 +25,7 @@ import System.Random.Stateful (UniformRange (..))
 import Test.Hspec (Expectation, Spec, describe, it, shouldBe)
 
 foo :: H.Rule
-foo = withGenerator (fmap (S . C.TInt) . uniformRM (4, 6)) $ "foo" =:= arr [1, 2, 3]
+foo = withGenerator (\_ g -> S . C.TInt <$> uniformRM (4, 6) g) $ "foo" =:= arr [1, 2, 3]
 
 simpleTermExample :: Huddle
 simpleTermExample =
@@ -52,7 +52,7 @@ huddleShouldGenerate huddle term = do
   ct <- case fullResolveCDDL . mapCDDLDropExt $ toCDDL huddle of
     Right x -> pure x
     Left err -> fail $ "Failed to resolve CDDL: " <> show err
-  generateCBORTerm ct "foo" g `shouldBe` term
+  generateCBORTerm (mapIndex ct) "foo" g `shouldBe` term
 
 spec :: Spec
 spec = do
