@@ -222,7 +222,7 @@ run (Opts cmd cddlFile) = do
               Left err -> putStrLnErr (show err) >> exitFailure
               Right mt -> do
                 stdGen <- getStdGen
-                let term = generateCBORTerm mt (Name $ itemName gOpts) stdGen
+                let term = generateCBORTerm (mapIndex mt) (Name $ itemName gOpts) stdGen
                  in case outputFormat gOpts of
                       AsTerm -> print term
                       AsFlatTerm -> print $ toFlatTerm (encodeTerm term)
@@ -255,8 +255,8 @@ runValidateCBOR :: BS.ByteString -> Name -> CTreeRoot ValidatorStage -> IO ()
 runValidateCBOR bs rule cddl =
   case validateCBOR bs rule cddl of
     ok@(CBORTermResult _ (Valid _)) -> do
-      putStrLn $ "Valid " ++ show ok
+      putStrLn $ "Valid " ++ showSimple ok
       exitSuccess
     err -> do
-      hPutStrLn stderr $ "Invalid " ++ show err
+      hPutStrLn stderr $ "Invalid " ++ showSimple err
       exitFailure

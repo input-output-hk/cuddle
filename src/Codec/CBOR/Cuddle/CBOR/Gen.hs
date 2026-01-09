@@ -31,11 +31,15 @@ import Codec.CBOR.Cuddle.CDDL (
   Value (..),
   ValueVariant (..),
  )
-import Codec.CBOR.Cuddle.CDDL.CBORGenerator (CBORGenerator (..), WrappedTerm (..))
+import Codec.CBOR.Cuddle.CDDL.CBORGenerator (
+  CBORGenerator (..),
+  GenPhase,
+  WrappedTerm (..),
+  XXCTree (..),
+ )
 import Codec.CBOR.Cuddle.CDDL.CTree (CTree (..), CTreeRoot (..), PTerm (..), foldCTree)
 import Codec.CBOR.Cuddle.CDDL.CTree qualified as CTree
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
-import Codec.CBOR.Cuddle.CDDL.Resolve (MonoReferenced, XXCTree (..))
 import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
 import Codec.CBOR.Term (Term (..))
 import Codec.CBOR.Term qualified as CBOR
@@ -64,16 +68,16 @@ import System.Random.Stateful (
   uniformByteStringM,
  )
 
-type data MonoDropGen
+type data GenSimple
 
-newtype instance XXCTree MonoDropGen = MDGRef Name
+newtype instance XXCTree GenSimple = MDGRef Name
   deriving (Show)
 
-instance IndexMappable CTree MonoReferenced MonoDropGen where
+instance IndexMappable CTree GenPhase GenSimple where
   mapIndex = foldCTree mapExt mapIndex
     where
-      mapExt (MRuleRef n) = CTreeE $ MDGRef n
-      mapExt (MGenerator _ x) = mapIndex x
+      mapExt (GenRef n) = CTreeE $ MDGRef n
+      mapExt (GenCustom _ x) = mapIndex x
 
 --------------------------------------------------------------------------------
 -- Generator infrastructure
@@ -81,7 +85,7 @@ instance IndexMappable CTree MonoReferenced MonoDropGen where
 
 -- | Generator context, parametrised over the type of the random seed
 newtype GenEnv = GenEnv
-  { cddl :: CTreeRoot MonoReferenced
+  { cddl :: CTreeRoot GenPhase
   }
   deriving (Generic)
 
@@ -133,8 +137,8 @@ newtype M g a = M {runM :: StateT (GenState g) (Reader GenEnv) a}
           ()
           (MonadState (StateT (GenState g) (Reader GenEnv)))
   deriving
-    ( HasSource "cddl" (CTreeRoot MonoReferenced)
-    , HasReader "cddl" (CTreeRoot MonoReferenced)
+    ( HasSource "cddl" (CTreeRoot GenPhase)
+    , HasReader "cddl" (CTreeRoot GenPhase)
     )
     via Field
           "cddl"
@@ -246,14 +250,14 @@ pairTermList [] = Just []
 pairTermList (P x y : xs) = ((x, y) :) <$> pairTermList xs
 pairTermList _ = Nothing
 
-showDropGen :: CTree MonoReferenced -> String
-showDropGen = show . mapIndex @_ @_ @MonoDropGen
+showSimple :: CTree GenPhase -> String
+showSimple = show . mapIndex @_ @_ @GenSimple
 
 --------------------------------------------------------------------------------
 -- Generator functions
 --------------------------------------------------------------------------------
 
-genForCTree :: (HasCallStack, RandomGen g) => CTree MonoReferenced -> M g WrappedTerm
+genForCTree :: (HasCallStack, RandomGen g) => CTree GenPhase -> M g WrappedTerm
 genForCTree (CTree.Literal v) = S <$> genValue v
 genForCTree (CTree.Postlude pt) = S <$> genPostlude pt
 genForCTree (CTree.Map nodes) = do
@@ -286,9 +290,9 @@ genForCTree (CTree.KV key value _cut) = do
     _ ->
       error $
         "Non single-term generated outside of group context: "
-          <> showDropGen key
+          <> showSimple key
           <> " => "
-          <> showDropGen value
+          <> showSimple value
 genForCTree (CTree.Occur item occurs) =
   applyOccurenceIndicator occurs (genForCTree item)
 genForCTree (CTree.Range from to _bounds) = do
@@ -311,17 +315,17 @@ genForCTree (CTree.Range from to _bounds) = do
     (a, b) -> error $ "invalid range (a = " <> show a <> ", b = " <> show b <> ")"
 genForCTree (CTree.Control op target controller) = do
   resolvedController <- case controller of
-    CTreeE (MRuleRef n) -> resolveRef n
+    CTreeE (GenRef n) -> resolveRef n
     x -> pure x
   case (op, resolvedController) of
     (CtlOp.Le, CTree.Literal (Value (VUInt n) _)) -> case target of
       CTree.Postlude PTUInt -> S . TInteger <$> genUniformRM (0, fromIntegral n)
       _ -> error "Cannot apply le operator to target"
-    (CtlOp.Le, _) -> error $ "Invalid controller for .le operator: " <> showDropGen controller
+    (CtlOp.Le, _) -> error $ "Invalid controller for .le operator: " <> showSimple controller
     (CtlOp.Lt, CTree.Literal (Value (VUInt n) _)) -> case target of
       CTree.Postlude PTUInt -> S . TInteger <$> genUniformRM (0, fromIntegral n - 1)
       _ -> error "Cannot apply lt operator to target"
-    (CtlOp.Lt, _) -> error $ "Invalid controller for .lt operator: " <> showDropGen controller
+    (CtlOp.Lt, _) -> error $ "Invalid controller for .lt operator: " <> showSimple controller
     (CtlOp.Size, CTree.Literal (Value (VUInt n) _)) -> case target of
       CTree.Postlude PTText -> S . TString <$> genText (fromIntegral n)
       CTree.Postlude PTBytes -> S . TBytes <$> genBytes (fromIntegral n)
@@ -339,15 +343,15 @@ genForCTree (CTree.Control op target controller) = do
           CTree.Postlude PTUInt ->
             S . TInteger
               <$> genUniformRM (fromIntegral f1, fromIntegral t1)
-          _ -> error $ "Cannot apply size operator to target: " <> showDropGen target
+          _ -> error $ "Cannot apply size operator to target: " <> showSimple target
         _ ->
           error $
             "Invalid controller for .size operator: "
-              <> showDropGen controller
+              <> showSimple controller
     (CtlOp.Size, _) ->
       error $
         "Invalid controller for .size operator: "
-          <> showDropGen controller
+          <> showSimple controller
     (CtlOp.Cbor, _) -> do
       enc <- genForCTree controller
       case enc of
@@ -366,15 +370,17 @@ genForCTree (CTree.Tag tag node) = do
   case enc of
     S x -> pure $ S $ TTagged tag x
     _ -> error "Tag controller does not correspond to a single term"
-genForCTree (CTree.CTreeE (MRuleRef n)) = genForNode n
-genForCTree (CTree.CTreeE (MGenerator (CBORGenerator gen) _)) = gen StateGenM
+genForCTree (CTree.CTreeE (GenRef n)) = genForNode n
+genForCTree (CTree.CTreeE (GenCustom (CBORGenerator gen) _)) = do
+  cddl <- ask @"cddl"
+  gen cddl StateGenM
 
 genForNode :: (HasCallStack, RandomGen g) => Name -> M g WrappedTerm
 genForNode = genForCTree <=< resolveRef
 
 -- | Take a reference and resolve it to the relevant Tree, following multiple
 -- links if necessary.
-resolveRef :: RandomGen g => Name -> M g (CTree MonoReferenced)
+resolveRef :: RandomGen g => Name -> M g (CTree GenPhase)
 resolveRef n = do
   (CTreeRoot cddl) <- ask @"cddl"
   -- Since we follow a reference, we increase the 'depth' of the gen monad.
@@ -445,15 +451,19 @@ genValueVariant (VBool b) = pure $ TBool b
 -- Generator functions
 --------------------------------------------------------------------------------
 
-generateCBORTerm :: (HasCallStack, RandomGen g) => CTreeRoot MonoReferenced -> Name -> g -> Term
+generateCBORTerm :: (HasCallStack, RandomGen g) => CTreeRoot GenPhase -> Name -> g -> Term
 generateCBORTerm cddl n stdGen =
   let genEnv = GenEnv {cddl}
       genState = GenState {randomSeed = stdGen, depth = 1}
    in evalGen (genForName n) genEnv genState
 
 generateCBORTerm' ::
-  (HasCallStack, RandomGen g) => CTreeRoot MonoReferenced -> Name -> g -> (Term, g)
+  (HasCallStack, RandomGen g) => CTreeRoot GenPhase -> Name -> g -> (Term, g)
 generateCBORTerm' cddl n stdGen =
   let genEnv = GenEnv {cddl}
       genState = GenState {randomSeed = stdGen, depth = 1}
    in second randomSeed $ runGen (genForName n) genEnv genState
+
+generateCBORTermM :: CTreeRoot GenPhase -> Name -> g -> m Term
+generateCBORTermM cddl n g = do
+  undefined

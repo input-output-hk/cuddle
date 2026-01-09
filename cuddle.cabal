@@ -46,6 +46,7 @@ library
     Codec.CBOR.Cuddle.CDDL
     Codec.CBOR.Cuddle.CDDL.CBORGenerator
     Codec.CBOR.Cuddle.CDDL.CTree
+    Codec.CBOR.Cuddle.CDDL.CTreePhase
     Codec.CBOR.Cuddle.CDDL.CtlOp
     Codec.CBOR.Cuddle.CDDL.Postlude
     Codec.CBOR.Cuddle.CDDL.Resolve
