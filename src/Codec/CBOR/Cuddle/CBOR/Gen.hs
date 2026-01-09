@@ -463,3 +463,7 @@ generateCBORTerm' cddl n stdGen =
   let genEnv = GenEnv {cddl}
       genState = GenState {randomSeed = stdGen, depth = 1}
    in second randomSeed $ runGen (genForName n) genEnv genState
+
+generateCBORTermM :: CTreeRoot GenPhase -> Name -> g -> m Term
+generateCBORTermM cddl n g = do
+  undefined

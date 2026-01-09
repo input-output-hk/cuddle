@@ -36,6 +36,7 @@ module Codec.CBOR.Cuddle.Huddle (
   -- * Rules and assignment
   (=:=),
   (=:~),
+  (=:<),
   comment,
 
   -- * Maps
@@ -129,7 +130,6 @@ import Data.ByteString (ByteString)
 import Data.ByteString.Base16 qualified as Base16
 import Data.Default.Class (Default (..))
 import Data.Function (on)
-import Data.Generics.Product (field, getField)
 import Data.List qualified as L
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Ordered.Strict (OMap, (|<>))
@@ -298,9 +298,9 @@ asKey r = case toType0 r of
   Type0 (ChoiceOf _ _) -> error "Cannot use a choice of types as a map key"
 
 data MapEntry = MapEntry
-  { key :: Key
-  , value :: Type0
-  , quantifier :: Occurs
+  { meKey :: Key
+  , meValue :: Type0
+  , meQuantifier :: Occurs
   , meDescription :: C.Comment
   }
   deriving (Generic)
@@ -319,11 +319,11 @@ instance IsList MapChoice where
 type Map = Choice MapChoice
 
 data ArrayEntry = ArrayEntry
-  { key :: Maybe Key
+  { aeKey :: Maybe Key
   -- ^ Arrays can have keys, but they have no semantic meaning. We add them
   -- here because they can be illustrative in the generated CDDL.
-  , value :: Type0
-  , quantifier :: Occurs
+  , aeValue :: Type0
+  , aeQuantifier :: Occurs
   , aeDescription :: C.Comment
   }
   deriving (Generic)
@@ -769,12 +769,12 @@ instance CanQuantify Occurs where
   (Occurs lb _) +> ub = Occurs lb (Just ub)
 
 instance CanQuantify ArrayEntry where
-  lb <+ ae = ae & field @"quantifier" %~ (lb <+)
-  ae +> ub = ae & field @"quantifier" %~ (+> ub)
+  lb <+ ae = ae & #aeQuantifier %~ (lb <+)
+  ae +> ub = ae & #aeQuantifier %~ (+> ub)
 
 instance CanQuantify MapEntry where
-  lb <+ ae = ae & field @"quantifier" %~ (lb <+)
-  ae +> ub = ae & field @"quantifier" %~ (+> ub)
+  lb <+ ae = ae & #meQuantifier %~ (lb <+)
+  ae +> ub = ae & #meQuantifier %~ (+> ub)
 
 -- | A quantifier on a choice can be rewritten as a choice of quantifiers
 instance CanQuantify a => CanQuantify (Choice a) where
@@ -788,25 +788,24 @@ instance IsEntryLike MapEntry where
   fromMapEntry = id
 
 instance IsEntryLike ArrayEntry where
-  fromMapEntry me =
+  fromMapEntry MapEntry {..} =
     ArrayEntry
-      { key = Just $ getField @"key" me
-      , value =
-          getField @"value" me
-      , quantifier = getField @"quantifier" me
+      { aeKey = Just meKey
+      , aeValue = meValue
+      , aeQuantifier = meQuantifier
       , aeDescription = mempty
       }
 
 instance IsEntryLike Type0 where
-  fromMapEntry = getField @"value"
+  fromMapEntry = meValue
 
 (==>) :: (IsType0 a, IsEntryLike me) => Key -> a -> me
 k ==> gc =
   fromMapEntry
     MapEntry
-      { key = k
-      , value = toType0 gc
-      , quantifier = def
+      { meKey = k
+      , meValue = toType0 gc
+      , meQuantifier = def
       , meDescription = mempty
       }
 
@@ -823,15 +822,27 @@ n =:~ b = GroupDef n b def
 
 infixl 1 =:~
 
+(=:<) :: IsType0 a => Name -> (GRef -> a) -> GRuleDef
+n =:< b =
+  GRuleDef
+    { grdName = n
+    , grdBody = GRule (NE.singleton gr) . toType0 $ b gr
+    , grdExtra = def
+    }
+  where
+    gr = freshName 0
+
+infixl 1 =:<
+
 class IsGroupOrArrayEntry a where
   toGroupOrArrayEntry :: IsType0 x => x -> a
 
 instance IsGroupOrArrayEntry ArrayEntry where
   toGroupOrArrayEntry x =
     ArrayEntry
-      { key = Nothing
-      , value = toType0 x
-      , quantifier = def
+      { aeKey = Nothing
+      , aeValue = toType0 x
+      , aeQuantifier = def
       , aeDescription = mempty
       }
 
