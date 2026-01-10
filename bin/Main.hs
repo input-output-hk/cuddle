@@ -255,8 +255,8 @@ runValidateCBOR :: BS.ByteString -> Name -> CTreeRoot ValidatorStage -> IO ()
 runValidateCBOR bs rule cddl =
   case validateCBOR bs rule cddl of
     ok@(CBORTermResult _ (Valid _)) -> do
-      putStrLn $ "Valid " ++ show ok
+      putStrLn $ "Valid " ++ showSimple ok
       exitSuccess
     err -> do
-      hPutStrLn stderr $ "Invalid " ++ show err
+      hPutStrLn stderr $ "Invalid " ++ showSimple err
       exitFailure

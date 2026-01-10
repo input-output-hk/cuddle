@@ -93,6 +93,9 @@ module Codec.CBOR.Cuddle.Huddle (
   -- * Generators
   withGenerator,
 
+  -- * Validators
+  withValidator,
+
   -- * Name
   HasName (..),
 
@@ -106,10 +109,18 @@ where
 
 import Codec.CBOR.Cuddle.CDDL (CDDL, GenericParameter (..), HasName (..), Name (..), XRule)
 import Codec.CBOR.Cuddle.CDDL qualified as C
-import Codec.CBOR.Cuddle.CDDL.CBORGenerator (CBORGenerator (..), HasGenerator (..), WrappedTerm)
+import Codec.CBOR.Cuddle.CDDL.CBORGenerator (
+  CBORGenerator (..),
+  CBORValidator (..),
+  CustomValidatorResult,
+  HasGenerator (..),
+  HasValidator (..),
+  WrappedTerm,
+ )
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
 import Codec.CBOR.Cuddle.Comments (Comment (..), HasComment (..))
 import Codec.CBOR.Cuddle.Comments qualified as C
+import Codec.CBOR.Term (Term)
 import Control.Monad (when)
 import Control.Monad.State (MonadState (get), State, execState, modify)
 import Data.ByteString (ByteString)
@@ -145,11 +156,18 @@ newtype instance C.XCddl HuddleStage = HuddleXCddl [C.Comment]
 data instance C.XRule HuddleStage = HuddleXRule
   { hxrComment :: C.Comment
   , hxrGenerator :: Maybe CBORGenerator
+  , hxrValidator :: Maybe CBORValidator
   }
   deriving (Generic)
 
 instance HasComment (C.XRule HuddleStage) where
   commentL = #hxrComment
+
+instance HasValidator (C.XRule HuddleStage) where
+  validatorL = #hxrValidator
+
+instance HasGenerator (C.XRule HuddleStage) where
+  generatorL = #hxrGenerator
 
 instance Default (XRule HuddleStage)
 
@@ -171,10 +189,13 @@ data Rule = Rule
   deriving (Generic)
 
 instance HasGenerator Rule where
-  generatorL = #ruleExtra % #hxrGenerator
+  generatorL = #ruleExtra % generatorL
 
 instance HasComment Rule where
-  commentL = #ruleExtra % #hxrComment
+  commentL = #ruleExtra % commentL
+
+instance HasValidator Rule where
+  validatorL = #ruleExtra % validatorL
 
 instance HasName Rule where
   getName = ruleName
@@ -657,6 +678,9 @@ infixl 9 ...
 class IsType0 a where
   toType0 :: a -> Type0
 
+instance IsType0 Type0 where
+  toType0 = id
+
 instance IsType0 Rule where
   toType0 = Type0 . NoChoice . T2Ref
 
@@ -1126,7 +1150,7 @@ collectFrom topRs =
     goRanged (Unranged _) = pure ()
     goRanged (Ranged lb ub _) = goRangeBound lb >> goRangeBound ub
     goRangeBound (RangeBoundLiteral _) = pure ()
-    goRangeBound (RangeBoundRef n r) = goRule . Rule n r $ HuddleXRule mempty Nothing
+    goRangeBound (RangeBoundRef n r) = goRule . Rule n r $ HuddleXRule mempty Nothing Nothing
 
 -- | Same as `collectFrom`, but the rules passed into this function will be put
 --   at the top of the Huddle, and all of their dependencies will be added at
@@ -1347,3 +1371,6 @@ toCDDL' HuddleConfig {..} hdl =
 
 withGenerator :: HasGenerator a => (forall g m. StatefulGen g m => g -> m WrappedTerm) -> a -> a
 withGenerator f = L.set generatorL (Just $ CBORGenerator f)
+
+withValidator :: HasValidator a => (Term -> CustomValidatorResult) -> a -> a
+withValidator p = L.set validatorL . Just $ CBORValidator p
