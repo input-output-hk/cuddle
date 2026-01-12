@@ -3,13 +3,10 @@
 
 module Test.Codec.CBOR.Cuddle.CDDL.GeneratorSpec (spec) where
 
-import Codec.CBOR.Cuddle.CBOR.Gen (generateCBORTerm, generateCBORTerm')
-import Codec.CBOR.Cuddle.CDDL (Name (..))
+import Codec.CBOR.Cuddle.CBOR.Gen (genForCTree, generateCBORTermM)
 import Codec.CBOR.Cuddle.CDDL.CBORGenerator (WrappedTerm (..))
-import Codec.CBOR.Cuddle.CDDL.CTree (CTreeRoot (..))
 import Codec.CBOR.Cuddle.CDDL.Resolve (fullResolveCDDL)
 import Codec.CBOR.Cuddle.Huddle (
-  GRef (..),
   Huddle,
   HuddleItem (..),
   IsType0,
@@ -20,6 +17,7 @@ import Codec.CBOR.Cuddle.Huddle (
   collectFrom,
   idx,
   mp,
+  tag,
   toCDDL,
   withGenerator,
   (<+),
@@ -28,15 +26,19 @@ import Codec.CBOR.Cuddle.Huddle (
  )
 import Codec.CBOR.Cuddle.Huddle qualified as H
 import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..), mapCDDLDropExt)
-import Codec.CBOR.Term (Term)
+import Codec.CBOR.Term (Term (..))
 import Codec.CBOR.Term qualified as C
 import Control.Monad (replicateM)
+import Data.Containers.ListUtils (nubOrd)
+import Data.IORef (newIORef)
 import System.Random (mkStdGen)
-import System.Random.Stateful (FrozenGen (..), UniformRange (..))
-import Test.Hspec (Expectation, Spec, describe, it, shouldBe)
+import System.Random.Stateful (IOGenM (..), UniformRange (..))
+import Test.Hspec (Expectation, Spec, describe, it, shouldReturn)
 
 foo :: H.Rule
-foo = withGenerator (\_ g -> S . C.TInt <$> uniformRM (4, 6) g) $ "foo" =:= arr [1, 2, 3]
+foo = withGenerator generator $ "foo" =:= arr [1, 2, 3]
+  where
+    generator _ g = S . C.TInt <$> uniformRM (4, 6) g
 
 simpleTermExample :: Huddle
 simpleTermExample =
@@ -69,23 +71,28 @@ genericExample =
     ]
   where
     hSet :: IsType0 t => t -> H.GRuleCall
-    hSet = binding $ \x@(GRef xRef) ->
+    hSet = binding $ \elemRef ->
       let
-        setGenerator ctr g = do
+        setGenerator [arg] g = do
           n <- uniformRM (0, 10) g
-          t <- replicateM n $ generateCBORTerm' ctr (Name xRef) g
-          undefined
+          t <- fmap nubOrd . replicateM n $ do
+            ref <- genForCTree arg g
+            case ref of
+              S t -> pure t
+              _ -> error "Expected a single term"
+          pure . S . TTagged 258 . TList $ t
+        setGenerator args _ = error $ "Expected a single generic argument, got " <> show (length args)
        in
         withGenerator setGenerator $
-          "set" =:= arr [0 <+ a x]
+          "set" =:= tag 258 (arr [0 <+ a elemRef])
 
 huddleShouldGenerate :: Huddle -> Term -> Expectation
 huddleShouldGenerate huddle term = do
-  let g = mkStdGen 12345
+  g <- newIORef $ mkStdGen 12345
   ct <- case fullResolveCDDL . mapCDDLDropExt $ toCDDL huddle of
     Right x -> pure x
     Left err -> fail $ "Failed to resolve CDDL: " <> show err
-  generateCBORTerm (mapIndex ct) "foo" g `shouldBe` term
+  generateCBORTermM (mapIndex ct) "foo" (IOGenM g) `shouldReturn` term
 
 spec :: Spec
 spec = do
@@ -98,4 +105,4 @@ spec = do
       it "Bytes are generated correctly" $
         bytesExample `huddleShouldGenerate` C.TBytes "\x01\x02\x03\xff"
       it "Works with generic rules" $
-        genericExample `huddleShouldGenerate` undefined
+        genericExample `huddleShouldGenerate` C.TNull

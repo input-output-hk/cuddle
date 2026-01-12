@@ -461,7 +461,7 @@ newtype MonoM a = MonoM
   deriving
     ( HasSource
         "local"
-        (Map.Map (Name) (CTree MonoReferenced))
+        (Map.Map Name (CTree MonoReferenced))
     , HasReader
         "local"
         (Map.Map (Name) (CTree MonoReferenced))

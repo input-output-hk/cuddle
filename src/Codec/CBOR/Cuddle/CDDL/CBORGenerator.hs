@@ -48,7 +48,8 @@ modifyDepth :: MonadCBORGen m => (Int -> Int) -> m ()
 modifyDepth f = stateDepth $ \d -> ((), f d)
 
 newtype CBORGenerator
-  = CBORGenerator (forall g m. (StatefulGen g m, MonadCBORGen m) => g -> m WrappedTerm)
+  = CBORGenerator
+      (forall g m. (StatefulGen g m, MonadCBORGen m) => [CTree GenPhase] -> g -> m WrappedTerm)
 
 class HasGenerator a where
   generatorL :: Lens' a (Maybe CBORGenerator)

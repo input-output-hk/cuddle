@@ -53,7 +53,7 @@ instance IndexMappable CTree MonoReferenced ValidatorStage where
   mapIndex = foldCTree mapExt mapIndex
     where
       mapExt (MRuleRef n) = CTreeE $ VRuleRef n
-      mapExt (MGenerator _ x) = mapIndex x
+      mapExt (MGenerator _ _ x) = mapIndex x
       mapExt (MValidator v x) = CTreeE . VValidator v $ mapIndex x
 
 type data ValidatorStageSimple

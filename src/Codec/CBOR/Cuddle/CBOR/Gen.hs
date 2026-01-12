@@ -14,7 +14,14 @@
 {-# LANGUAGE ViewPatterns #-}
 
 -- | Generate example CBOR given a CDDL specification
-module Codec.CBOR.Cuddle.CBOR.Gen (generateCBORTermM) where
+module Codec.CBOR.Cuddle.CBOR.Gen (
+  generateCBORTermM,
+  resolveRef,
+  genForName,
+  genForCTree,
+  genForGRef,
+  showSimple,
+) where
 
 #if MIN_VERSION_random(1,3,0)
 import System.Random.Stateful (
@@ -39,6 +46,7 @@ import Codec.CBOR.Cuddle.CDDL.CBORGenerator (
 import Codec.CBOR.Cuddle.CDDL.CTree (CTree (..), CTreeRoot (..), PTerm (..), foldCTree)
 import Codec.CBOR.Cuddle.CDDL.CTree qualified as CTree
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
+import Codec.CBOR.Cuddle.Huddle (GRef (..))
 import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
 import Codec.CBOR.Term (Term (..))
 import Codec.CBOR.Term qualified as CBOR
@@ -308,7 +316,7 @@ genForCTree (CTree.Tag tag node) g = do
     S x -> pure $ S $ TTagged tag x
     _ -> error "Tag controller does not correspond to a single term"
 genForCTree (CTree.CTreeE (GenRef n)) g = genForNode n g
-genForCTree (CTree.CTreeE (GenCustom (CBORGenerator gen) _)) g = gen g
+genForCTree (CTree.CTreeE (GenCustom (CBORGenerator gen) _)) g = gen undefined g
 
 genForNode ::
   ( HasCallStack
@@ -398,6 +406,10 @@ genValueVariant (VFloat64 i) = TDouble i
 genValueVariant (VText t) = TString t
 genValueVariant (VBytes b) = TBytes b
 genValueVariant (VBool b) = TBool b
+
+genForGRef :: (MonadCBORGen m, StatefulGen g m) => GRef -> g -> m WrappedTerm
+genForGRef (GRef n) g = do
+  genForCTree (CTreeE . GenRef $ Name n) g
 
 --------------------------------------------------------------------------------
 -- Generator functions

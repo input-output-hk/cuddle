@@ -4,7 +4,7 @@
 
 module Test.Codec.CBOR.Cuddle.CDDL.Validator (spec) where
 
-import Codec.CBOR.Cuddle.CBOR.Gen (generateCBORTerm)
+import Codec.CBOR.Cuddle.CBOR.Gen (generateCBORTermM)
 import Codec.CBOR.Cuddle.CBOR.Validator (
   CBORTermResult (..),
   CDDLResult (..),
@@ -49,12 +49,14 @@ import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
 import Data.Containers.ListUtils (nubOrd, nubOrdOn)
 import Data.Either (fromRight)
+import Data.IORef (newIORef)
 import Data.Map qualified as Map
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.IO qualified as T
 import Data.Text.Lazy qualified as LT
 import Paths_cuddle (getDataFileName)
+import System.Random.Stateful (IOGenM (..))
 import Test.Hspec (
   Expectation,
   HasCallStack,
@@ -68,8 +70,8 @@ import Test.QuickCheck (
   Arbitrary (..),
   Gen,
   NonNegative (..),
+  Testable (..),
   choose,
-  counterexample,
   elements,
   forAll,
   infiniteListOf,
@@ -99,10 +101,10 @@ genAndValidateFromFile path = do
     isRule _ = True
   describe path $ do
     forM_ (Map.keys $ Map.filter isRule m) $ \name@(Name n) ->
-      prop (T.unpack n) . noShrinking $ \seed -> do
+      prop (T.unpack n) . noShrinking $ \seed -> property $ do
+        g <- newIORef $ mkQCGen seed
+        cborTerm <- generateCBORTermM (mapIndex resolvedCddl) name (IOGenM g)
         let
-          gen = mkQCGen seed
-          cborTerm = generateCBORTerm (mapIndex resolvedCddl) name gen
           generatedCbor = toStrictByteString $ encodeTerm cborTerm
           res = validateCBOR generatedCbor name (mapIndex resolvedCddl)
           extraInfo =
@@ -113,10 +115,9 @@ genAndValidateFromFile path = do
               , "CBOR term:"
               , LT.unpack $ pShow cborTerm
               ]
-        counterexample extraInfo $
-          unless (isCBORTermResultValid res) $
-            expectationFailure $
-              "Predicate failed on result:\n" <> showSimple res
+        unless (isCBORTermResultValid res) $
+          expectationFailure $
+            "Predicate failed on result:\n" <> showSimple res <> "\nExtra info:\n" <> extraInfo
 
 huddleMap :: Huddle
 huddleMap =

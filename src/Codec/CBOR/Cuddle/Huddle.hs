@@ -114,11 +114,13 @@ import Codec.CBOR.Cuddle.CDDL.CBORGenerator (
   CBORGenerator (..),
   CBORValidator (..),
   CustomValidatorResult,
+  GenPhase,
   HasGenerator (..),
   HasValidator (..),
   MonadCBORGen,
   WrappedTerm,
  )
+import Codec.CBOR.Cuddle.CDDL.CTree (CTree)
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
 import Codec.CBOR.Cuddle.Comments (Comment (..), HasComment (..))
 import Codec.CBOR.Cuddle.Comments qualified as C
@@ -1383,7 +1385,7 @@ toCDDL' HuddleConfig {..} hdl =
 
 withGenerator ::
   HasGenerator a =>
-  (forall g m. (StatefulGen g m, MonadCBORGen m) => g -> m WrappedTerm) -> a -> a
+  (forall g m. (StatefulGen g m, MonadCBORGen m) => [CTree GenPhase] -> g -> m WrappedTerm) -> a -> a
 withGenerator f = L.set generatorL (Just $ CBORGenerator f)
 
 withValidator :: HasValidator a => (Term -> CustomValidatorResult) -> a -> a
