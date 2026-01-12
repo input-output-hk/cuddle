@@ -2,7 +2,7 @@
 
 module Main (main) where
 
-import Codec.CBOR.Cuddle.CBOR.Gen (generateCBORTerm)
+import Codec.CBOR.Cuddle.CBOR.Gen (generateCBORTermM)
 import Codec.CBOR.Cuddle.CBOR.Validator
 import Codec.CBOR.Cuddle.CDDL (Name (..), fromRules, sortCDDL)
 import Codec.CBOR.Cuddle.CDDL.CTree (CTreeRoot)
@@ -20,6 +20,7 @@ import Codec.CBOR.Write (toStrictByteString)
 import Data.ByteString qualified as BS
 import Data.ByteString.Base16 qualified as Base16
 import Data.ByteString.Char8 qualified as BSC
+import Data.IORef (newIORef)
 import Data.Text qualified as T
 import Data.Text.IO qualified as T
 import Options.Applicative
@@ -35,6 +36,7 @@ import Prettyprinter.Render.Text qualified as PT
 import System.Exit (exitFailure, exitSuccess)
 import System.IO (hPutStrLn, stderr)
 import System.Random (getStdGen)
+import System.Random.Stateful (IOGenM (..))
 import Text.Megaparsec (ParseErrorBundle, Parsec, errorBundlePretty, runParser)
 
 data Opts = Opts Command String
@@ -221,15 +223,15 @@ run (Opts cmd cddlFile) = do
             case fullResolveCDDL $ mapCDDLDropExt cddl of
               Left err -> putStrLnErr (show err) >> exitFailure
               Right mt -> do
-                stdGen <- getStdGen
-                let term = generateCBORTerm (mapIndex mt) (Name $ itemName gOpts) stdGen
-                 in case outputFormat gOpts of
-                      AsTerm -> print term
-                      AsFlatTerm -> print $ toFlatTerm (encodeTerm term)
-                      AsCBOR -> case outputTo gOpts of
-                        Nothing -> BSC.putStrLn . Base16.encode . toStrictByteString $ encodeTerm term
-                        Just out -> BSC.writeFile out $ toStrictByteString $ encodeTerm term
-                      AsPrettyCBOR -> putStrLn . prettyHexEnc $ encodeTerm term
+                stdGen <- newIORef =<< getStdGen
+                term <- generateCBORTermM (mapIndex mt) (Name $ itemName gOpts) $ IOGenM stdGen
+                case outputFormat gOpts of
+                  AsTerm -> print term
+                  AsFlatTerm -> print $ toFlatTerm (encodeTerm term)
+                  AsCBOR -> case outputTo gOpts of
+                    Nothing -> BSC.putStrLn . Base16.encode . toStrictByteString $ encodeTerm term
+                    Just out -> BSC.writeFile out $ toStrictByteString $ encodeTerm term
+                  AsPrettyCBOR -> putStrLn . prettyHexEnc $ encodeTerm term
         ValidateCBOR vcOpts ->
           let
             cddl

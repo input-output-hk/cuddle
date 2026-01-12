@@ -5,6 +5,9 @@ module Codec.CBOR.Cuddle.CDDL.CBORGenerator (
   GenPhase,
   XXCTree (..),
   CBORGenerator (..),
+  MonadCBORGen (..),
+  getDepth,
+  modifyDepth,
   HasGenerator (..),
   WrappedTerm (..),
   CBORValidator (..),
@@ -34,8 +37,18 @@ data WrappedTerm
     G [WrappedTerm]
   deriving (Eq, Show)
 
+class Monad m => MonadCBORGen m where
+  stateDepth :: (Int -> (a, Int)) -> m a
+  askCDDL :: m (CTreeRoot GenPhase)
+
+getDepth :: MonadCBORGen m => m Int
+getDepth = stateDepth $ \d -> (d, d)
+
+modifyDepth :: MonadCBORGen m => (Int -> Int) -> m ()
+modifyDepth f = stateDepth $ \d -> ((), f d)
+
 newtype CBORGenerator
-  = CBORGenerator (forall g m. StatefulGen g m => CTreeRoot GenPhase -> g -> m WrappedTerm)
+  = CBORGenerator (forall g m. (StatefulGen g m, MonadCBORGen m) => g -> m WrappedTerm)
 
 class HasGenerator a where
   generatorL :: Lens' a (Maybe CBORGenerator)
