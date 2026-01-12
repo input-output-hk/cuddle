@@ -36,6 +36,7 @@ module Codec.CBOR.Cuddle.Huddle (
   -- * Rules and assignment
   (=:=),
   (=:~),
+  (=:<),
   comment,
 
   -- * Maps
@@ -83,7 +84,7 @@ module Codec.CBOR.Cuddle.Huddle (
   tag,
 
   -- * Generics
-  GRef,
+  GRef (..),
   GRuleDef (..),
   GRuleCall (..),
   binding,
@@ -92,6 +93,9 @@ module Codec.CBOR.Cuddle.Huddle (
 
   -- * Generators
   withGenerator,
+
+  -- * Validators
+  withValidator,
 
   -- * Name
   HasName (..),
@@ -106,17 +110,27 @@ where
 
 import Codec.CBOR.Cuddle.CDDL (CDDL, GenericParameter (..), HasName (..), Name (..), XRule)
 import Codec.CBOR.Cuddle.CDDL qualified as C
-import Codec.CBOR.Cuddle.CDDL.CBORGenerator (CBORGenerator (..), HasGenerator (..), WrappedTerm)
+import Codec.CBOR.Cuddle.CDDL.CBORGenerator (
+  CBORGenerator (..),
+  CBORValidator (..),
+  CustomValidatorResult,
+  GenPhase,
+  HasGenerator (..),
+  HasValidator (..),
+  MonadCBORGen,
+  WrappedTerm,
+ )
+import Codec.CBOR.Cuddle.CDDL.CTree (CTree)
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
 import Codec.CBOR.Cuddle.Comments (Comment (..), HasComment (..))
 import Codec.CBOR.Cuddle.Comments qualified as C
+import Codec.CBOR.Term (Term)
 import Control.Monad (when)
 import Control.Monad.State (MonadState (get), State, execState, modify)
 import Data.ByteString (ByteString)
 import Data.ByteString.Base16 qualified as Base16
 import Data.Default.Class (Default (..))
 import Data.Function (on)
-import Data.Generics.Product (field, getField)
 import Data.List qualified as L
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Ordered.Strict (OMap, (|<>))
@@ -145,11 +159,18 @@ newtype instance C.XCddl HuddleStage = HuddleXCddl [C.Comment]
 data instance C.XRule HuddleStage = HuddleXRule
   { hxrComment :: C.Comment
   , hxrGenerator :: Maybe CBORGenerator
+  , hxrValidator :: Maybe CBORValidator
   }
   deriving (Generic)
 
 instance HasComment (C.XRule HuddleStage) where
   commentL = #hxrComment
+
+instance HasValidator (C.XRule HuddleStage) where
+  validatorL = #hxrValidator
+
+instance HasGenerator (C.XRule HuddleStage) where
+  generatorL = #hxrGenerator
 
 instance Default (XRule HuddleStage)
 
@@ -171,10 +192,13 @@ data Rule = Rule
   deriving (Generic)
 
 instance HasGenerator Rule where
-  generatorL = #ruleExtra % #hxrGenerator
+  generatorL = #ruleExtra % generatorL
 
 instance HasComment Rule where
-  commentL = #ruleExtra % #hxrComment
+  commentL = #ruleExtra % commentL
+
+instance HasValidator Rule where
+  validatorL = #ruleExtra % validatorL
 
 instance HasName Rule where
   getName = ruleName
@@ -275,9 +299,9 @@ asKey r = case toType0 r of
   Type0 (ChoiceOf _ _) -> error "Cannot use a choice of types as a map key"
 
 data MapEntry = MapEntry
-  { key :: Key
-  , value :: Type0
-  , quantifier :: Occurs
+  { meKey :: Key
+  , meValue :: Type0
+  , meQuantifier :: Occurs
   , meDescription :: C.Comment
   }
   deriving (Generic)
@@ -296,11 +320,11 @@ instance IsList MapChoice where
 type Map = Choice MapChoice
 
 data ArrayEntry = ArrayEntry
-  { key :: Maybe Key
+  { aeKey :: Maybe Key
   -- ^ Arrays can have keys, but they have no semantic meaning. We add them
   -- here because they can be illustrative in the generated CDDL.
-  , value :: Type0
-  , quantifier :: Occurs
+  , aeValue :: Type0
+  , aeQuantifier :: Occurs
   , aeDescription :: C.Comment
   }
   deriving (Generic)
@@ -657,6 +681,9 @@ infixl 9 ...
 class IsType0 a where
   toType0 :: a -> Type0
 
+instance IsType0 Type0 where
+  toType0 = id
+
 instance IsType0 Rule where
   toType0 = Type0 . NoChoice . T2Ref
 
@@ -743,12 +770,12 @@ instance CanQuantify Occurs where
   (Occurs lb _) +> ub = Occurs lb (Just ub)
 
 instance CanQuantify ArrayEntry where
-  lb <+ ae = ae & field @"quantifier" %~ (lb <+)
-  ae +> ub = ae & field @"quantifier" %~ (+> ub)
+  lb <+ ae = ae & #aeQuantifier %~ (lb <+)
+  ae +> ub = ae & #aeQuantifier %~ (+> ub)
 
 instance CanQuantify MapEntry where
-  lb <+ ae = ae & field @"quantifier" %~ (lb <+)
-  ae +> ub = ae & field @"quantifier" %~ (+> ub)
+  lb <+ ae = ae & #meQuantifier %~ (lb <+)
+  ae +> ub = ae & #meQuantifier %~ (+> ub)
 
 -- | A quantifier on a choice can be rewritten as a choice of quantifiers
 instance CanQuantify a => CanQuantify (Choice a) where
@@ -762,25 +789,24 @@ instance IsEntryLike MapEntry where
   fromMapEntry = id
 
 instance IsEntryLike ArrayEntry where
-  fromMapEntry me =
+  fromMapEntry MapEntry {..} =
     ArrayEntry
-      { key = Just $ getField @"key" me
-      , value =
-          getField @"value" me
-      , quantifier = getField @"quantifier" me
+      { aeKey = Just meKey
+      , aeValue = meValue
+      , aeQuantifier = meQuantifier
       , aeDescription = mempty
       }
 
 instance IsEntryLike Type0 where
-  fromMapEntry = getField @"value"
+  fromMapEntry = meValue
 
 (==>) :: (IsType0 a, IsEntryLike me) => Key -> a -> me
 k ==> gc =
   fromMapEntry
     MapEntry
-      { key = k
-      , value = toType0 gc
-      , quantifier = def
+      { meKey = k
+      , meValue = toType0 gc
+      , meQuantifier = def
       , meDescription = mempty
       }
 
@@ -797,15 +823,27 @@ n =:~ b = GroupDef n b def
 
 infixl 1 =:~
 
+(=:<) :: IsType0 a => Name -> (GRef -> a) -> GRuleDef
+n =:< b =
+  GRuleDef
+    { grdName = n
+    , grdBody = GRule (NE.singleton gr) . toType0 $ b gr
+    , grdExtra = def
+    }
+  where
+    gr = freshName 0
+
+infixl 1 =:<
+
 class IsGroupOrArrayEntry a where
   toGroupOrArrayEntry :: IsType0 x => x -> a
 
 instance IsGroupOrArrayEntry ArrayEntry where
   toGroupOrArrayEntry x =
     ArrayEntry
-      { key = Nothing
-      , value = toType0 x
-      , quantifier = def
+      { aeKey = Nothing
+      , aeValue = toType0 x
+      , aeQuantifier = def
       , aeDescription = mempty
       }
 
@@ -1126,7 +1164,7 @@ collectFrom topRs =
     goRanged (Unranged _) = pure ()
     goRanged (Ranged lb ub _) = goRangeBound lb >> goRangeBound ub
     goRangeBound (RangeBoundLiteral _) = pure ()
-    goRangeBound (RangeBoundRef n r) = goRule . Rule n r $ HuddleXRule mempty Nothing
+    goRangeBound (RangeBoundRef n r) = goRule . Rule n r $ HuddleXRule mempty Nothing Nothing
 
 -- | Same as `collectFrom`, but the rules passed into this function will be put
 --   at the top of the Huddle, and all of their dependencies will be added at
@@ -1345,5 +1383,10 @@ toCDDL' HuddleConfig {..} hdl =
           C.GenericParameters $
             fmap (\(GRef t) -> GenericParameter (C.Name t) $ HuddleXTerm mempty) (args gr)
 
-withGenerator :: HasGenerator a => (forall g m. StatefulGen g m => g -> m WrappedTerm) -> a -> a
+withGenerator ::
+  HasGenerator a =>
+  (forall g m. (StatefulGen g m, MonadCBORGen m) => [CTree GenPhase] -> g -> m WrappedTerm) -> a -> a
 withGenerator f = L.set generatorL (Just $ CBORGenerator f)
+
+withValidator :: HasValidator a => (Term -> CustomValidatorResult) -> a -> a
+withValidator p = L.set validatorL . Just $ CBORValidator p
