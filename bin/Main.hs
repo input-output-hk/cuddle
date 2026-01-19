@@ -4,7 +4,7 @@
 
 module Main (main) where
 
-import Codec.CBOR.Cuddle.CBOR.Gen (generateCBORTerm)
+import Codec.CBOR.Cuddle.CBOR.Gen (generateFromName)
 import Codec.CBOR.Cuddle.CBOR.Validator
 import Codec.CBOR.Cuddle.CDDL (CDDL, Name (..), fromRules, sortCDDL)
 import Codec.CBOR.Cuddle.CDDL.CTree (CTreeRoot)
@@ -44,7 +44,7 @@ import Prettyprinter (
 import Prettyprinter.Render.Text qualified as PT
 import System.Exit (exitFailure, exitSuccess)
 import System.IO (hPutStrLn, stderr)
-import System.Random (getStdGen)
+import Test.QuickCheck (generate, resize, variant)
 import Text.Megaparsec (ParseErrorBundle, Parsec, errorBundlePretty, runParser)
 
 data Command
@@ -94,6 +94,8 @@ data GenOpts = GenOpts
   , outputFormat :: CBOROutputFormat
   , outputTo :: Maybe String
   , gNoPrelude :: Bool
+  , goSeed :: Maybe Int
+  , goSize :: Int
   }
 
 pGenOpts :: Parser GenOpts
@@ -123,6 +125,18 @@ pGenOpts =
     <*> switch
       ( long "no-prelude"
           <> help "Do not include the CDDL prelude."
+      )
+    <*> option
+      auto
+      ( long "seed"
+          <> short 's'
+          <> help "Generator seed"
+      )
+    <*> option
+      auto
+      ( long "size"
+          <> help "Generator size"
+          <> value 30
       )
 
 newtype FormatOpts = FormatOpts
