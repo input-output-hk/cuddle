@@ -4,7 +4,7 @@
 
 module Test.Codec.CBOR.Cuddle.CDDL.Validator (spec) where
 
-import Codec.CBOR.Cuddle.CBOR.Gen (generateCBORTerm)
+import Codec.CBOR.Cuddle.CBOR.Gen (generateFromName)
 import Codec.CBOR.Cuddle.CBOR.Validator (
   CBORTermResult (..),
   CDDLResult (..),
@@ -67,13 +67,11 @@ import Test.QuickCheck (
   infiniteListOf,
   listOf,
   listOf1,
-  noShrinking,
   oneof,
   scale,
   shuffle,
   vectorOf,
  )
-import Test.QuickCheck.Random (mkQCGen)
 import Text.Megaparsec (runParser)
 import Text.Pretty.Simple (pShow)
 
@@ -91,10 +89,9 @@ genAndValidateFromFile path = do
     isRule _ = True
   describe path $
     forM_ (Map.keys $ Map.filter isRule m) $ \name@(Name n) ->
-      prop (T.unpack n) . noShrinking $ \seed -> do
+      prop (T.unpack n) $ do
+        cborTerm <- generateFromName resolvedCddl name
         let
-          gen = mkQCGen seed
-          cborTerm = generateCBORTerm resolvedCddl name gen
           generatedCbor = toStrictByteString $ encodeTerm cborTerm
           res = validateCBOR generatedCbor name (mapIndex resolvedCddl)
           extraInfo =
@@ -105,7 +102,7 @@ genAndValidateFromFile path = do
               , "CBOR term:"
               , LT.unpack $ pShow cborTerm
               ]
-        counterexample extraInfo $
+        pure . counterexample extraInfo $
           res `shouldSatisfy` \case
             CBORTermResult _ Valid {} -> True
             _ -> False

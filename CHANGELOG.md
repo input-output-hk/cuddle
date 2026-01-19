@@ -8,6 +8,14 @@
 * Changed `--cbor` option of `validate` to a proper argument
 * Added `binary` and `hex` output formats. Providing an output file argument to 
   `gen` no longer affects the output format.
+* Add `seed` and `size` options to `generate` subcommand
+* Replace `generateCBORTerm` with `generateFromName`
+* Remove `generateCBORTerm'`
+* Change the type of `withGenerator` and `CBORGenerator`
+* Add `format-cbor` subcommand
+* Changed `--cbor` option of `validate` to a proper argument
+* Added `binary` and `hex` output formats. Providing an output file argument to 
+  `gen` no longer affects the output format.
 
 ## 1.1.1.0
 

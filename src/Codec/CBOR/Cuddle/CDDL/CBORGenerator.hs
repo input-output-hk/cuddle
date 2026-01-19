@@ -6,7 +6,7 @@ module Codec.CBOR.Cuddle.CDDL.CBORGenerator (
 
 import Codec.CBOR.Term (Term)
 import Optics.Core (Lens')
-import System.Random.Stateful (StatefulGen)
+import Test.QuickCheck (Gen)
 
 data WrappedTerm
   = -- | Single term
@@ -17,7 +17,7 @@ data WrappedTerm
     G [WrappedTerm]
   deriving (Eq, Show)
 
-newtype CBORGenerator = CBORGenerator (forall g m. StatefulGen g m => g -> m WrappedTerm)
+newtype CBORGenerator = CBORGenerator (Gen WrappedTerm)
 
 class HasGenerator a where
   generatorL :: Lens' a (Maybe CBORGenerator)

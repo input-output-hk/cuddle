@@ -131,7 +131,7 @@ import GHC.Exts (IsList (Item, fromList, toList))
 import GHC.Generics (Generic)
 import Optics.Core (lens, view, (%), (%~), (&))
 import Optics.Core qualified as L
-import System.Random.Stateful (StatefulGen)
+import Test.QuickCheck (Gen)
 import Prelude hiding ((/))
 
 type data HuddleStage
@@ -1345,5 +1345,5 @@ toCDDL' HuddleConfig {..} hdl =
           C.GenericParameters $
             fmap (\(GRef t) -> GenericParameter (C.Name t) $ HuddleXTerm mempty) (args gr)
 
-withGenerator :: HasGenerator a => (forall g m. StatefulGen g m => g -> m WrappedTerm) -> a -> a
+withGenerator :: HasGenerator a => Gen WrappedTerm -> a -> a
 withGenerator f = L.set generatorL (Just $ CBORGenerator f)
