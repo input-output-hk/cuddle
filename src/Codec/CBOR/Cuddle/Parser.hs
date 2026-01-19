@@ -300,10 +300,10 @@ pValue =
     pInt =
       pSignedNum L.decimal >>= \case
         (False, val)
-          | val < fromIntegral (maxBound @Word64) -> pure . VUInt $ fromIntegral val
+          | val <= fromIntegral (maxBound @Word64) -> pure . VUInt $ fromIntegral val
           | otherwise -> pure $ VBignum val
         (True, val)
-          | val < fromIntegral (maxBound @Word64) -> pure . VNInt $ fromIntegral val
+          | val <= fromIntegral (maxBound @Word64) -> pure . VNInt $ fromIntegral val
           | otherwise -> pure . VBignum $ -val
     pFloat =
       pSignedNum L.float >>= \case
