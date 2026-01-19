@@ -431,8 +431,12 @@ genValue :: RandomGen g => Value -> M g Term
 genValue (Value x _) = genValueVariant x
 
 genValueVariant :: RandomGen g => ValueVariant -> M g Term
-genValueVariant (VUInt i) = pure . TInt $ fromIntegral i
-genValueVariant (VNInt i) = pure . TInt $ fromIntegral (-i)
+genValueVariant (VUInt i)
+  | toInteger i <= toInteger (maxBound :: Int) = pure . TInt $ fromIntegral i
+  | otherwise = pure $ TInteger $ fromIntegral i
+genValueVariant (VNInt i)
+  | -toInteger i >= toInteger (minBound :: Int) = pure . TInt $ -fromIntegral i
+  | otherwise = pure $ TInteger $ -fromIntegral i
 genValueVariant (VBignum i) = pure $ TInteger i
 genValueVariant (VFloat16 i) = pure . THalf $ i
 genValueVariant (VFloat32 i) = pure . TFloat $ i
