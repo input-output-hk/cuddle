@@ -231,7 +231,7 @@ instance IndexMappable XTerm ParserStage CTreePhase where
   mapIndex _ = CTreeXTerm
 
 instance IndexMappable XRule ParserStage CTreePhase where
-  mapIndex _ = CTreeXRule Nothing
+  mapIndex _ = CTreeXRule Nothing Nothing
 
 -- ParserStage -> HuddleStage
 
@@ -259,7 +259,7 @@ instance IndexMappable XTerm HuddleStage CTreePhase where
   mapIndex _ = CTreeXTerm
 
 instance IndexMappable XRule HuddleStage CTreePhase where
-  mapIndex (HuddleXRule _ g) = CTreeXRule g
+  mapIndex (HuddleXRule _ g v) = CTreeXRule g v
 
 -- HuddleStage -> PrettyStage
 
@@ -276,7 +276,7 @@ instance IndexMappable XTerm HuddleStage PrettyStage where
   mapIndex (HuddleXTerm c) = PrettyXTerm c
 
 instance IndexMappable XRule HuddleStage PrettyStage where
-  mapIndex (HuddleXRule c _) = PrettyXRule c
+  mapIndex (HuddleXRule c _ _) = PrettyXRule c
 
 -- ParserStage -> ParserStage
 
