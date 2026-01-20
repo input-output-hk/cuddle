@@ -103,6 +103,7 @@ executable example
   main-is: Main.hs
   build-depends:
     base,
+    bytestring,
     cuddle,
     megaparsec,
     prettyprinter,
@@ -119,6 +120,7 @@ executable cuddle
     base16-bytestring,
     bytestring,
     cborg,
+    containers,
     cuddle,
     megaparsec,
     mtl,
