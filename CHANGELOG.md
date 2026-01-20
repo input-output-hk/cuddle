@@ -4,6 +4,10 @@
 
 * Export `Type0`
 * Removed `Codec.CBOR.Cuddle.Huddle.HuddleM`
+* Add `format-cbor` subcommand
+* Changed `--cbor` option of `validate` to a proper argument
+* Added `binary` and `hex` output formats. Providing an output file argument to 
+  `gen` no longer affects the output format.
 
 ## 1.1.1.0
 
