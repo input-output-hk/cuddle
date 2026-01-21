@@ -71,8 +71,13 @@ data QC = QC
 instance StatefulGen QC Gen where
   uniformWord32 QC = MkGen (\r _n -> runStateGen_ r uniformWord32)
   uniformWord64 QC = MkGen (\r _n -> runStateGen_ r uniformWord64)
-  uniformByteArrayM pinned sz QC =
+#if MIN_VERSION_random(1,3,0)
+  uniformByteArrayM pinned sz QC = 
     MkGen (\r _n -> runStateGen_ r (uniformByteArrayM pinned sz))
+#else
+  uniformShortByteString k QC =
+    MkGen (\r _n -> runStateGen_ r (uniformShortByteString k))
+#endif
 
 type data MonoDropGen
 
