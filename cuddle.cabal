@@ -70,6 +70,7 @@ library
     data-default-class >=0.2,
     foldable1-classes-compat >=0.1.1,
     generic-optics >=2.2.1,
+    half,
     hashable >=1.4,
     megaparsec >=9.5,
     mtl >=2.3.1,

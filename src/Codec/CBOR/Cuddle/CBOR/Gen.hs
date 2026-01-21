@@ -34,20 +34,29 @@ import Codec.CBOR.Term (Term (..))
 import Codec.CBOR.Term qualified as CBOR
 import Codec.CBOR.Write qualified as CBOR
 import Control.Monad ((<=<))
+import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
-import Data.ByteString.Lazy qualified as LBS
+import Data.ByteString.Lazy qualified as BSL
+import Data.Containers.ListUtils (nubOrdOn)
 import Data.Functor ((<&>))
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as Map
+import Data.Text (Text)
 import Data.Text qualified as T
-import Data.Text.Lazy qualified as LT
+import Data.Text.Lazy qualified as TL
+import Data.Word (Word64, Word8)
 import GHC.Generics (Generic)
 import GHC.Stack (HasCallStack)
+import Numeric.Half (Half (..), fromHalf)
+import System.Random.Stateful (StatefulGen (..), runStateGen_, uniformByteStringM)
 import Test.QuickCheck (
   Arbitrary (..),
   Gen,
+  NonNegative (..),
+  NonPositive (..),
+  Positive (..),
   choose,
-  frequency,
+  elements,
   listOf,
   oneof,
   scale,
@@ -55,6 +64,15 @@ import Test.QuickCheck (
   vector,
   vectorOf,
  )
+import Test.QuickCheck.Gen (Gen (..))
+
+data QC = QC
+
+instance StatefulGen QC Gen where
+  uniformWord32 QC = MkGen (\r _n -> runStateGen_ r uniformWord32)
+  uniformWord64 QC = MkGen (\r _n -> runStateGen_ r uniformWord64)
+  uniformByteArrayM pinned sz QC =
+    MkGen (\r _n -> runStateGen_ r (uniformByteArrayM pinned sz))
 
 type data MonoDropGen
 
@@ -81,40 +99,62 @@ newtype GenEnv = GenEnv
 -- Postlude
 --------------------------------------------------------------------------------
 
-genNonRecursiveTerm :: Gen Term
-genNonRecursiveTerm =
+genByteString :: Int -> Gen BS.ByteString
+genByteString n = uniformByteStringM (fromIntegral n) QC
+
+genLazyByteString :: Int -> Gen BSL.ByteString
+genLazyByteString n = BSL.fromStrict <$> genByteString n
+
+-- | Simple values that are either unassigned or don't have a specialized type already
+simple :: [Word8]
+simple =
+  -- TODO add the other values once they are supported
+  -- [0 .. 19] ++ [23] ++ [32 ..]
+  [23]
+
+genHalf :: Gen Float
+genHalf = do
+  half <- Half <$> arbitrary
+  if isInfinite half || isDenormalized half || isNaN half
+    then genHalf
+    else pure $ fromHalf half
+
+genTerm :: Gen Term
+genTerm =
   oneof
-    [ TBool <$> arbitrary
-    , TInt <$> arbitrary
-    , sized $ \sz -> TInteger <$> choose (-fromIntegral sz, fromIntegral sz)
-    , sized $ fmap (TBytes . BS.pack) . vector
-    , sized $ fmap (TBytesI . LBS.pack) . vector
-    , sized $ fmap (TString . T.pack) . vector
-    , sized $ fmap (TStringI . LT.pack) . vector
+    [ TInt <$> choose (minBound, maxBound)
+    , TInteger
+        <$> oneof
+          [ choose (toInteger (maxBound :: Int) + 1, toInteger (maxBound :: Word64))
+          , choose (negate (toInteger (maxBound :: Word64)), toInteger (minBound :: Int) - 1)
+          ]
+    , TBytes <$> (genByteString . getNonNegative =<< arbitrary)
+    , TBytesI <$> (genLazyByteString . getNonNegative =<< arbitrary)
+    , TString . T.pack <$> arbitrary
+    , TStringI . TL.pack <$> arbitrary
+    , TList <$> listOf smallerTerm
+    , TListI <$> listOf smallerTerm
+    , TMap <$> listOf ((,) <$> smallerTerm <*> smallerTerm)
+    , TMapI <$> listOf ((,) <$> smallerTerm <*> smallerTerm)
+    , TTagged <$> choose (6, maxBound :: Word64) <*> smallerTerm
+    , TBool <$> arbitrary
     , pure TNull
-    , THalf <$> arbitrary
+    , TSimple <$> elements simple
+    , THalf <$> genHalf
     , TFloat <$> arbitrary
     , TDouble <$> arbitrary
     ]
+  where
+    smallerTerm :: Gen Term
+    smallerTerm = scale (`div` 5) genTerm
 
-genRecursiveTerm :: Gen Term
-genRecursiveTerm =
-  oneof
-    [ fmap TList . listOf $ scale (`div` 2) genTerm
-    , fmap TListI . listOf $ scale (`div` 2) genTerm
-    , TMap <$> listOf (scale (`div` 4) $ (,) <$> genTerm <*> genTerm)
-    , TMapI <$> listOf (scale (`div` 4) $ (,) <$> genTerm <*> genTerm)
-    ]
+genBytes :: Gen ByteString
+genBytes = sized $ \sz -> do
+  numElems <- choose (0, sz)
+  uniformByteStringM numElems QC
 
-genTerm :: Gen Term
-genTerm = sized $ \case
-  sz
-    | sz > 0 ->
-        frequency
-          [ (4, genRecursiveTerm)
-          , (1, genNonRecursiveTerm)
-          ]
-    | otherwise -> genNonRecursiveTerm
+genText :: Gen Text
+genText = T.pack <$> listOf arbitrary
 
 -- | Primitive types defined by the CDDL specification, with their generators
 genPostlude :: PTerm -> Gen Term
@@ -127,7 +167,7 @@ genPostlude pt = case pt of
   PTFloat -> TFloat <$> arbitrary
   PTDouble -> TDouble <$> arbitrary
   PTBytes -> TBytes <$> genBytes
-  PTText -> TString <$> genTExt
+  PTText -> TString <$> genText
   PTAny -> genTerm
   PTNil -> pure TNull
   PTUndefined -> pure $ TSimple 23
@@ -318,6 +358,16 @@ generateFromName root@(CTreeRoot cddl) n = do
 
 sizeBiasedBool :: Gen Bool
 sizeBiasedBool = or <$> listOf arbitrary
+
+listOfScaled :: Gen a -> Gen [a]
+listOfScaled g = sized $ \sz -> do
+  i <- choose (0, sz)
+  vectorOf i $ scale (`div` (i + 1)) g
+
+listOfScaled1 :: Gen a -> Gen [a]
+listOfScaled1 g = sized $ \sz -> do
+  i <- choose (1, max sz 1)
+  vectorOf i $ scale (`div` (i + 1)) g
 
 -- | Apply an occurence indicator to a group entry
 applyOccurenceIndicator ::
