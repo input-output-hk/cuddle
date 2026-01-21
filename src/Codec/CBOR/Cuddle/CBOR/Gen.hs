@@ -148,13 +148,19 @@ genTerm =
     smallerTerm :: Gen Term
     smallerTerm = scale (`div` 5) genTerm
 
+genNBytes :: Int -> Gen ByteString
+genNBytes n = uniformByteStringM n QC
+
 genBytes :: Gen ByteString
 genBytes = sized $ \sz -> do
   numElems <- choose (0, sz)
-  uniformByteStringM numElems QC
+  genNBytes numElems
+
+genNText :: Int -> Gen Text
+genNText n = T.pack <$> vector n
 
 genText :: Gen Text
-genText = T.pack <$> listOf arbitrary
+genText = sized $ \sz -> genNText =<< choose (0, sz)
 
 -- | Primitive types defined by the CDDL specification, with their generators
 genPostlude :: PTerm -> Gen Term
@@ -276,22 +282,19 @@ genForCTree cddl (CTree.Control op target controller) = do
       _ -> error "Cannot apply lt operator to target"
     (CtlOp.Lt, _) -> error $ "Invalid controller for .lt operator: " <> showDropGen controller
     (CtlOp.Size, CTree.Literal (Value (VUInt n) _)) -> case target of
-      CTree.Postlude PTText -> S . TString . T.pack <$> vector (fromIntegral n)
-      CTree.Postlude PTBytes -> S . TBytes . BS.pack <$> vector (fromIntegral n)
+      CTree.Postlude PTText -> S . TString <$> genNText (fromIntegral n)
+      CTree.Postlude PTBytes -> S . TBytes <$> genNBytes (fromIntegral n)
       CTree.Postlude PTUInt -> S . TInteger <$> choose (0, 2 ^ n - 1)
       _ -> error "Cannot apply size operator to target "
     (CtlOp.Size, CTree.Range {CTree.from, CTree.to}) -> do
       case (from, to) of
         (CTree.Literal (Value (VUInt f1) _), CTree.Literal (Value (VUInt t1) _)) -> case target of
           CTree.Postlude PTText ->
-            choose (fromIntegral f1, fromIntegral t1)
-              >>= (fmap (S . TString . T.pack) . vector)
+            choose (fromIntegral f1, fromIntegral t1) >>= (fmap (S . TString) . genNText)
           CTree.Postlude PTBytes ->
-            choose (fromIntegral f1, fromIntegral t1)
-              >>= (fmap (S . TBytes . BS.pack) . vector)
+            choose (fromIntegral f1, fromIntegral t1) >>= (fmap (S . TBytes) . genNBytes)
           CTree.Postlude PTUInt ->
-            S . TInteger
-              <$> choose (fromIntegral f1, fromIntegral t1)
+            S . TInteger <$> choose (fromIntegral f1, fromIntegral t1)
           _ -> error $ "Cannot apply size operator to target: " <> showDropGen target
         _ ->
           error $
