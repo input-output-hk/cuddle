@@ -27,6 +27,7 @@ import Data.ByteString.Base16 qualified as B16
 import Data.ByteString.Base16 qualified as Base16
 import Data.ByteString.Char8 qualified as BSC
 import Data.ByteString.Lazy qualified as LBS
+import Data.IORef (newIORef)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
@@ -44,7 +45,11 @@ import Prettyprinter (
 import Prettyprinter.Render.Text qualified as PT
 import System.Exit (exitFailure, exitSuccess)
 import System.IO (hPutStrLn, stderr)
-import Test.QuickCheck (generate, resize, variant)
+import System.Random (newStdGen)
+import System.Random.Stateful (IOGenM (..), Uniform (..))
+import Test.QuickCheck (Gen)
+import Test.QuickCheck.Gen (Gen (..))
+import Test.QuickCheck.Random (mkQCGen)
 import Text.Megaparsec (ParseErrorBundle, Parsec, errorBundlePretty, runParser)
 
 data Command
@@ -90,24 +95,18 @@ pCBOROutputFormat = eitherReader $ \k ->
     Nothing -> Left k
 
 data GenOpts = GenOpts
-  { itemName :: T.Text
-  , outputFormat :: CBOROutputFormat
+  { outputFormat :: CBOROutputFormat
   , outputTo :: Maybe String
   , gNoPrelude :: Bool
   , goSeed :: Maybe Int
   , goSize :: Int
+  , itemName :: T.Text
   }
 
 pGenOpts :: Parser GenOpts
 pGenOpts =
   GenOpts
-    <$> strOption
-      ( long "rule"
-          <> short 'r'
-          <> metavar "RULE"
-          <> help "Name of the CDDL rule to generate a CBOR term for"
-      )
-    <*> option
+    <$> option
       pCBOROutputFormat
       ( long "format"
           <> short 'f'
@@ -126,11 +125,11 @@ pGenOpts =
       ( long "no-prelude"
           <> help "Do not include the CDDL prelude."
       )
-    <*> option
-      auto
-      ( long "seed"
-          <> short 's'
-          <> help "Generator seed"
+    <*> optional
+      ( option auto $
+          long "seed"
+            <> short 's'
+            <> help "Generator seed"
       )
     <*> option
       auto
@@ -138,6 +137,9 @@ pGenOpts =
           <> help "Generator size"
           <> value 30
       )
+    <*> argument
+      str
+      (metavar "RULE" <> help "Name of the CDDL rule to generate a CBOR term for")
 
 newtype FormatOpts = FormatOpts
   {sort :: Bool}
@@ -281,6 +283,9 @@ formatTerm term = \case
   AsHex -> Base16.encode . toStrictByteString $ encodeTerm term
   AsDiagnostic -> encodeUtf8 . T.pack . prettyHexEnc $ encodeTerm term
 
+runGen :: Int -> Int -> Gen a -> a
+runGen seed size gen = unGen gen (mkQCGen seed) size
+
 run :: Command -> IO ()
 run = \case
   Format fOpts cddlFile -> do
@@ -312,13 +317,16 @@ run = \case
     case fullResolveCDDL $ mapCDDLDropExt cddl of
       Left err -> putStrLnErr (show err) >> exitFailure
       Right mt -> do
-        stdGen <- getStdGen
+        seed <- case goSeed of
+          Just s -> pure s
+          Nothing -> uniformM . IOGenM =<< newIORef =<< newStdGen
         let
-          term = generateCBORTerm mt (Name itemName) stdGen
+          term = runGen seed goSize $ generateFromName mt (Name itemName)
           formatted = formatTerm term outputFormat
         case outputTo of
           Just outputPath -> BS.writeFile outputPath formatted
           Nothing -> BSC.putStrLn formatted
+        putStrLn $ "seed: " <> show seed
   ValidateCBOR vcOpts cddlFile -> do
     res <- tryParseFromFile cddlFile
     let

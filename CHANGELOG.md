@@ -20,6 +20,7 @@
 * Replace `generateCBORTerm` with `generateFromName`
 * Remove `generateCBORTerm'`
 * Change the type of `withGenerator`
+* Change `--rule` option of `gen` to an argument
 
 ## 1.1.1.0
 
