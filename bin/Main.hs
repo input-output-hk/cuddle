@@ -268,73 +268,72 @@ formatTerm term = \case
   AsDiagnostic -> encodeUtf8 . T.pack . prettyHexEnc $ encodeTerm term
 
 run :: Command -> IO ()
-run cmd = do
-  case cmd of
-    Format fOpts cddlFile -> do
-      res <- tryParseFromFile cddlFile
-      let
-        defs
-          | sort fOpts = fromRules $ sortCDDL res
-          | otherwise = res
-        layoutOptions = defaultLayoutOptions {layoutPageWidth = AvailablePerLine 80 1}
-        formattedText =
-          PT.renderStrict . removeTrailingWhitespace . layoutPretty layoutOptions . pretty $
-            mapIndex @_ @_ @PrettyStage defs
-      T.putStr formattedText
-    Validate vOpts cddlFile -> do
-      res <- tryParseFromFile cddlFile
-      let
-        cddl
-          | vNoPrelude vOpts = res
-          | otherwise = appendPostlude res
-      case fullResolveCDDL $ mapCDDLDropExt cddl of
+run = \case
+  Format fOpts cddlFile -> do
+    res <- tryParseFromFile cddlFile
+    let
+      defs
+        | sort fOpts = fromRules $ sortCDDL res
+        | otherwise = res
+      layoutOptions = defaultLayoutOptions {layoutPageWidth = AvailablePerLine 80 1}
+      formattedText =
+        PT.renderStrict . removeTrailingWhitespace . layoutPretty layoutOptions . pretty $
+          mapIndex @_ @_ @PrettyStage defs
+    T.putStr formattedText
+  Validate vOpts cddlFile -> do
+    res <- tryParseFromFile cddlFile
+    let
+      cddl
+        | vNoPrelude vOpts = res
+        | otherwise = appendPostlude res
+    case fullResolveCDDL $ mapCDDLDropExt cddl of
+      Left err -> putStrLnErr (show err) >> exitFailure
+      Right _ -> exitSuccess
+  GenerateCBOR GenOpts {..} cddlFile -> do
+    res <- tryParseFromFile cddlFile
+    let
+      cddl
+        | gNoPrelude = res
+        | otherwise = appendPostlude res
+    case fullResolveCDDL $ mapCDDLDropExt cddl of
+      Left err -> putStrLnErr (show err) >> exitFailure
+      Right mt -> do
+        stdGen <- getStdGen
+        let
+          term = generateCBORTerm mt (Name itemName) stdGen
+          formatted = formatTerm term outputFormat
+        case outputTo of
+          Just outputPath -> BS.writeFile outputPath formatted
+          Nothing -> BSC.putStrLn formatted
+  ValidateCBOR vcOpts cddlFile -> do
+    res <- tryParseFromFile cddlFile
+    let
+      cddl
+        | vcNoPrelude vcOpts = res
+        | otherwise = appendPostlude res
+    case fullResolveCDDL $ mapCDDLDropExt cddl of
+      Left err -> putStrLnErr (show err) >> exitFailure
+      Right mt -> do
+        cbor <- BS.readFile (vcInput vcOpts)
+        runValidateCBOR cbor (Name $ vcItemName vcOpts) (mapIndex mt)
+  FormatCBOR FormatCBOROpts {..} cborFile -> do
+    contentsRaw <- BS.readFile cborFile
+    contents <- case dcInputFormat of
+      FromBinary -> pure contentsRaw
+      FromHex -> case B16.decode contentsRaw of
+        Right x -> pure x
         Left err -> putStrLnErr (show err) >> exitFailure
-        Right _ -> exitSuccess
-    GenerateCBOR GenOpts {..} cddlFile -> do
-      res <- tryParseFromFile cddlFile
-      let
-        cddl
-          | gNoPrelude = res
-          | otherwise = appendPostlude res
-      case fullResolveCDDL $ mapCDDLDropExt cddl of
-        Left err -> putStrLnErr (show err) >> exitFailure
-        Right mt -> do
-          stdGen <- getStdGen
-          let
-            term = generateCBORTerm mt (Name itemName) stdGen
-            formatted = formatTerm term outputFormat
-          case outputTo of
-            Just outputPath -> BS.writeFile outputPath formatted
-            Nothing -> BSC.putStrLn formatted
-    ValidateCBOR vcOpts cddlFile -> do
-      res <- tryParseFromFile cddlFile
-      let
-        cddl
-          | vcNoPrelude vcOpts = res
-          | otherwise = appendPostlude res
-      case fullResolveCDDL $ mapCDDLDropExt cddl of
-        Left err -> putStrLnErr (show err) >> exitFailure
-        Right mt -> do
-          cbor <- BSC.readFile (vcInput vcOpts)
-          runValidateCBOR cbor (Name $ vcItemName vcOpts) (mapIndex mt)
-    FormatCBOR FormatCBOROpts {..} cborFile -> do
-      contentsRaw <- BS.readFile cborFile
-      contents <- case dcInputFormat of
-        FromBinary -> pure contentsRaw
-        FromHex -> case B16.decode contentsRaw of
-          Right x -> pure x
-          Left err -> putStrLnErr (show err) >> exitFailure
-      term <- case deserialiseFromBytes decodeTerm (LBS.fromStrict contents) of
-        Right (leftover, term) -> do
-          unless (LBS.null leftover) . putStrLnErr $
-            "Warning: " <> show (LBS.length leftover) <> " leftover bytes after decoding"
-          pure term
-        Left err -> putStrLnErr (show err) >> exitFailure
-      let
-        formatted = formatTerm term dcOutputFormat
-      case dcOutputFile of
-        Just outputPath -> BS.writeFile outputPath formatted
-        Nothing -> BSC.putStrLn formatted
+    term <- case deserialiseFromBytes decodeTerm (LBS.fromStrict contents) of
+      Right (leftover, term) -> do
+        unless (LBS.null leftover) . putStrLnErr $
+          "Warning: " <> show (LBS.length leftover) <> " leftover bytes after decoding"
+        pure term
+      Left err -> putStrLnErr (show err) >> exitFailure
+    let
+      formatted = formatTerm term dcOutputFormat
+    case dcOutputFile of
+      Just outputPath -> BS.writeFile outputPath formatted
+      Nothing -> BSC.putStrLn formatted
 
 putStrLnErr :: String -> IO ()
 putStrLnErr = hPutStrLn stderr
