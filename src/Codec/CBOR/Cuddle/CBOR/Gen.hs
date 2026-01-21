@@ -357,7 +357,7 @@ generateFromName root@(CTreeRoot cddl) n = do
               <> ", but it does not correspond to a single term."
 
 sizeBiasedBool :: Gen Bool
-sizeBiasedBool = or <$> listOf arbitrary
+sizeBiasedBool = sized $ \sz -> (> 1) <$> choose (0, sz)
 
 listOfScaled :: Gen a -> Gen [a]
 listOfScaled g = sized $ \sz -> do
