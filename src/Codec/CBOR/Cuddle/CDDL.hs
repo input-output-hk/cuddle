@@ -397,7 +397,7 @@ instance ForAllExtensions i CollectComments => CollectComments (Type0 i)
 data Type1 i = Type1
   { t1Main :: Type2 i
   , t1TyOp :: Maybe (TyOp, Type2 i)
-  , t1Comment :: XTerm i
+  , t1Ext :: XTerm i
   }
   deriving (Generic)
 
@@ -408,7 +408,7 @@ deriving instance ForAllExtensions i Show => Show (Type1 i)
 deriving instance ForAllExtensions i ToExpr => ToExpr (Type1 i)
 
 instance HasComment (XTerm i) => HasComment (Type1 i) where
-  commentL = #t1Comment % commentL
+  commentL = #t1Ext % commentL
 
 instance ForAllExtensions i CollectComments => CollectComments (Type1 i) where
   collectComments (Type1 m tyOp c) = collectComments c <> collectComments m <> collectComments (fmap snd tyOp)
