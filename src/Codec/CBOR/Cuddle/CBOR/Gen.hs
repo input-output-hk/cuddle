@@ -81,13 +81,13 @@ instance StatefulGen QC Gen where
 
 type data MonoSimple
 
-newtype instance XXCTree MonoSimple = MDGRef Name
+newtype instance XXCTree MonoSimple = MSRef Name
   deriving (Show)
 
 instance IndexMappable CTree MonoReferenced MonoSimple where
   mapIndex = foldCTree mapExt mapIndex
     where
-      mapExt (MRuleRef n) = CTreeE $ MDGRef n
+      mapExt (MRuleRef n) = CTreeE $ MSRef n
       mapExt (MGenerator _ x) = mapIndex x
       mapExt (MValidator _ x) = mapIndex x
 
