@@ -47,6 +47,7 @@ import System.Exit (exitFailure, exitSuccess)
 import System.IO (hPutStrLn, stderr)
 import System.Random (newStdGen)
 import System.Random.Stateful (IOGenM (..), Uniform (..))
+import Test.AntiGen (zapAntiGen)
 import Test.QuickCheck (Gen)
 import Test.QuickCheck.Gen (Gen (..))
 import Test.QuickCheck.Random (mkQCGen)
@@ -100,6 +101,7 @@ data GenOpts = GenOpts
   , gNoPrelude :: Bool
   , goSeed :: Maybe Int
   , goSize :: Int
+  , goZap :: Int
   , itemName :: T.Text
   }
 
@@ -136,6 +138,14 @@ pGenOpts =
       ( long "size"
           <> help "Generator size"
           <> value 30
+      )
+    <*> option
+      auto
+      ( long "zap"
+          <> short 'z'
+          <> value 0
+          <> metavar "NUMBER"
+          <> help "Generate a negative example with at most this many mistakes"
       )
     <*> argument
       str
@@ -321,7 +331,7 @@ run = \case
           Just s -> pure s
           Nothing -> uniformM . IOGenM =<< newIORef =<< newStdGen
         let
-          term = runGen seed goSize $ generateFromName mt (Name itemName)
+          term = runGen seed goSize . zapAntiGen goZap $ generateFromName mt (Name itemName)
           formatted = formatTerm term outputFormat
         case outputTo of
           Just outputPath -> BS.writeFile outputPath formatted

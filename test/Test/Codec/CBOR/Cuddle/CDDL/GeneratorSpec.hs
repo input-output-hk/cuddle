@@ -23,6 +23,7 @@ import Codec.CBOR.Cuddle.Huddle qualified as H
 import Codec.CBOR.Cuddle.IndexMappable (mapCDDLDropExt)
 import Codec.CBOR.Term (Term (..))
 import Codec.CBOR.Term qualified as C
+import Test.AntiGen (runAntiGen)
 import Test.Hspec (HasCallStack, Spec, describe, runIO)
 import Test.Hspec.Core.Spec (SpecM)
 import Test.Hspec.QuickCheck (prop)
@@ -51,7 +52,7 @@ bytesExample =
 
 cddlShouldGenerateSatisfying ::
   Testable prop => CTreeRoot MonoReferenced -> (Term -> prop) -> Property
-cddlShouldGenerateSatisfying cddl p = property $ p <$> generateFromName cddl "root"
+cddlShouldGenerateSatisfying cddl p = property . runAntiGen $ p <$> generateFromName cddl "root"
 
 tryResolveHuddle :: HasCallStack => Huddle -> SpecM () (CTreeRoot MonoReferenced)
 tryResolveHuddle huddle = do
