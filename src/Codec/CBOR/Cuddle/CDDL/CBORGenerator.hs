@@ -11,7 +11,7 @@ module Codec.CBOR.Cuddle.CDDL.CBORGenerator (
 import Codec.CBOR.Term (Term)
 import Data.Text (Text)
 import Optics.Core (Lens')
-import Test.QuickCheck (Gen)
+import Test.AntiGen (AntiGen)
 
 data WrappedTerm
   = -- | Single term
@@ -22,7 +22,7 @@ data WrappedTerm
     G [WrappedTerm]
   deriving (Eq, Show)
 
-newtype CBORGenerator = CBORGenerator (Gen WrappedTerm)
+newtype CBORGenerator = CBORGenerator (AntiGen WrappedTerm)
 
 class HasGenerator a where
   generatorL :: Lens' a (Maybe CBORGenerator)
