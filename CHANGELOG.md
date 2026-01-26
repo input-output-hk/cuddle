@@ -23,6 +23,9 @@
 * Add custom validator field to `XRule CTreePhase`
 * Added index type parameter to `CDDLResult`, `CBORTermResult`, `AMatchedItem`, `ANonMatchedItem`
 * Remove `CDDL` and `Rule` type synonyms from `Codec.CBOR.Cuddle.CBOR.Validator`
+* Add `--negative` option to `gen` for generating negative examples
+* `CBORGenerator` now uses `AntiGen` instead of `Gen`
+* Add `withAntiGen`
 
 ## 1.1.1.0
 
