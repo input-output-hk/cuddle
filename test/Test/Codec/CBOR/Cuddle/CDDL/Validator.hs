@@ -1,7 +1,11 @@
 {-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Test.Codec.CBOR.Cuddle.CDDL.Validator (spec) where
+module Test.Codec.CBOR.Cuddle.CDDL.Validator (
+  spec,
+  expectValid,
+  expectInvalid,
+) where
 
 import Codec.CBOR.Cuddle.CBOR.Gen (generateFromName)
 import Codec.CBOR.Cuddle.CBOR.Validator (

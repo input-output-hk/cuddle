@@ -1,12 +1,6 @@
 packages:
   .
 
---source-repository-package
---  type: git
---  location: https://github.com/input-output-hk/antigen.git
---  tag: b2a0a864390e3b90f30c859790eefd18475a4b86
---  --sha256: 01ngvs8aha90sh5b33xrfiixrf60s7sr4nzbw5m1yp97mi754wzc
-
 test-show-details: streaming
 
 program-options

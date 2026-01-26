@@ -25,6 +25,9 @@
 * Remove `CDDL` and `Rule` type synonyms from `Codec.CBOR.Cuddle.CBOR.Validator`
 * Remove `CBORTermResult`, `CDDLResult`, `AMatchedItem`, `ANonMatchedItem`, `CustomValidatorResult`
 * Add `ValidationResult`, `ValidatorFailure`
+* Add `--negative` option to `gen` for generating negative examples
+* `CBORGenerator` now uses `AntiGen` instead of `Gen`
+* Add `withAntiGen`
 
 ## 1.1.1.0
 
