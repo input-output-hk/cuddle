@@ -35,7 +35,6 @@ import Codec.CBOR.Term qualified as CBOR
 import Codec.CBOR.Write qualified as CBOR
 import Control.Monad ((<=<))
 import Data.ByteString (ByteString)
-import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as BSL
 import Data.Containers.ListUtils (nubOrdOn)
 import Data.Functor ((<&>))
@@ -49,23 +48,21 @@ import GHC.Generics (Generic)
 import GHC.Stack (HasCallStack)
 import Numeric.Half (Half (..), fromHalf)
 import System.Random.Stateful (StatefulGen (..), runStateGen_, uniformByteStringM)
-import Test.QuickCheck (
-  Arbitrary (..),
-  Gen,
-  NonNegative (..),
-  NonPositive (..),
-  Positive (..),
-  choose,
-  elements,
-  listOf,
-  oneof,
-  scale,
-  sized,
-  vector,
-  vectorOf,
+import Test.AntiGen (
+  AntiGen,
+  antiNonNegative,
+  antiNonPositive,
+  (|!),
  )
+import Test.QuickCheck (
+  Arbitrary,
+  NonNegative (..),
+ )
+import Test.QuickCheck qualified as QC
 import Test.QuickCheck.Gen (Gen (..))
+import Test.QuickCheck.GenT (MonadGen (..), elements, listOf, oneof, suchThat, vectorOf)
 
+-- TODO remove this once QuickCheck gets QC
 data QC = QC
 
 instance StatefulGen QC Gen where
@@ -78,6 +75,23 @@ instance StatefulGen QC Gen where
   uniformShortByteString k QC =
     MkGen (\r _n -> runStateGen_ r (uniformShortByteString k))
 #endif
+
+--------------------------------------------------------------------------------
+-- Lifted MonadGen utils
+--------------------------------------------------------------------------------
+
+arbitrary :: (Arbitrary a, MonadGen m) => m a
+arbitrary = liftGen QC.arbitrary
+
+scale :: MonadGen m => (Int -> Int) -> m a -> m a
+scale f m = sized $ \n -> resize (f n) m
+
+vector :: (MonadGen m, Arbitrary a) => Int -> m [a]
+vector n = vectorOf n arbitrary
+
+--------------------------------------------------------------------------------
+-- MonoSimple
+--------------------------------------------------------------------------------
 
 type data MonoSimple
 
@@ -105,12 +119,6 @@ newtype GenEnv = GenEnv
 -- Postlude
 --------------------------------------------------------------------------------
 
-genByteString :: Int -> Gen BS.ByteString
-genByteString n = uniformByteStringM (fromIntegral n) QC
-
-genLazyByteString :: Int -> Gen BSL.ByteString
-genLazyByteString n = BSL.fromStrict <$> genByteString n
-
 -- | Simple values that are either unassigned or don't have a specialized type already
 simple :: [Word8]
 simple =
@@ -118,14 +126,14 @@ simple =
   -- [0 .. 19] ++ [23] ++ [32 ..]
   [23]
 
-genHalf :: Gen Float
+genHalf :: MonadGen m => m Float
 genHalf = do
   half <- Half <$> arbitrary
   if isInfinite half || isDenormalized half || isNaN half
     then genHalf
     else pure $ fromHalf half
 
-genTerm :: Gen Term
+genTerm :: AntiGen Term
 genTerm =
   oneof
     [ TInt <$> choose (minBound, maxBound)
@@ -134,8 +142,8 @@ genTerm =
           [ choose (toInteger (maxBound :: Int) + 1, toInteger (maxBound :: Word64))
           , choose (negate (toInteger (maxBound :: Word64)), toInteger (minBound :: Int) - 1)
           ]
-    , TBytes <$> (genByteString . getNonNegative =<< arbitrary)
-    , TBytesI <$> (genLazyByteString . getNonNegative =<< arbitrary)
+    , TBytes <$> (genNBytes . getNonNegative =<< arbitrary)
+    , TBytesI <$> (genNLazyBytes . getNonNegative =<< arbitrary)
     , TString . T.pack <$> arbitrary
     , TStringI . TL.pack <$> arbitrary
     , TList <$> listOf smallerTerm
@@ -151,29 +159,32 @@ genTerm =
     , TDouble <$> arbitrary
     ]
   where
-    smallerTerm :: Gen Term
+    smallerTerm :: AntiGen Term
     smallerTerm = scale (`div` 5) genTerm
 
-genNBytes :: Int -> Gen ByteString
-genNBytes n = uniformByteStringM n QC
+genNBytes :: MonadGen m => Int -> m ByteString
+genNBytes n = liftGen (uniformByteStringM n QC)
 
-genBytes :: Gen ByteString
+genBytes :: MonadGen m => m ByteString
 genBytes = sized $ \sz -> do
   numElems <- choose (0, sz)
   genNBytes numElems
 
-genNText :: Int -> Gen Text
+genNLazyBytes :: MonadGen m => Int -> m BSL.ByteString
+genNLazyBytes n = BSL.fromStrict <$> genNBytes n
+
+genNText :: MonadGen m => Int -> m Text
 genNText n = T.pack <$> vector n
 
-genText :: Gen Text
+genText :: MonadGen m => m Text
 genText = sized $ \sz -> genNText =<< choose (0, sz)
 
 -- | Primitive types defined by the CDDL specification, with their generators
-genPostlude :: PTerm -> Gen Term
+genPostlude :: PTerm -> AntiGen Term
 genPostlude pt = case pt of
   PTBool -> TBool <$> arbitrary
-  PTUInt -> TInteger . getPositive <$> arbitrary
-  PTNInt -> TInteger . getNonPositive <$> arbitrary
+  PTUInt -> TInteger <$> antiNonNegative
+  PTNInt -> TInteger <$> antiNonPositive
   PTInt -> TInteger . fromIntegral <$> choose (minBound :: Int, maxBound)
   PTHalf -> THalf <$> choose (-65504, 65504)
   PTFloat -> TFloat <$> arbitrary
@@ -218,7 +229,8 @@ showSimple = show . mapIndex @_ @_ @MonoSimple
 -- Generator functions
 --------------------------------------------------------------------------------
 
-genForCTree :: HasCallStack => CTreeRoot MonoReferenced -> CTree MonoReferenced -> Gen WrappedTerm
+genForCTree ::
+  HasCallStack => CTreeRoot MonoReferenced -> CTree MonoReferenced -> AntiGen WrappedTerm
 genForCTree _ (CTree.Literal v) = pure . S $ valueToTerm v
 genForCTree _ (CTree.Postlude pt) = S <$> genPostlude pt
 genForCTree cddl (CTree.Map nodes) = do
@@ -287,11 +299,13 @@ genForCTree cddl (CTree.Control op target controller) = do
       CTree.Postlude PTUInt -> S . TInteger <$> choose (0, fromIntegral n - 1)
       _ -> error "Cannot apply lt operator to target"
     (CtlOp.Lt, _) -> error $ "Invalid controller for .lt operator: " <> showSimple controller
-    (CtlOp.Size, CTree.Literal (Value (VUInt n) _)) -> case target of
-      CTree.Postlude PTText -> S . TString <$> genNText (fromIntegral n)
-      CTree.Postlude PTBytes -> S . TBytes <$> genNBytes (fromIntegral n)
-      CTree.Postlude PTUInt -> S . TInteger <$> choose (0, 2 ^ n - 1)
-      _ -> error "Cannot apply size operator to target "
+    (CtlOp.Size, CTree.Literal (Value (VUInt s) _)) -> do
+      n <- pure s |! sized (\sz -> choose (0, fromIntegral sz) `suchThat` (/= s))
+      case target of
+        CTree.Postlude PTText -> S . TString <$> genNText (fromIntegral n)
+        CTree.Postlude PTBytes -> S . TBytes <$> genNBytes (fromIntegral n)
+        CTree.Postlude PTUInt -> S . TInteger <$> choose (0, 2 ^ s - 1)
+        _ -> error "Cannot apply size operator to target "
     (CtlOp.Size, CTree.Range {CTree.from, CTree.to}) -> do
       case (from, to) of
         (CTree.Literal (Value (VUInt f1) _), CTree.Literal (Value (VUInt t1) _)) -> case target of
@@ -300,7 +314,7 @@ genForCTree cddl (CTree.Control op target controller) = do
           CTree.Postlude PTBytes ->
             choose (fromIntegral f1, fromIntegral t1) >>= (fmap (S . TBytes) . genNBytes)
           CTree.Postlude PTUInt ->
-            S . TInteger <$> choose (fromIntegral f1, fromIntegral t1)
+            S . TInteger . fromIntegral <$> choose (f1, t1)
           _ -> error $ "Cannot apply size operator to target: " <> showSimple target
         _ ->
           error $
@@ -323,7 +337,8 @@ genForCTree cddl (CTree.Enum tree) = do
       genForCTree cddl $ trees !! ix
     _ -> error "Attempt to form an enum from something other than a group"
 genForCTree cddl (CTree.Unwrap node) = genForCTree cddl node
-genForCTree cddl (CTree.Tag tag node) = do
+genForCTree cddl (CTree.Tag t node) = do
+  tag <- pure t
   enc <- genForCTree cddl node
   case enc of
     S x -> pure $ S $ TTagged tag x
@@ -332,12 +347,12 @@ genForCTree cddl (CTree.CTreeE (MRuleRef n)) = genForNode cddl n
 genForCTree _ (CTree.CTreeE (MGenerator (CBORGenerator gen) _)) = gen
 genForCTree cddl (CTree.CTreeE (MValidator _ x)) = genForCTree cddl x
 
-genForNode :: HasCallStack => CTreeRoot MonoReferenced -> Name -> Gen WrappedTerm
+genForNode :: HasCallStack => CTreeRoot MonoReferenced -> Name -> AntiGen WrappedTerm
 genForNode cddl = genForCTree cddl <=< resolveRef cddl
 
 -- | Take a reference and resolve it to the relevant Tree, following multiple
 -- links if necessary.
-resolveRef :: CTreeRoot MonoReferenced -> Name -> Gen (CTree MonoReferenced)
+resolveRef :: CTreeRoot MonoReferenced -> Name -> AntiGen (CTree MonoReferenced)
 resolveRef (CTreeRoot cddl) n = do
   -- Since we follow a reference, we decrease the 'size' of the Gen monad.
   scale (\x -> max 0 $ x - 1) $
@@ -353,7 +368,7 @@ resolveRef (CTreeRoot cddl) n = do
 -- This will throw an error if the generated item does not correspond to a
 -- single CBOR term (e.g. if the name resolves to a group, which cannot be
 -- generated outside a context).
-generateFromName :: HasCallStack => CTreeRoot MonoReferenced -> Name -> Gen Term
+generateFromName :: HasCallStack => CTreeRoot MonoReferenced -> Name -> AntiGen Term
 generateFromName root@(CTreeRoot cddl) n = do
   case Map.lookup n cddl of
     Nothing -> error $ "Unbound reference: " <> show n
@@ -366,15 +381,15 @@ generateFromName root@(CTreeRoot cddl) n = do
               <> show n
               <> ", but it does not correspond to a single term."
 
-sizeBiasedBool :: Gen Bool
+sizeBiasedBool :: MonadGen m => m Bool
 sizeBiasedBool = sized $ \sz -> (> 1) <$> choose (0, sz)
 
-listOfScaled :: Gen a -> Gen [a]
+listOfScaled :: MonadGen m => m a -> m [a]
 listOfScaled g = sized $ \sz -> do
   i <- choose (0, sz)
   vectorOf i $ scale (`div` (i + 1)) g
 
-listOfScaled1 :: Gen a -> Gen [a]
+listOfScaled1 :: MonadGen m => m a -> m [a]
 listOfScaled1 g = sized $ \sz -> do
   i <- choose (1, max sz 1)
   vectorOf i $ scale (`div` (i + 1)) g
@@ -382,8 +397,8 @@ listOfScaled1 g = sized $ \sz -> do
 -- | Apply an occurence indicator to a group entry
 applyOccurenceIndicator ::
   OccurrenceIndicator ->
-  Gen WrappedTerm ->
-  Gen WrappedTerm
+  AntiGen WrappedTerm ->
+  AntiGen WrappedTerm
 applyOccurenceIndicator OIOptional oldGen =
   sizeBiasedBool >>= \case
     False -> pure $ G mempty
@@ -403,11 +418,11 @@ valueToTerm (Value x _) = valueVariantToTerm x
 
 valueVariantToTerm :: ValueVariant -> Term
 valueVariantToTerm (VUInt i)
-  | toInteger i <= toInteger (maxBound :: Int) = TInt $ fromIntegral i
-  | otherwise = TInteger $ fromIntegral i
+  | toInteger i <= toInteger (maxBound :: Int) = TInt (fromIntegral i)
+  | otherwise = TInteger (fromIntegral i)
 valueVariantToTerm (VNInt i)
-  | -toInteger i >= toInteger (minBound :: Int) = TInt $ -fromIntegral i
-  | otherwise = TInteger $ -fromIntegral i
+  | -toInteger i >= toInteger (minBound :: Int) = TInt (-fromIntegral i)
+  | otherwise = TInteger (-fromIntegral i)
 valueVariantToTerm (VBignum i) = TInteger i
 valueVariantToTerm (VFloat16 i) = THalf i
 valueVariantToTerm (VFloat32 i) = TFloat i

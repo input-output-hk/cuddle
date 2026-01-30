@@ -92,6 +92,7 @@ module Codec.CBOR.Cuddle.Huddle (
 
   -- * Generators
   withGenerator,
+  withAntiGen,
 
   -- * Validators
   withValidator,
@@ -142,7 +143,9 @@ import GHC.Exts (IsList (Item, fromList, toList))
 import GHC.Generics (Generic)
 import Optics.Core (lens, view, (%), (%~), (&))
 import Optics.Core qualified as L
+import Test.AntiGen (AntiGen)
 import Test.QuickCheck (Gen)
+import Test.QuickCheck.GenT (MonadGen (liftGen))
 import Prelude hiding ((/))
 
 type data HuddleStage
@@ -1369,8 +1372,17 @@ toCDDL' HuddleConfig {..} hdl =
           C.GenericParameters $
             fmap (\(GRef t) -> GenericParameter (C.Name t) $ HuddleXTerm mempty) (args gr)
 
+-- | Use a custom `QuickCheck` generator to generate the term. Will override
+-- the generator passed via `withAntiGen`
 withGenerator :: HasGenerator a => Gen WrappedTerm -> a -> a
-withGenerator f = L.set generatorL (Just $ CBORGenerator f)
+withGenerator f = L.set generatorL (Just . CBORGenerator $ liftGen f)
 
+-- | Use a custom `AntiGen` generator to generate the term. Will override
+-- the custom generator passed via `withGenerator`. The advantage of using
+-- `AntiGen` generator is that it can also be used to generate negative examples.
+withAntiGen :: HasGenerator a => AntiGen WrappedTerm -> a -> a
+withAntiGen f = L.set generatorL (Just $ CBORGenerator f)
+
+-- | Use a custom validation predicate when validating this term.
 withValidator :: HasValidator a => (Term -> CustomValidatorResult) -> a -> a
 withValidator p = L.set validatorL . Just $ CBORValidator p

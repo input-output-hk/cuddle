@@ -1,7 +1,11 @@
 {-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Test.Codec.CBOR.Cuddle.CDDL.Validator (spec) where
+module Test.Codec.CBOR.Cuddle.CDDL.Validator (
+  spec,
+  expectValid,
+  expectInvalid,
+) where
 
 import Codec.CBOR.Cuddle.CBOR.Gen (generateFromName)
 import Codec.CBOR.Cuddle.CBOR.Validator (
@@ -53,6 +57,7 @@ import Data.Text qualified as T
 import Data.Text.IO qualified as T
 import Data.Text.Lazy qualified as LT
 import Paths_cuddle (getDataFileName)
+import Test.AntiGen (runAntiGen)
 import Test.Hspec (
   Expectation,
   HasCallStack,
@@ -96,7 +101,7 @@ genAndValidateFromFile path = do
   describe path $ do
     forM_ (Map.keys $ Map.filter isRule m) $ \name@(Name n) ->
       prop (T.unpack n) $ do
-        cborTerm <- generateFromName resolvedCddl name
+        cborTerm <- runAntiGen $ generateFromName resolvedCddl name
         let
           generatedCbor = toStrictByteString $ encodeTerm cborTerm
           res = validateCBOR generatedCbor name (mapIndex resolvedCddl)
