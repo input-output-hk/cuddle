@@ -60,7 +60,7 @@ library
 
   build-depends:
     QuickCheck,
-    antigen ^>=0.2,
+    antigen ^>=0.3,
     base >=4.18 && <5,
     base16-bytestring >=1.0.2,
     boxes >=0.1.5,
