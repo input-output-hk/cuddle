@@ -3,7 +3,7 @@ system-ghc: true
 packages:
 - .
 extra-deps:
-- antigen-0.3.0.0
+- antigen-0.3.0.0@sha256:b51297961ac44d8209378ee0b38724c3fe52b701668cb2a5e9767159f9c1cd92
 - capability-0.5.0.1@sha256:fa45f434f7c908fc98311306c26d2d9286a244193b6dd4e97a4e228a9f6119bf,3287
 - data-default-class-0.2.0.0@sha256:788dc5c0be3981ca83ad11206e300a77ae8a1c8b9bc4f9630f563d37f540ccbd,728
 - data-default-0.8.0.1@sha256:536ff91641a39b8ad302eebceff767d86ec6b543b44b1db9104650a2b1bc63bd,1110
