@@ -5,15 +5,10 @@ module Test.Codec.CBOR.Cuddle.CDDL.Validator (spec) where
 
 import Codec.CBOR.Cuddle.CBOR.Gen (generateFromName)
 import Codec.CBOR.Cuddle.CBOR.Validator (
-  CBORTermResult (..),
-  ValidatorStage,
-  ValidatorStageSimple,
-  isCBORTermResultValid,
-  showSimple,
   validateCBOR,
  )
 import Codec.CBOR.Cuddle.CDDL (Name (..))
-import Codec.CBOR.Cuddle.CDDL.CBORGenerator (CustomValidatorResult (..))
+import Codec.CBOR.Cuddle.CDDL.CBORGenerator (ValidationResult (..))
 import Codec.CBOR.Cuddle.CDDL.CTree (CTreeRoot (..))
 import Codec.CBOR.Cuddle.CDDL.CTree qualified as CTree
 import Codec.CBOR.Cuddle.CDDL.Postlude (appendPostlude)
@@ -41,7 +36,7 @@ import Codec.CBOR.Cuddle.IndexMappable (mapCDDLDropExt, mapIndex)
 import Codec.CBOR.Cuddle.Parser (pCDDL)
 import Codec.CBOR.Term (Term (..), encodeTerm)
 import Codec.CBOR.Write (toStrictByteString)
-import Control.Monad (forM_, unless)
+import Control.Monad (forM_)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
@@ -102,16 +97,10 @@ genAndValidateFromFile path = do
           res = validateCBOR generatedCbor name (mapIndex resolvedCddl)
           extraInfo =
             unlines
-              [ "Term result:"
-              , LT.unpack . pShow $ mapIndex @_ @_ @ValidatorStageSimple res
-              , "====="
-              , "CBOR term:"
+              [ "CBOR term:"
               , LT.unpack $ pShow cborTerm
               ]
-        pure . counterexample extraInfo $
-          unless (isCBORTermResultValid res) $
-            expectationFailure $
-              "Predicate failed on result:\n" <> showSimple res
+        pure . counterexample extraInfo $ expectValid res
 
 huddleMap :: Huddle
 huddleMap =
@@ -283,7 +272,7 @@ validateHuddle ::
   Huddle ->
   Name ->
   Term ->
-  CBORTermResult ValidatorStage
+  ValidationResult
 validateHuddle huddle name term = do
   let
     resolvedCddl = case fullResolveCDDL . mapCDDLDropExt $ toCDDL huddle of
@@ -292,30 +281,20 @@ validateHuddle huddle name term = do
     bs = toStrictByteString $ encodeTerm term
   validateCBOR bs name (mapIndex resolvedCddl)
 
-expectValid :: CBORTermResult ValidatorStage -> Expectation
-expectValid x | True <- isCBORTermResultValid x = pure ()
-expectValid x = expectationFailure $ "Expected a success, got\n" <> showSimple x
+expectValid :: ValidationResult -> Expectation
+expectValid ValidatorSuccess = pure ()
+expectValid (ValidatorFailure e) = expectationFailure . T.unpack $ "Expected a success, got\n" <> e
 
-expectInvalid :: CBORTermResult ValidatorStage -> Expectation
-expectInvalid x | False <- isCBORTermResultValid x = pure ()
-expectInvalid x = expectationFailure $ "Expected a failure, but got\n" <> showSimple x
+expectInvalid :: ValidationResult -> Expectation
+expectInvalid ValidatorFailure {} = pure ()
+expectInvalid ValidatorSuccess = expectationFailure "Expected a failure, but got success"
 
-_shouldResultIn :: CBORTermResult ValidatorStage -> CBORTermResult ValidatorStage -> Expectation
-_shouldResultIn got expected
-  | let gotSimple = mapIndex @_ @_ @ValidatorStageSimple got
-  , let expectedSimple = mapIndex @_ @_ @ValidatorStageSimple expected
-  , gotSimple == expectedSimple =
-      pure ()
-_shouldResultIn got expected =
-  expectationFailure $
-    "Expected:\n" <> showSimple expected <> "\nActual:\n" <> showSimple got
-
-stringValidator :: Term -> CustomValidatorResult
+stringValidator :: Term -> ValidationResult
 stringValidator (TString _) = ValidatorSuccess
 stringValidator (TStringI _) = ValidatorSuccess
 stringValidator t = ValidatorFailure $ "Expected a string, got\n" <> T.pack (show t)
 
-bytesValidator :: Term -> CustomValidatorResult
+bytesValidator :: Term -> ValidationResult
 bytesValidator (TBytes _) = ValidatorSuccess
 bytesValidator (TBytesI _) = ValidatorSuccess
 bytesValidator t = ValidatorFailure $ "Expected bytes, got\n" <> T.pack (show t)

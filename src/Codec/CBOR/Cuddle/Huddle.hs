@@ -112,9 +112,9 @@ import Codec.CBOR.Cuddle.CDDL qualified as C
 import Codec.CBOR.Cuddle.CDDL.CBORGenerator (
   CBORGenerator (..),
   CBORValidator (..),
-  CustomValidatorResult,
   HasGenerator (..),
   HasValidator (..),
+  ValidationResult,
   WrappedTerm,
  )
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
@@ -1372,5 +1372,5 @@ toCDDL' HuddleConfig {..} hdl =
 withGenerator :: HasGenerator a => Gen WrappedTerm -> a -> a
 withGenerator f = L.set generatorL (Just $ CBORGenerator f)
 
-withValidator :: HasValidator a => (Term -> CustomValidatorResult) -> a -> a
+withValidator :: HasValidator a => (Term -> ValidationResult) -> a -> a
 withValidator p = L.set validatorL . Just $ CBORValidator p

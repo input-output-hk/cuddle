@@ -3,7 +3,7 @@ module Codec.CBOR.Cuddle.CDDL.CBORGenerator (
   HasGenerator (..),
   WrappedTerm (..),
   CBORValidator (..),
-  CustomValidatorResult (..),
+  ValidationResult (..),
   HasValidator (..),
 ) where
 
@@ -29,8 +29,8 @@ class HasGenerator a where
 class HasValidator a where
   validatorL :: Lens' a (Maybe CBORValidator)
 
-data CustomValidatorResult
+data ValidationResult
   = ValidatorSuccess
   | ValidatorFailure Text
 
-newtype CBORValidator = CBORValidator (Term -> CustomValidatorResult)
+newtype CBORValidator = CBORValidator (Term -> ValidationResult)
