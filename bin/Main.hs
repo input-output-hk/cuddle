@@ -7,6 +7,7 @@ module Main (main) where
 import Codec.CBOR.Cuddle.CBOR.Gen (generateFromName)
 import Codec.CBOR.Cuddle.CBOR.Validator
 import Codec.CBOR.Cuddle.CDDL (CDDL, Name (..), fromRules, sortCDDL)
+import Codec.CBOR.Cuddle.CDDL.CBORGenerator (ValidationResult (..))
 import Codec.CBOR.Cuddle.CDDL.CTree (CTreeRoot)
 import Codec.CBOR.Cuddle.CDDL.Postlude (appendPostlude)
 import Codec.CBOR.Cuddle.CDDL.Resolve (
@@ -369,9 +370,7 @@ parseFromFile p file = runParser p file <$> T.readFile file
 runValidateCBOR :: BS.ByteString -> Name -> CTreeRoot ValidatorStage -> IO ()
 runValidateCBOR bs rule cddl =
   case validateCBOR bs rule cddl of
-    ok@(CBORTermResult _ (Valid _)) -> do
-      putStrLn $ "Valid " ++ showSimple ok
-      exitSuccess
-    err -> do
-      hPutStrLn stderr $ "Invalid " ++ showSimple err
+    ValidatorSuccess -> exitSuccess
+    ValidatorFailure err -> do
+      hPutStrLn stderr . T.unpack $ "Invalid " <> err
       exitFailure
