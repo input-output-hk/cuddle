@@ -23,6 +23,8 @@
 * Add custom validator field to `XRule CTreePhase`
 * Added index type parameter to `CDDLResult`, `CBORTermResult`, `AMatchedItem`, `ANonMatchedItem`
 * Remove `CDDL` and `Rule` type synonyms from `Codec.CBOR.Cuddle.CBOR.Validator`
+* Remove `CBORTermResult`, `CDDLResult`, `AMatchedItem`, `ANonMatchedItem`, `CustomValidatorResult`
+* Add `ValidationResult`, `ValidatorFailure`
 
 ## 1.1.1.0
 

@@ -283,7 +283,7 @@ validateHuddle huddle name term = do
 
 expectValid :: ValidationResult -> Expectation
 expectValid ValidatorSuccess = pure ()
-expectValid (ValidatorFail e) = expectationFailure . T.unpack $ "Expected a success, got\n" <> T.pack (show e)
+expectValid (ValidatorFail e) = expectationFailure $ "Expected a success, got\n" <> show e
 
 expectInvalid :: ValidationResult -> Expectation
 expectInvalid ValidatorFail {} = pure ()
