@@ -12,7 +12,11 @@ module Codec.CBOR.Cuddle.CBOR.Validator (
 ) where
 
 import Codec.CBOR.Cuddle.CDDL hiding (CDDL, Group, Rule)
-import Codec.CBOR.Cuddle.CDDL.CBORGenerator (CBORValidator (..), ValidationResult (..))
+import Codec.CBOR.Cuddle.CDDL.CBORGenerator (
+  CBORValidator (..),
+  ValidationResult (..),
+  ValidatorFailure (..),
+ )
 import Codec.CBOR.Cuddle.CDDL.CTree
 import Codec.CBOR.Cuddle.CDDL.CtlOp
 import Codec.CBOR.Cuddle.CDDL.Resolve (MonoReferenced, XXCTree (..))
@@ -183,13 +187,13 @@ validateInteger cddl i rule =
         (Literal (Value (VUInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _)) | n <= i && range bound i m -> ValidatorSuccess
         (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _)) | -n <= i && range bound i m -> ValidatorSuccess
         (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VNInt (fromIntegral -> m)) _)) | -n <= i && range bound i (-m) -> ValidatorSuccess
-        (Literal (Value VUInt {} _), Literal (Value VNInt {} _)) -> ValidatorFailure "range types mismatch"
+        (Literal (Value VUInt {} _), Literal (Value VNInt {} _)) -> ValidatorFail $ ValidatorFailure "range types mismatch"
         (Literal (Value (VBignum n) _), Literal (Value (VUInt (fromIntegral -> m)) _)) | n <= i && range bound i m -> ValidatorSuccess
         (Literal (Value (VBignum n) _), Literal (Value (VNInt (fromIntegral -> m)) _)) | n <= i && range bound i (-m) -> ValidatorSuccess
         (Literal (Value (VUInt (fromIntegral -> n)) _), Literal (Value (VBignum m) _)) | n <= i && range bound i m -> ValidatorSuccess
         (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VBignum m) _)) | (-n) <= i && range bound i m -> ValidatorSuccess
         (lo, hi) ->
-          ValidatorFailure . T.pack $
+          ValidatorFail . ValidatorFailure . T.pack $
             "Unable to validate range: (" <> showSimple lo <> ", " <> showSimple hi <> ")"
     -- a = &(x, y, z)
     Enum g ->
@@ -202,7 +206,7 @@ validateInteger cddl i rule =
     KV _ v _ -> validateInteger cddl i v
     Tag 2 x -> validateBigInt x
     Tag 3 x -> validateBigInt x
-    _ -> ValidatorFailure "unapplicable rule: validateInteger"
+    _ -> ValidatorFail $ ValidatorFailure "unapplicable rule: validateInteger"
   where
     validateBigInt x = case resolveIfRef cddl x of
       Postlude PTBytes -> ValidatorSuccess
@@ -212,7 +216,7 @@ validateInteger cddl i rule =
           -- TODO figure out a way to turn Integer into bytes or figure out why
           -- tagged bigints are decoded as integers in the first place
           bs = mempty
-      _ -> ValidatorFailure "Failed to validate BigInt"
+      _ -> ValidatorFail $ ValidatorFailure "Failed to validate BigInt"
 
 -- | Controls for an Integer
 controlInteger ::
@@ -226,7 +230,7 @@ controlInteger cddl i Size ctrl =
   case resolveIfRef cddl ctrl of
     Literal (Value (VUInt sz) _)
       | 0 <= i && i < 256 ^ sz -> ValidatorSuccess
-    _ -> ValidatorFailure ".size control not satisfied"
+    _ -> ValidatorFail $ ValidatorFailure ".size control not satisfied"
 controlInteger cddl i Bits ctrl = do
   let
     indices = case resolveIfRef cddl ctrl of
@@ -237,7 +241,7 @@ controlInteger cddl i Bits ctrl = do
       _ -> error "Not yet implemented"
   if go (IS.fromList (map fromIntegral indices)) i 0
     then ValidatorSuccess
-    else ValidatorFailure ".bits control not satisfied"
+    else ValidatorFail $ ValidatorFailure ".bits control not satisfied"
   where
     go _ 0 _ = True
     go indices n idx =
@@ -249,38 +253,38 @@ controlInteger cddl i Lt ctrl =
     Literal (Value (VUInt i') _) | i < fromIntegral i' -> ValidatorSuccess
     Literal (Value (VNInt i') _) | i < -fromIntegral i' -> ValidatorSuccess
     Literal (Value (VBignum i') _) | i < i' -> ValidatorSuccess
-    _ -> ValidatorFailure ".lt control not satisfied"
+    _ -> ValidatorFail $ ValidatorFailure ".lt control not satisfied"
 controlInteger cddl i Gt ctrl =
   case resolveIfRef cddl ctrl of
     Literal (Value (VUInt i') _) | i > fromIntegral i' -> ValidatorSuccess
     Literal (Value (VNInt i') _) | i > -fromIntegral i' -> ValidatorSuccess
     Literal (Value (VBignum i') _) | i > i' -> ValidatorSuccess
-    _ -> ValidatorFailure ".gt control not satisfied"
+    _ -> ValidatorFail $ ValidatorFailure ".gt control not satisfied"
 controlInteger cddl i Le ctrl =
   case resolveIfRef cddl ctrl of
     Literal (Value (VUInt i') _) | i <= fromIntegral i' -> ValidatorSuccess
     Literal (Value (VNInt i') _) | i <= -fromIntegral i' -> ValidatorSuccess
     Literal (Value (VBignum i') _) | i <= i' -> ValidatorSuccess
-    _ -> ValidatorFailure ".le control not satisfied"
+    _ -> ValidatorFail $ ValidatorFailure ".le control not satisfied"
 controlInteger cddl i Ge ctrl =
   case resolveIfRef cddl ctrl of
     Literal (Value (VUInt i') _) | i >= fromIntegral i' -> ValidatorSuccess
     Literal (Value (VNInt i') _) | i >= -fromIntegral i' -> ValidatorSuccess
     Literal (Value (VBignum i') _) | i >= i' -> ValidatorSuccess
-    _ -> ValidatorFailure ".ge control not satisfied"
+    _ -> ValidatorFail $ ValidatorFailure ".ge control not satisfied"
 controlInteger cddl i Eq ctrl =
   case resolveIfRef cddl ctrl of
     Literal (Value (VUInt i') _) | i == fromIntegral i' -> ValidatorSuccess
     Literal (Value (VNInt i') _) | i == -fromIntegral i' -> ValidatorSuccess
     Literal (Value (VBignum i') _) | i == i' -> ValidatorSuccess
-    _ -> ValidatorFailure ".eq control not satisfied"
+    _ -> ValidatorFail $ ValidatorFailure ".eq control not satisfied"
 controlInteger cddl i Ne ctrl =
   case resolveIfRef cddl ctrl of
     Literal (Value (VUInt i') _) | i /= fromIntegral i' -> ValidatorSuccess
     Literal (Value (VNInt i') _) | i /= -fromIntegral i' -> ValidatorSuccess
     Literal (Value (VBignum i') _) | i /= i' -> ValidatorSuccess
-    _ -> ValidatorFailure ".ne control not satisfied"
-controlInteger _ _ _ ctrl = ValidatorFailure . T.pack $ "unexpected control: " <> showSimple ctrl
+    _ -> ValidatorFail $ ValidatorFailure ".ne control not satisfied"
+controlInteger _ _ _ ctrl = ValidatorFail . ValidatorFailure . T.pack $ "unexpected control: " <> showSimple ctrl
 
 --------------------------------------------------------------------------------
 -- Floating point (Float16, Float32, Float64)
@@ -312,7 +316,7 @@ validateHalf cddl f rule =
       (resolveIfRef cddl -> Literal (Value (VFloat16 n) _))
       (resolveIfRef cddl -> Literal (Value (VFloat16 m) _))
       bound | n <= f && range bound f m -> ValidatorSuccess
-    _ -> ValidatorFailure "unapplicable rule: validateHalf"
+    _ -> ValidatorFail $ ValidatorFailure "unapplicable rule: validateHalf"
 
 -- | Controls for `Float16`
 controlHalf ::
@@ -367,7 +371,7 @@ validateFloat cddl f rule =
           , VFloat32 m <- mv
           , n <= f && range bound f m ->
               ValidatorSuccess
-      _ -> ValidatorFailure "unapplicable rule: validateFloat"
+      _ -> ValidatorFail $ ValidatorFailure "unapplicable rule: validateFloat"
 
 -- | Controls for `Float32`
 controlFloat ::
@@ -427,7 +431,7 @@ validateDouble cddl f rule =
         , VFloat64 m <- mv
         , n <= f && range bound f m ->
             ValidatorSuccess
-    _ -> ValidatorFailure "unapplicable rule: validateDouble"
+    _ -> ValidatorFail $ ValidatorFailure "unapplicable rule: validateDouble"
 
 -- | Controls for `Float64`
 controlDouble ::
@@ -472,7 +476,7 @@ validateBool cddl b rule =
     Control op tgt ctrl -> ctrlDispatch (validateBool cddl b) op tgt ctrl (controlBool cddl b)
     -- a = foo / bar
     Choice opts -> validateChoice (validateBool cddl b) opts rule
-    _ -> ValidatorFailure "unapplicable rule: validateBool"
+    _ -> ValidatorFail $ ValidatorFailure "unapplicable rule: validateBool"
 
 -- | Controls for `Bool`
 controlBool ::
@@ -510,7 +514,7 @@ validateSimple cddl 23 rule =
       Postlude PTUndefined -> ValidatorSuccess
       -- a = foo / bar
       Choice opts -> validateChoice (validateSimple cddl 23) opts rule
-      _ -> ValidatorFailure "unapplicable rule: validateSimple"
+      _ -> ValidatorFail $ ValidatorFailure "unapplicable rule: validateSimple"
 validateSimple _ n _ = error $ "Found simple different to 23! please report this somewhere! Found: " <> show n
 
 --------------------------------------------------------------------------------
@@ -525,7 +529,7 @@ validateNull cddl rule =
     -- a = nil
     Postlude PTNil -> ValidatorSuccess
     Choice opts -> validateChoice (validateNull cddl) opts rule
-    _ -> ValidatorFailure "unapplicable rule: validateNull"
+    _ -> ValidatorFail $ ValidatorFailure "unapplicable rule: validateNull"
 
 --------------------------------------------------------------------------------
 -- Bytes
@@ -545,7 +549,7 @@ validateBytes cddl bs rule =
     Control op tgt ctrl -> ctrlDispatch (validateBytes cddl bs) op tgt ctrl (controlBytes cddl bs)
     -- a = foo / bar
     Choice opts -> validateChoice (validateBytes cddl bs) opts rule
-    _ -> ValidatorFailure "unapplicable rule: validateBytes"
+    _ -> ValidatorFail $ ValidatorFailure "unapplicable rule: validateBytes"
 
 -- | Controls for byte strings
 controlBytes ::
@@ -565,7 +569,7 @@ controlBytes cddl bs Size ctrl =
             (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _)) | -n <= i && range bound i m -> ValidatorSuccess
             (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VNInt (fromIntegral -> m)) _)) | -n <= i && range bound i (-m) -> ValidatorSuccess
             _ -> error "Not yet implemented"
-    _ -> ValidatorFailure ".size control not satisfied"
+    _ -> ValidatorFail $ ValidatorFailure ".size control not satisfied"
 controlBytes cddl bs Bits ctrl = do
   let
     indices =
@@ -577,7 +581,7 @@ controlBytes cddl bs Bits ctrl = do
         _ -> error "Not yet implemented"
   if bitsControlCheck (map fromIntegral indices)
     then ValidatorSuccess
-    else ValidatorFailure ".bits control not satisfied"
+    else ValidatorFail $ ValidatorFailure ".bits control not satisfied"
   where
     bitsControlCheck :: [Int] -> Bool
     bitsControlCheck allowedBits =
@@ -627,7 +631,7 @@ validateText cddl txt rule =
     Control op tgt ctrl -> ctrlDispatch (validateText cddl txt) op tgt ctrl (controlText cddl txt)
     -- a = foo / bar
     Choice opts -> validateChoice (validateText cddl txt) opts rule
-    _ -> ValidatorFailure "unapplicable rule: validateText"
+    _ -> ValidatorFail $ ValidatorFailure "unapplicable rule: validateText"
 
 -- | Controls for text strings
 controlText ::
@@ -671,10 +675,10 @@ validateTagged cddl tag term rule =
           ValidatorSuccess -> ValidatorSuccess
           err -> err
         else
-          ValidatorFailure . T.pack $
+          ValidatorFail . ValidatorFailure . T.pack $
             "invalid tag: " <> show tag <> "\nexpected: " <> show tag'
     Choice opts -> validateChoice (validateTagged cddl tag term) opts rule
-    _ -> ValidatorFailure "unapplicable rule: validateTagged"
+    _ -> ValidatorFail $ ValidatorFailure "unapplicable rule: validateTagged"
 
 -- --------------------------------------------------------------------------------
 -- -- Lists
@@ -706,14 +710,15 @@ validateList cddl terms rule =
     Postlude PTAny -> ValidatorSuccess
     Array rules -> validate terms rules
     Choice opts -> validateChoice (validateList cddl terms) opts rule
-    _ -> ValidatorFailure "unapplicable rule: validateList"
+    _ -> ValidatorFail $ ValidatorFailure "unapplicable rule: validateList"
   where
     validate :: [Term] -> [CTree ValidatorStage] -> ValidationResult
     validate [] [] = ValidatorSuccess
-    validate _ [] = ValidatorFailure "leftover terms after all rules have been applied"
+    validate _ [] = ValidatorFail $ ValidatorFailure "leftover terms after all rules have been applied"
     validate [] (r : rs)
       | isOptional r = validate [] rs
-      | otherwise = ValidatorFailure "leftover mandatory rules after all terms have been consumed"
+      | otherwise =
+          ValidatorFail $ ValidatorFailure "leftover mandatory rules after all terms have been consumed"
     validate (t : ts) (r : rs) = case r of
       Occur ct oi -> case oi of
         OIOptional
@@ -729,13 +734,13 @@ validateList cddl terms rule =
         OIOneOrMore -> case validateTermInList (t : ts) ct of
           (ValidatorSuccess, leftover) -> validate leftover (Occur ct OIZeroOrMore : rs)
           (err, _) -> err
-        OIBounded _ (Just ub) | ub < 0 -> ValidatorFailure "term count above bounds"
+        OIBounded _ (Just ub) | ub < 0 -> ValidatorFail $ ValidatorFailure "term count above bounds"
         OIBounded lb ub
           | (ValidatorSuccess, leftover) <- validateTermInList (t : ts) ct ->
               validate leftover (Occur ct (decrementBounds lb ub) : rs)
           | isWithinBoundsInclusive 0 lb ub ->
               validate (t : ts) rs
-          | otherwise -> ValidatorFailure "term count below bounds"
+          | otherwise -> ValidatorFail $ ValidatorFailure "term count below bounds"
       _ -> case validateTermInList (t : ts) (resolveIfRef cddl r) of
         (ValidatorSuccess, leftover) -> validate leftover rs
         (err, _) -> err
@@ -765,15 +770,15 @@ validateMap cddl terms rule =
     Postlude PTAny -> ValidatorSuccess
     Map rules -> validate [] terms rules
     Choice opts -> validateChoice (validateMap cddl terms) opts rule
-    _ -> ValidatorFailure "unapplicable rule: validateMap"
+    _ -> ValidatorFail $ ValidatorFailure "unapplicable rule: validateMap"
   where
     validate ::
       [CTree ValidatorStage] -> [(Term, Term)] -> [CTree ValidatorStage] -> ValidationResult
     validate [] [] [] = ValidatorSuccess
-    validate _ _ [] = ValidatorFailure ""
+    validate _ _ [] = ValidatorFail $ ValidatorFailure ""
     validate [] [] (r : rs)
       | isOptional r = validate [] [] rs
-      | otherwise = ValidatorFailure "unapplicable rule: validateMap"
+      | otherwise = ValidatorFail $ ValidatorFailure "unapplicable rule: validateMap"
     validate exhausted kvs (r : rs) = case r of
       Occur ct oi -> case oi of
         OIOptional
@@ -848,7 +853,7 @@ ctrlAnd v tgt ctrl =
     ValidatorSuccess ->
       case v ctrl of
         ValidatorSuccess -> ValidatorSuccess
-        _ -> ValidatorFailure "invalid control"
+        _ -> ValidatorFail $ ValidatorFailure "invalid control"
     err -> err
 
 -- | Dispatch to the appropriate control
@@ -864,7 +869,7 @@ ctrlDispatch v Within tgt ctrl _ = ctrlAnd v tgt ctrl
 ctrlDispatch v op tgt ctrl vctrl =
   case v tgt of
     ValidatorSuccess -> vctrl op ctrl
-    _ -> ValidatorFailure "invalid rule"
+    _ -> ValidatorFail $ ValidatorFailure "invalid rule"
 
 --------------------------------------------------------------------------------
 -- Bits control

@@ -7,7 +7,7 @@ module Main (main) where
 import Codec.CBOR.Cuddle.CBOR.Gen (generateFromName)
 import Codec.CBOR.Cuddle.CBOR.Validator
 import Codec.CBOR.Cuddle.CDDL (CDDL, Name (..), fromRules, sortCDDL)
-import Codec.CBOR.Cuddle.CDDL.CBORGenerator (ValidationResult (..))
+import Codec.CBOR.Cuddle.CDDL.CBORGenerator (ValidationResult (..), ValidatorFailure (..))
 import Codec.CBOR.Cuddle.CDDL.CTree (CTreeRoot)
 import Codec.CBOR.Cuddle.CDDL.Postlude (appendPostlude)
 import Codec.CBOR.Cuddle.CDDL.Resolve (
@@ -371,6 +371,6 @@ runValidateCBOR :: BS.ByteString -> Name -> CTreeRoot ValidatorStage -> IO ()
 runValidateCBOR bs rule cddl =
   case validateCBOR bs rule cddl of
     ValidatorSuccess -> exitSuccess
-    ValidatorFailure err -> do
+    ValidatorFail (ValidatorFailure err) -> do
       hPutStrLn stderr . T.unpack $ "Invalid " <> err
       exitFailure
