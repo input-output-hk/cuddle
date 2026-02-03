@@ -42,6 +42,7 @@ import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as Map
 import Data.Text (Text)
 import Data.Text qualified as T
+import Data.Text.Internal.Encoding.Utf8 (utf8Length)
 import Data.Text.Lazy qualified as TL
 import Data.Word (Word64, Word8)
 import GHC.Generics (Generic)
@@ -85,9 +86,6 @@ arbitrary = liftGen QC.arbitrary
 
 scale :: MonadGen m => (Int -> Int) -> m a -> m a
 scale f m = sized $ \n -> resize (f n) m
-
-vector :: (MonadGen m, Arbitrary a) => Int -> m [a]
-vector n = vectorOf n arbitrary
 
 --------------------------------------------------------------------------------
 -- MonoSimple
@@ -174,7 +172,15 @@ genNLazyBytes :: MonadGen m => Int -> m BSL.ByteString
 genNLazyBytes n = BSL.fromStrict <$> genNBytes n
 
 genNText :: MonadGen m => Int -> m Text
-genNText n = T.pack <$> vector n
+genNText 0 = pure mempty
+genNText n = do
+  x <- arbitrary
+  let len = utf8Length x
+  if len <= n
+    then do
+      xs <- genNText $ n - len
+      pure $ T.cons x xs
+    else genNText n
 
 genText :: MonadGen m => m Text
 genText = sized $ \sz -> genNText =<< choose (0, sz)
