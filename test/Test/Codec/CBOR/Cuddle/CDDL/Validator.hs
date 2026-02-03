@@ -8,7 +8,7 @@ import Codec.CBOR.Cuddle.CBOR.Validator (
   validateCBOR,
  )
 import Codec.CBOR.Cuddle.CDDL (Name (..))
-import Codec.CBOR.Cuddle.CDDL.CBORGenerator (ValidationResult (..))
+import Codec.CBOR.Cuddle.CDDL.CBORGenerator (ValidationResult (..), ValidatorFailure (..))
 import Codec.CBOR.Cuddle.CDDL.CTree (CTreeRoot (..))
 import Codec.CBOR.Cuddle.CDDL.CTree qualified as CTree
 import Codec.CBOR.Cuddle.CDDL.Postlude (appendPostlude)
@@ -283,21 +283,21 @@ validateHuddle huddle name term = do
 
 expectValid :: ValidationResult -> Expectation
 expectValid ValidatorSuccess = pure ()
-expectValid (ValidatorFailure e) = expectationFailure . T.unpack $ "Expected a success, got\n" <> e
+expectValid (ValidatorFail e) = expectationFailure . T.unpack $ "Expected a success, got\n" <> T.pack (show e)
 
 expectInvalid :: ValidationResult -> Expectation
-expectInvalid ValidatorFailure {} = pure ()
+expectInvalid ValidatorFail {} = pure ()
 expectInvalid ValidatorSuccess = expectationFailure "Expected a failure, but got success"
 
 stringValidator :: Term -> ValidationResult
 stringValidator (TString _) = ValidatorSuccess
 stringValidator (TStringI _) = ValidatorSuccess
-stringValidator t = ValidatorFailure $ "Expected a string, got\n" <> T.pack (show t)
+stringValidator t = ValidatorFail . ValidatorFailure $ "Expected a string, got\n" <> T.pack (show t)
 
 bytesValidator :: Term -> ValidationResult
 bytesValidator (TBytes _) = ValidatorSuccess
 bytesValidator (TBytesI _) = ValidatorSuccess
-bytesValidator t = ValidatorFailure $ "Expected bytes, got\n" <> T.pack (show t)
+bytesValidator t = ValidatorFail . ValidatorFailure $ "Expected bytes, got\n" <> T.pack (show t)
 
 spec :: Spec
 spec = describe "Validator" $ do
