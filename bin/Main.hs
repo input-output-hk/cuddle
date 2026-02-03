@@ -372,5 +372,5 @@ runValidateCBOR bs rule cddl =
   case validateCBOR bs rule cddl of
     ValidatorSuccess -> exitSuccess
     ValidatorFail (ValidatorFailure err) -> do
-      hPutStrLn stderr . T.unpack $ "Invalid " <> err
+      T.hPutStrLn stderr $ "Invalid " <> err
       exitFailure
