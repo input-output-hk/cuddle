@@ -61,7 +61,7 @@ import Test.QuickCheck (
  )
 import Test.QuickCheck qualified as QC
 import Test.QuickCheck.Gen (Gen (..))
-import Test.QuickCheck.GenT (MonadGen (..), elements, listOf, oneof, suchThat, vectorOf)
+import Test.QuickCheck.GenT (MonadGen (..), elements, listOf, oneof, vectorOf)
 
 -- TODO remove this once QuickCheck gets QC
 data QC = QC
@@ -306,11 +306,12 @@ genForCTree cddl (CTree.Control op target controller) = do
       _ -> error "Cannot apply lt operator to target"
     (CtlOp.Lt, _) -> error $ "Invalid controller for .lt operator: " <> showSimple controller
     (CtlOp.Size, CTree.Literal (Value (VUInt s) _)) -> do
-      n <- pure s |! sized (\sz -> choose (0, fromIntegral sz) `suchThat` (/= s))
+      d <- pure 0 |! sized (\sz -> choose (1, max 1 $ fromIntegral sz))
+      let n = s + d
       case target of
         CTree.Postlude PTText -> S . TString <$> genNText (fromIntegral n)
         CTree.Postlude PTBytes -> S . TBytes <$> genNBytes (fromIntegral n)
-        CTree.Postlude PTUInt -> S . TInteger <$> choose (0, 2 ^ s - 1)
+        CTree.Postlude PTUInt -> S . TInteger <$> choose (0, 256 ^ n - 1)
         _ -> error "Cannot apply size operator to target "
     (CtlOp.Size, CTree.Range {CTree.from, CTree.to}) -> do
       case (from, to) of
