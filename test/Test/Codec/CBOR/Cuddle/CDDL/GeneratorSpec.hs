@@ -69,6 +69,11 @@ opCertExample =
             ]
     ]
 
+sizeTextExample :: Huddle
+sizeTextExample =
+  collectFrom
+    [HIRule $ "root" =:= VText `sized` (0 :: Word64, 32 :: Word64)]
+
 generateCDDL :: CTreeRoot MonoReferenced -> Gen Term
 generateCDDL cddl = runAntiGen $ generateFromName cddl "root"
 
