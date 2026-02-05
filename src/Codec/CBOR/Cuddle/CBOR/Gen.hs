@@ -51,8 +51,11 @@ import Numeric.Half (Half (..), fromHalf)
 import System.Random.Stateful (StatefulGen (..), runStateGen_, uniformByteStringM)
 import Test.AntiGen (
   AntiGen,
+  antiChoose,
   antiNonNegative,
   antiNonPositive,
+  faultyNum,
+  runAntiGen,
   (|!),
  )
 import Test.QuickCheck (
@@ -61,7 +64,7 @@ import Test.QuickCheck (
  )
 import Test.QuickCheck qualified as QC
 import Test.QuickCheck.Gen (Gen (..))
-import Test.QuickCheck.GenT (MonadGen (..), elements, listOf, oneof, vectorOf)
+import Test.QuickCheck.GenT (MonadGen (..), elements, listOf, oneof, suchThat, vectorOf)
 
 -- TODO remove this once QuickCheck gets QC
 data QC = QC
@@ -231,9 +234,21 @@ pairTermList _ = Nothing
 showSimple :: CTree MonoReferenced -> String
 showSimple = show . mapIndex @_ @_ @MonoSimple
 
+-- | Drop all negative generators
+dropNegativeGen :: AntiGen a -> AntiGen a
+dropNegativeGen = liftGen . runAntiGen
+
 --------------------------------------------------------------------------------
 -- Generator functions
 --------------------------------------------------------------------------------
+
+genSized :: HasCallStack => Word64 -> CTree i -> AntiGen WrappedTerm
+genSized s target = do
+  case target of
+    CTree.Postlude PTText -> S . TString <$> genNText (fromIntegral s)
+    CTree.Postlude PTBytes -> S . TBytes <$> genNBytes (fromIntegral s)
+    CTree.Postlude PTUInt -> S . TInteger <$> choose (0, 256 ^ s - 1)
+    _ -> error "Cannot apply size operator to target "
 
 genForCTree ::
   HasCallStack => CTreeRoot MonoReferenced -> CTree MonoReferenced -> AntiGen WrappedTerm
@@ -276,8 +291,8 @@ genForCTree cddl (CTree.Occur item occurs) =
   applyOccurenceIndicator occurs (genForCTree cddl item)
 genForCTree cddl (CTree.Range from to _bounds) = do
   -- TODO Handle bounds correctly
-  term1 <- genForCTree cddl from
-  term2 <- genForCTree cddl to
+  term1 <- dropNegativeGen $ genForCTree cddl from
+  term2 <- dropNegativeGen $ genForCTree cddl to
   case (term1, term2) of
     (S (TInt a), S (TInt b))
       | a <= b -> choose (a, b) <&> S . TInt
@@ -294,7 +309,7 @@ genForCTree cddl (CTree.Range from to _bounds) = do
     (a, b) -> error $ "invalid range (a = " <> show a <> ", b = " <> show b <> ")"
 genForCTree cddl (CTree.Control op target controller) = do
   resolvedController <- case controller of
-    CTreeE (MRuleRef n) -> resolveRef cddl n
+    CTreeE (MRuleRef n) -> dropNegativeGen $ resolveRef cddl n
     x -> pure x
   case (op, resolvedController) of
     (CtlOp.Le, CTree.Literal (Value (VUInt n) _)) -> case target of
@@ -306,23 +321,16 @@ genForCTree cddl (CTree.Control op target controller) = do
       _ -> error "Cannot apply lt operator to target"
     (CtlOp.Lt, _) -> error $ "Invalid controller for .lt operator: " <> showSimple controller
     (CtlOp.Size, CTree.Literal (Value (VUInt s) _)) -> do
-      d <- pure 0 |! sized (\sz -> choose (1, max 1 $ fromIntegral sz))
-      let n = s + d
-      case target of
-        CTree.Postlude PTText -> S . TString <$> genNText (fromIntegral n)
-        CTree.Postlude PTBytes -> S . TBytes <$> genNBytes (fromIntegral n)
-        CTree.Postlude PTUInt -> S . TInteger <$> choose (0, 256 ^ n - 1)
-        _ -> error "Cannot apply size operator to target "
+      s' <- pure s |! sized (\sz -> choose (0, fromIntegral sz) `suchThat` (/= s))
+      genSized s' target
     (CtlOp.Size, CTree.Range {CTree.from, CTree.to}) -> do
       case (from, to) of
-        (CTree.Literal (Value (VUInt f1) _), CTree.Literal (Value (VUInt t1) _)) -> case target of
-          CTree.Postlude PTText ->
-            choose (fromIntegral f1, fromIntegral t1) >>= (fmap (S . TString) . genNText)
-          CTree.Postlude PTBytes ->
-            choose (fromIntegral f1, fromIntegral t1) >>= (fmap (S . TBytes) . genNBytes)
-          CTree.Postlude PTUInt ->
-            S . TInteger . fromIntegral <$> choose (f1, t1)
-          _ -> error $ "Cannot apply size operator to target: " <> showSimple target
+        (CTree.Literal (Value (VUInt f) _), CTree.Literal (Value (VUInt t) _)) -> do
+          s <- sized $ \sz ->
+            antiChoose
+              (fromIntegral f, fromIntegral t)
+              (0, max (succ t) $ fromIntegral sz)
+          genSized s target
         _ ->
           error $
             "Invalid controller for .size operator: "
@@ -336,7 +344,7 @@ genForCTree cddl (CTree.Control op target controller) = do
       case enc of
         S x -> pure . S . TBytes . CBOR.toStrictByteString $ CBOR.encodeTerm x
         _ -> error "Controller does not correspond to a single term"
-    _ -> genForCTree cddl target
+    (c, _) -> error $ "Controller not yet implemented: " <> show c
 genForCTree cddl (CTree.Enum tree) = do
   case tree of
     CTree.Group trees -> do
@@ -345,7 +353,7 @@ genForCTree cddl (CTree.Enum tree) = do
     _ -> error "Attempt to form an enum from something other than a group"
 genForCTree cddl (CTree.Unwrap node) = genForCTree cddl node
 genForCTree cddl (CTree.Tag t node) = do
-  tag <- pure t
+  tag <- faultyNum t
   enc <- genForCTree cddl node
   case enc of
     S x -> pure $ S $ TTagged tag x
@@ -359,7 +367,7 @@ genForNode cddl = genForCTree cddl <=< resolveRef cddl
 
 -- | Take a reference and resolve it to the relevant Tree, following multiple
 -- links if necessary.
-resolveRef :: CTreeRoot MonoReferenced -> Name -> AntiGen (CTree MonoReferenced)
+resolveRef :: MonadGen m => CTreeRoot MonoReferenced -> Name -> m (CTree MonoReferenced)
 resolveRef (CTreeRoot cddl) n = do
   -- Since we follow a reference, we decrease the 'size' of the Gen monad.
   scale (\x -> max 0 $ x - 1) $
@@ -396,9 +404,9 @@ listOfScaled g = sized $ \sz -> do
   i <- choose (0, sz)
   vectorOf i $ scale (`div` (i + 1)) g
 
-listOfScaled1 :: MonadGen m => m a -> m [a]
+listOfScaled1 :: AntiGen a -> AntiGen [a]
 listOfScaled1 g = sized $ \sz -> do
-  i <- choose (1, max sz 1)
+  i <- choose (1, max sz 1) |! pure 0
   vectorOf i $ scale (`div` (i + 1)) g
 
 -- | Apply an occurence indicator to a group entry
