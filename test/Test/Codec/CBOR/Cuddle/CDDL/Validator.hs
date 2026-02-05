@@ -96,7 +96,7 @@ genAndValidateFromFile path = do
   describe path $ do
     forM_ (Map.keys $ Map.filter isRule m) $ \name@(Name n) ->
       prop (T.unpack n) $ do
-        cborTerm <- runAntiGen $ generateFromName resolvedCddl name
+        cborTerm <- runAntiGen $ generateFromName (mapIndex resolvedCddl) name
         let
           generatedCbor = toStrictByteString $ encodeTerm cborTerm
           res = validateCBOR generatedCbor name (mapIndex resolvedCddl)
