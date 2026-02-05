@@ -24,16 +24,19 @@ import Codec.CBOR.Cuddle.Huddle (
  )
 import Codec.CBOR.Cuddle.Huddle qualified as H
 import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..), mapCDDLDropExt)
-import Codec.CBOR.Term (Term (..), encodeTerm)
+import Codec.CBOR.Pretty (prettyHexEnc)
+import Codec.CBOR.Read (deserialiseFromBytes)
+import Codec.CBOR.Term (Term (..), decodeTerm, encodeTerm)
 import Codec.CBOR.Term qualified as C
 import Codec.CBOR.Write (toStrictByteString)
+import Data.ByteString.Lazy qualified as LBS
 import Data.Word (Word64)
 import Test.AntiGen (runAntiGen, zapAntiGen)
 import Test.Codec.CBOR.Cuddle.CDDL.Validator (expectInvalid)
 import Test.Hspec (HasCallStack, Spec, describe, runIO, shouldBe, shouldSatisfy)
 import Test.Hspec.Core.Spec (SpecM)
 import Test.Hspec.QuickCheck (prop)
-import Test.QuickCheck (Gen, Property, Testable (..), choose)
+import Test.QuickCheck (Gen, Property, Testable (..), choose, counterexample)
 
 simpleRule :: Name -> H.Rule
 simpleRule n = withGenerator (S . C.TInt <$> choose (4, 6)) $ n =:= arr [1, 2, 3]
@@ -74,6 +77,11 @@ sizeTextExample =
   collectFrom
     [HIRule $ "root" =:= VText `sized` (0 :: Word64, 32 :: Word64)]
 
+sizeBytesExample :: Huddle
+sizeBytesExample =
+  collectFrom
+    [HIRule $ "root" =:= VBytes `sized` (0 :: Word64, 32 :: Word64)]
+
 generateCDDL :: CTreeRoot MonoReferenced -> Gen Term
 generateCDDL cddl = runAntiGen $ generateFromName cddl "root"
 
@@ -89,21 +97,25 @@ expectZapInvalidates cddl name = property $ do
   let
     bs = toStrictByteString $ encodeTerm value
     validationRes = validateCBOR bs name $ mapIndex cddl
-  pure $ expectInvalid validationRes
+    failMsg = case deserialiseFromBytes decodeTerm (LBS.fromStrict bs) of
+      Right (_, t) -> prettyHexEnc (encodeTerm t)
+      Left _ -> mempty
+  pure . counterexample failMsg $ expectInvalid validationRes
+
+zapInvalidatesHuddle :: String -> Huddle -> Spec
+zapInvalidatesHuddle n huddle = do
+  cddl <- tryResolveHuddle huddle
+  prop n $ expectZapInvalidates cddl "root"
 
 spec :: Spec
 spec = do
   describe "Negative generator" $ do
     describe "Zapped value fails to validate" $ do
-      do
-        cddl <- tryResolveHuddle simpleTermExample
-        prop "simpleTerm" $ expectZapInvalidates cddl "root"
-      do
-        cddl <- tryResolveHuddle refTermExample
-        prop "refTerm" $ expectZapInvalidates cddl "root"
-      do
-        cddl <- tryResolveHuddle opCertExample
-        prop "opCert" $ expectZapInvalidates cddl "root"
+      zapInvalidatesHuddle "simpleTerm" simpleTermExample
+      zapInvalidatesHuddle "refTerm" refTermExample
+      zapInvalidatesHuddle "opCert" opCertExample
+      zapInvalidatesHuddle "sizeText" sizeTextExample
+      zapInvalidatesHuddle "sizeBytes" sizeBytesExample
 
   describe "Custom generators" $ do
     describe "Huddle" $ do
