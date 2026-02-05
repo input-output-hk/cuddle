@@ -31,6 +31,7 @@ import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as Map
 import Data.Maybe
 import Data.Text qualified as T
+import Data.Text.Encoding (encodeUtf8)
 import Data.Text.Lazy qualified as TL
 import Data.Word
 import GHC.Float
@@ -565,10 +566,13 @@ controlBytes cddl bs Size ctrl =
     Range low high bound ->
       let i = BS.length bs
        in case (resolveIfRef cddl low, resolveIfRef cddl high) of
-            (Literal (Value (VUInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _)) | n <= i && range bound i m -> ValidatorSuccess
-            (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _)) | -n <= i && range bound i m -> ValidatorSuccess
-            (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VNInt (fromIntegral -> m)) _)) | -n <= i && range bound i (-m) -> ValidatorSuccess
-            _ -> error "Not yet implemented"
+            (Literal (Value (VUInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _))
+              | n <= i && range bound i m -> ValidatorSuccess
+            (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _))
+              | -n <= i && range bound i m -> ValidatorSuccess
+            (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VNInt (fromIntegral -> m)) _))
+              | -n <= i && range bound i (-m) -> ValidatorSuccess
+            _ -> ValidatorFail $ ValidatorFailure ".size control not satisifed"
     _ -> ValidatorFail $ ValidatorFailure ".size control not satisfied"
 controlBytes cddl bs Bits ctrl = do
   let
@@ -642,21 +646,22 @@ controlText ::
   CTree ValidatorStage ->
   ValidationResult
 controlText cddl bs Size ctrl =
-  case resolveIfRef cddl ctrl of
-    Literal (Value (VUInt (fromIntegral -> sz)) _) | T.length bs == sz -> ValidatorSuccess
-    Range ff tt bound ->
-      case (resolveIfRef cddl ff, resolveIfRef cddl tt) of
-        (Literal (Value (VUInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _)) | n <= T.length bs && range bound (T.length bs) m -> ValidatorSuccess
-        (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _)) | -n <= T.length bs && range bound (T.length bs) m -> ValidatorSuccess
-        (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VNInt (fromIntegral -> m)) _)) | -n <= T.length bs && range bound (T.length bs) (-m) -> ValidatorSuccess
-        _ -> error "Not yet implemented"
-    _ -> error "Not yet implemented"
+  let bsSize = BS.length $ encodeUtf8 bs
+   in case resolveIfRef cddl ctrl of
+        Literal (Value (VUInt (fromIntegral -> sz)) _) | bsSize == sz -> ValidatorSuccess
+        Range ff tt bound ->
+          case (resolveIfRef cddl ff, resolveIfRef cddl tt) of
+            (Literal (Value (VUInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _)) | n <= T.length bs && range bound bsSize m -> ValidatorSuccess
+            (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _)) | -n <= T.length bs && range bound bsSize m -> ValidatorSuccess
+            (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VNInt (fromIntegral -> m)) _)) | -n <= T.length bs && range bound bsSize (-m) -> ValidatorSuccess
+            _ -> ValidatorFail $ ValidatorFailure ".size control not satisfied"
+        _ -> error "Invalid control value in .size"
 controlText cddl s Regexp ctrl =
   case resolveIfRef cddl ctrl of
     Literal (Value (VText rxp) _) -> case s =~ rxp :: (T.Text, T.Text, T.Text) of
       ("", s', "") | s == s' -> ValidatorSuccess
-      _ -> error "Not yet implemented"
-    _ -> error "Not yet implemented"
+      _ -> ValidatorFail $ ValidatorFailure ".regexp control not satisfied"
+    _ -> error "Invalid control value in .regexp"
 controlText _ _ _ _ = error "Not yet implemented"
 
 --------------------------------------------------------------------------------
