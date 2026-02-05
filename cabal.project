@@ -10,3 +10,4 @@ source-repository-package
   type: git
   location: https://github.com/input-output-hk/antigen.git
   tag: 64d1cb8dba12ceeb35a8f50e6b90968e293e80a7
+  --sha256: 04djhdl39vd4g3pvj2hydm3bm2q9ww8d0a6ynpbs1wva0z18y3n7
