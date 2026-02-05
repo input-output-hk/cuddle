@@ -14,7 +14,11 @@
 {-# LANGUAGE ViewPatterns #-}
 
 -- | Generate example CBOR given a CDDL specification
-module Codec.CBOR.Cuddle.CBOR.Gen (generateFromName) where
+module Codec.CBOR.Cuddle.CBOR.Gen (
+  generateFromName,
+  GenPhase,
+  XXCTree (..),
+) where
 
 #if MIN_VERSION_random(1,3,0)
 #endif
@@ -66,6 +70,22 @@ import Test.QuickCheck qualified as QC
 import Test.QuickCheck.Gen (Gen (..))
 import Test.QuickCheck.GenT (MonadGen (..), elements, listOf, oneof, suchThat, vectorOf)
 
+type data GenPhase
+
+data instance XXCTree GenPhase
+  = GenRef Name
+  | GenGenerator CBORGenerator (CTree GenPhase)
+
+instance IndexMappable CTree MonoReferenced GenPhase where
+  mapIndex = foldCTree mapExt mapIndex
+    where
+      mapExt (MRuleRef n) = CTreeE $ GenRef n
+      mapExt (MGenerator g x) = CTreeE . GenGenerator g $ mapIndex x
+      mapExt (MValidator _ x) = mapIndex x
+
+instance IndexMappable CTreeRoot MonoReferenced GenPhase where
+  mapIndex (CTreeRoot m) = CTreeRoot $ mapIndex <$> m
+
 -- TODO remove this once QuickCheck gets QC
 data QC = QC
 
@@ -94,17 +114,16 @@ scale f m = sized $ \n -> resize (f n) m
 -- MonoSimple
 --------------------------------------------------------------------------------
 
-type data MonoSimple
+type data GenSimple
 
-newtype instance XXCTree MonoSimple = MSRef Name
+newtype instance XXCTree GenSimple = GenSimpleRef Name
   deriving (Show)
 
-instance IndexMappable CTree MonoReferenced MonoSimple where
+instance IndexMappable CTree GenPhase GenSimple where
   mapIndex = foldCTree mapExt mapIndex
     where
-      mapExt (MRuleRef n) = CTreeE $ MSRef n
-      mapExt (MGenerator _ x) = mapIndex x
-      mapExt (MValidator _ x) = mapIndex x
+      mapExt (GenRef n) = CTreeE $ GenSimpleRef n
+      mapExt (GenGenerator _ x) = mapIndex x
 
 --------------------------------------------------------------------------------
 -- Generator infrastructure
@@ -112,7 +131,7 @@ instance IndexMappable CTree MonoReferenced MonoSimple where
 
 -- | Generator context, parametrised over the type of the random seed
 newtype GenEnv = GenEnv
-  { cddl :: CTreeRoot MonoReferenced
+  { cddl :: CTreeRoot GenPhase
   }
   deriving (Generic)
 
@@ -231,8 +250,8 @@ pairTermList [] = Just []
 pairTermList (P x y : xs) = ((x, y) :) <$> pairTermList xs
 pairTermList _ = Nothing
 
-showSimple :: CTree MonoReferenced -> String
-showSimple = show . mapIndex @_ @_ @MonoSimple
+showSimple :: CTree GenPhase -> String
+showSimple = show . mapIndex @_ @_ @GenSimple
 
 -- | Drop all negative generators
 dropNegativeGen :: AntiGen a -> AntiGen a
@@ -251,7 +270,7 @@ genSized s target = do
     _ -> error "Cannot apply size operator to target "
 
 genForCTree ::
-  HasCallStack => CTreeRoot MonoReferenced -> CTree MonoReferenced -> AntiGen WrappedTerm
+  HasCallStack => CTreeRoot GenPhase -> CTree GenPhase -> AntiGen WrappedTerm
 genForCTree _ (CTree.Literal v) = pure . S $ valueToTerm v
 genForCTree _ (CTree.Postlude pt) = S <$> genPostlude pt
 genForCTree cddl (CTree.Map nodes) = do
@@ -309,7 +328,7 @@ genForCTree cddl (CTree.Range from to _bounds) = do
     (a, b) -> error $ "invalid range (a = " <> show a <> ", b = " <> show b <> ")"
 genForCTree cddl (CTree.Control op target controller) = do
   resolvedController <- case controller of
-    CTreeE (MRuleRef n) -> dropNegativeGen $ resolveRef cddl n
+    CTreeE (GenRef n) -> dropNegativeGen $ resolveRef cddl n
     x -> pure x
   case (op, resolvedController) of
     (CtlOp.Le, CTree.Literal (Value (VUInt n) _)) -> case target of
@@ -358,16 +377,15 @@ genForCTree cddl (CTree.Tag t node) = do
   case enc of
     S x -> pure $ S $ TTagged tag x
     _ -> error "Tag controller does not correspond to a single term"
-genForCTree cddl (CTree.CTreeE (MRuleRef n)) = genForNode cddl n
-genForCTree _ (CTree.CTreeE (MGenerator (CBORGenerator gen) _)) = gen
-genForCTree cddl (CTree.CTreeE (MValidator _ x)) = genForCTree cddl x
+genForCTree cddl (CTree.CTreeE (GenRef n)) = genForNode cddl n
+genForCTree _ (CTree.CTreeE (GenGenerator (CBORGenerator gen) _)) = gen
 
-genForNode :: HasCallStack => CTreeRoot MonoReferenced -> Name -> AntiGen WrappedTerm
+genForNode :: HasCallStack => CTreeRoot GenPhase -> Name -> AntiGen WrappedTerm
 genForNode cddl = genForCTree cddl <=< resolveRef cddl
 
 -- | Take a reference and resolve it to the relevant Tree, following multiple
 -- links if necessary.
-resolveRef :: MonadGen m => CTreeRoot MonoReferenced -> Name -> m (CTree MonoReferenced)
+resolveRef :: MonadGen m => CTreeRoot GenPhase -> Name -> m (CTree GenPhase)
 resolveRef (CTreeRoot cddl) n = do
   -- Since we follow a reference, we decrease the 'size' of the Gen monad.
   scale (\x -> max 0 $ x - 1) $
@@ -383,7 +401,7 @@ resolveRef (CTreeRoot cddl) n = do
 -- This will throw an error if the generated item does not correspond to a
 -- single CBOR term (e.g. if the name resolves to a group, which cannot be
 -- generated outside a context).
-generateFromName :: HasCallStack => CTreeRoot MonoReferenced -> Name -> AntiGen Term
+generateFromName :: HasCallStack => CTreeRoot GenPhase -> Name -> AntiGen Term
 generateFromName root@(CTreeRoot cddl) n = do
   case Map.lookup n cddl of
     Nothing -> error $ "Unbound reference: " <> show n

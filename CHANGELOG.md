@@ -28,6 +28,7 @@
 * Add `--negative` option to `gen` for generating negative examples
 * `CBORGenerator` now uses `AntiGen` instead of `Gen`
 * Add `withAntiGen`
+* Add `GenPhase`
 
 ## 1.1.1.0
 

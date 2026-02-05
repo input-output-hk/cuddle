@@ -333,7 +333,7 @@ run = \case
           zapN
             | goNegative = 1
             | otherwise = 0
-          term = runGen seed goSize . zapAntiGen zapN $ generateFromName mt (Name itemName)
+          term = runGen seed goSize . zapAntiGen zapN $ generateFromName (mapIndex mt) (Name itemName)
           formatted = formatTerm term outputFormat
         case outputTo of
           Just outputPath -> BS.writeFile outputPath formatted
