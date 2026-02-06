@@ -5,6 +5,7 @@ let
   toolVersions = {
     cabal = "latest";
     cabal-gild = "latest";
+    stack = "latest";
     fourmolu = "latest";
     haskell-language-server = "latest";
     hlint = "latest";
@@ -50,6 +51,7 @@ let
   commonPkgs = [
     tools.cabal
     tools.cabal-gild
+    tools.stack
     tools.fourmolu
     tools.haskell-language-server
     tools.hlint
