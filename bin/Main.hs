@@ -24,10 +24,10 @@ import Codec.CBOR.Write (toStrictByteString)
 import Control.Monad (unless)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
-import Data.ByteString.Base16 qualified as B16
 import Data.ByteString.Base16 qualified as Base16
 import Data.ByteString.Char8 qualified as BSC
 import Data.ByteString.Lazy qualified as LBS
+import Data.Char (isSpace)
 import Data.IORef (newIORef)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
@@ -343,9 +343,9 @@ run = \case
     contentsRaw <- BS.readFile cborFile
     contents <- case dcInputFormat of
       FromBinary -> pure contentsRaw
-      FromHex -> case B16.decode contentsRaw of
+      FromHex -> case Base16.decode . BSC.filter (not . isSpace) $ contentsRaw of
         Right x -> pure x
-        Left err -> putStrLnErr (show err) >> exitFailure
+        Left err -> putStrLnErr (show err <> " when decoding hex input") >> exitFailure
     term <- case deserialiseFromBytes decodeTerm (LBS.fromStrict contents) of
       Right (leftover, term) -> do
         unless (LBS.null leftover) . putStrLnErr $
