@@ -17,6 +17,7 @@
 module Codec.CBOR.Cuddle.CBOR.Gen (
   generateFromName,
   GenPhase,
+  GenSimple,
   XXCTree (..),
 ) where
 
@@ -25,6 +26,7 @@ module Codec.CBOR.Cuddle.CBOR.Gen (
 import Codec.CBOR.Cuddle.CDDL (
   Name (..),
   OccurrenceIndicator (..),
+  RangeBound (..),
   Value (..),
   ValueVariant (..),
  )
@@ -67,7 +69,7 @@ import Test.QuickCheck (
   NonNegative (..),
  )
 import Test.QuickCheck qualified as QC
-import Test.QuickCheck.Gen (Gen (..))
+import Test.QuickCheck.Gen (Gen (..), getSize)
 import Test.QuickCheck.GenT (MonadGen (..), elements, listOf, oneof, suchThat, vectorOf)
 
 type data GenPhase
@@ -269,6 +271,10 @@ genSized s target = do
     CTree.Postlude PTUInt -> S . TInteger <$> choose (0, 256 ^ s - 1)
     _ -> error "Cannot apply size operator to target "
 
+range :: Enum a => RangeBound -> a -> a -> (a, a)
+range ClOpen x y = (x, pred y)
+range Closed x y = (x, y)
+
 genForCTree ::
   HasCallStack => CTreeRoot GenPhase -> CTree GenPhase -> AntiGen WrappedTerm
 genForCTree _ (CTree.Literal v) = pure . S $ valueToTerm v
@@ -308,23 +314,27 @@ genForCTree cddl (CTree.KV key value _cut) = do
           <> showSimple value
 genForCTree cddl (CTree.Occur item occurs) =
   applyOccurenceIndicator occurs (genForCTree cddl item)
-genForCTree cddl (CTree.Range from to _bounds) = do
-  -- TODO Handle bounds correctly
+genForCTree cddl (CTree.Range from to bounds) = do
   term1 <- dropNegativeGen $ genForCTree cddl from
   term2 <- dropNegativeGen $ genForCTree cddl to
+  size <- liftGen getSize
+  let
+    sizeBounds :: Integral a => (a, a)
+    sizeBounds = (0, fromIntegral size)
   case (term1, term2) of
     (S (TInt a), S (TInt b))
-      | a <= b -> choose (a, b) <&> S . TInt
+      | a <= b -> antiChoose (range bounds a b) sizeBounds <&> S . TInt
     (S (TInt a), S (TInteger b))
-      | fromIntegral a <= b -> choose (fromIntegral a, b) <&> S . TInteger
+      | fromIntegral a <= b ->
+          antiChoose (range bounds (fromIntegral a) b) sizeBounds <&> S . TInteger
     (S (TInteger a), S (TInteger b))
-      | a <= b -> choose (a, b) <&> S . TInteger
+      | a <= b -> antiChoose (range bounds a b) sizeBounds <&> S . TInteger
     (S (THalf a), S (THalf b))
-      | a <= b -> choose (a, b) <&> S . THalf
+      | a <= b -> choose (range bounds a b) <&> S . THalf
     (S (TFloat a), S (TFloat b))
-      | a <= b -> choose (a, b) <&> S . TFloat
+      | a <= b -> choose (range bounds a b) <&> S . TFloat
     (S (TDouble a), S (TDouble b))
-      | a <= b -> choose (a, b) <&> S . TDouble
+      | a <= b -> choose (range bounds a b) <&> S . TDouble
     (a, b) -> error $ "invalid range (a = " <> show a <> ", b = " <> show b <> ")"
 genForCTree cddl (CTree.Control op target controller) = do
   resolvedController <- case controller of
