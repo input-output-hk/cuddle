@@ -11,6 +11,7 @@ import Codec.CBOR.Cuddle.CDDL.CBORGenerator (WrappedTerm (..))
 import Codec.CBOR.Cuddle.CDDL.CTree (CTreeRoot)
 import Codec.CBOR.Cuddle.CDDL.Resolve (MonoReferenced, fullResolveCDDL)
 import Codec.CBOR.Cuddle.Huddle (
+  CanQuantify (..),
   Huddle,
   HuddleItem (..),
   Value (..),
@@ -20,6 +21,7 @@ import Codec.CBOR.Cuddle.Huddle (
   sized,
   toCDDL,
   withGenerator,
+  (<+),
   (=:=),
  )
 import Codec.CBOR.Cuddle.Huddle qualified as H
@@ -82,6 +84,16 @@ sizeBytesExample =
   collectFrom
     [HIRule $ "root" =:= VBytes `sized` (0 :: Word64, 32 :: Word64)]
 
+rangeExample :: Huddle
+rangeExample =
+  collectFrom
+    [ HIRule $
+        "root"
+          =:= arr
+            [ 3 <+ a VInt +> 7
+            ]
+    ]
+
 generateCDDL :: CTreeRoot GenPhase -> Gen Term
 generateCDDL cddl = runAntiGen $ generateFromName cddl "root"
 
@@ -105,7 +117,7 @@ expectZapInvalidates cddl name = property $ do
 zapInvalidatesHuddle :: String -> Huddle -> Spec
 zapInvalidatesHuddle n huddle = do
   cddl <- tryResolveHuddle huddle
-  prop n $ expectZapInvalidates cddl "root"
+  prop n . counterexample (undefined cddl) $ expectZapInvalidates cddl "root"
 
 spec :: Spec
 spec = do
@@ -116,6 +128,7 @@ spec = do
       zapInvalidatesHuddle "opCert" opCertExample
       zapInvalidatesHuddle "sizeText" sizeTextExample
       zapInvalidatesHuddle "sizeBytes" sizeBytesExample
+      zapInvalidatesHuddle "range" rangeExample
 
   describe "Custom generators" $ do
     describe "Huddle" $ do
