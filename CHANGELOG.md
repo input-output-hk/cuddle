@@ -29,6 +29,7 @@
 * `CBORGenerator` now uses `AntiGen` instead of `Gen`
 * Add `withAntiGen`
 * Add `GenPhase`
+* Add `MonoSimple`
 
 ## 1.1.1.0
 

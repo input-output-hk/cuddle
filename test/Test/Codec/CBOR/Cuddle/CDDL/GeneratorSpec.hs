@@ -17,12 +17,15 @@ import Codec.CBOR.Cuddle.Huddle (
   Value (..),
   a,
   arr,
+  asKey,
   collectFrom,
+  mp,
   sized,
   toCDDL,
   withGenerator,
   (<+),
   (=:=),
+  (==>),
  )
 import Codec.CBOR.Cuddle.Huddle qualified as H
 import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..), mapCDDLDropExt)
@@ -86,13 +89,23 @@ sizeBytesExample =
   collectFrom
     [HIRule $ "root" =:= VBytes `sized` (0 :: Word64, 32 :: Word64)]
 
-rangeExample :: Huddle
-rangeExample =
+rangeListExample :: Huddle
+rangeListExample =
   collectFrom
     [ HIRule $
         "root"
           =:= arr
             [ 3 <+ a VInt +> 7
+            ]
+    ]
+
+rangeMapExample :: Huddle
+rangeMapExample =
+  collectFrom
+    [ HIRule $
+        "root"
+          =:= mp
+            [ 3 <+ asKey VInt ==> VBool +> 7
             ]
     ]
 
@@ -131,7 +144,8 @@ spec = do
       zapInvalidatesHuddle "opCert" opCertExample
       zapInvalidatesHuddle "sizeText" sizeTextExample
       zapInvalidatesHuddle "sizeBytes" sizeBytesExample
-      zapInvalidatesHuddle "range" rangeExample
+      zapInvalidatesHuddle "rangeList" rangeListExample
+      zapInvalidatesHuddle "rangeMap" rangeMapExample
 
   describe "Custom generators" $ do
     describe "Huddle" $ do
