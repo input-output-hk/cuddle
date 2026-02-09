@@ -46,6 +46,7 @@ import Data.Containers.ListUtils (nubOrdOn)
 import Data.Functor ((<&>))
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as Map
+import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Internal.Encoding.Utf8 (utf8Length)
@@ -54,7 +55,7 @@ import Data.Word (Word64, Word8)
 import GHC.Generics (Generic)
 import GHC.Stack (HasCallStack)
 import Numeric.Half (Half (..), fromHalf)
-import System.Random.Stateful (StatefulGen (..), runStateGen_, uniformByteStringM)
+import System.Random.Stateful (Random, StatefulGen (..), runStateGen_, uniformByteStringM)
 import Test.AntiGen (
   AntiGen,
   antiChoose,
@@ -275,6 +276,14 @@ range :: Enum a => RangeBound -> a -> a -> (a, a)
 range ClOpen x y = (x, pred y)
 range Closed x y = (x, y)
 
+genBetween :: (Integral a, Random a) => (a, a) -> AntiGen a
+genBetween rng = do
+  size <- liftGen getSize
+  let
+    sizeBounds :: Integral a => (a, a)
+    sizeBounds = (0, fromIntegral size)
+  antiChoose rng sizeBounds
+
 genForCTree ::
   HasCallStack => CTreeRoot GenPhase -> CTree GenPhase -> AntiGen WrappedTerm
 genForCTree _ (CTree.Literal v) = pure . S $ valueToTerm v
@@ -317,18 +326,14 @@ genForCTree cddl (CTree.Occur item occurs) =
 genForCTree cddl (CTree.Range from to bounds) = do
   term1 <- dropNegativeGen $ genForCTree cddl from
   term2 <- dropNegativeGen $ genForCTree cddl to
-  size <- liftGen getSize
-  let
-    sizeBounds :: Integral a => (a, a)
-    sizeBounds = (0, fromIntegral size)
   case (term1, term2) of
     (S (TInt a), S (TInt b))
-      | a <= b -> antiChoose (range bounds a b) sizeBounds <&> S . TInt
+      | a <= b -> genBetween (range bounds a b) <&> S . TInt
     (S (TInt a), S (TInteger b))
       | fromIntegral a <= b ->
-          antiChoose (range bounds (fromIntegral a) b) sizeBounds <&> S . TInteger
+          genBetween (range bounds (fromIntegral a) b) <&> S . TInteger
     (S (TInteger a), S (TInteger b))
-      | a <= b -> antiChoose (range bounds a b) sizeBounds <&> S . TInteger
+      | a <= b -> genBetween (range bounds a b) <&> S . TInteger
     (S (THalf a), S (THalf b))
       | a <= b -> choose (range bounds a b) <&> S . THalf
     (S (TFloat a), S (TFloat b))
@@ -452,8 +457,10 @@ applyOccurenceIndicator OIOneOrMore oldGen =
   G <$> listOfScaled1 oldGen
 applyOccurenceIndicator (OIBounded mlb mub) oldGen =
   sized $ \sz -> do
-    let lb = maybe 0 fromIntegral mlb
-    i <- choose (lb, maybe (lb + sz) (min (lb + sz) . fromIntegral) mub)
+    let
+      lb = fromMaybe 0 mlb
+      ub = fromMaybe (lb + fromIntegral sz) mub
+    i <- fromIntegral <$> genBetween (lb, ub)
     G <$> vectorOf i (scale (`div` (i + 1)) oldGen)
 
 valueToTerm :: Value -> Term
