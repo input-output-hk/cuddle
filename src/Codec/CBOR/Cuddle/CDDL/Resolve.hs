@@ -35,6 +35,7 @@ module Codec.CBOR.Cuddle.CDDL.Resolve (
   fullResolveCDDL,
   NameResolutionFailure (..),
   MonoReferenced,
+  MonoSimple,
   XXCTree (..),
 )
 where
@@ -442,6 +443,21 @@ type MonoEnv = BindingEnv DistReferenced MonoReferenced
 
 -- | We introduce additional bindings in the state
 type MonoState = Map.Map Name (CTree MonoReferenced)
+
+type data MonoSimple
+
+instance IndexMappable CTree MonoReferenced MonoSimple where
+  mapIndex = foldCTree mapExt mapIndex
+    where
+      mapExt (MRuleRef n) = CTreeE $ MSimpleRef n
+      mapExt (MGenerator _ x) = mapIndex x
+      mapExt (MValidator _ x) = mapIndex x
+
+instance IndexMappable CTreeRoot MonoReferenced MonoSimple where
+  mapIndex (CTreeRoot m) = CTreeRoot $ mapIndex <$> m
+
+newtype instance XXCTree MonoSimple = MSimpleRef Name
+  deriving (Generic, Show, Eq)
 
 -- | Monad to run the monomorphisation process. We need some additional
 -- capabilities for this, so 'Either' doesn't fully cut it anymore.

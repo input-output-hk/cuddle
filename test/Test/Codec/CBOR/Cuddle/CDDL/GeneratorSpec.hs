@@ -8,8 +8,8 @@ import Codec.CBOR.Cuddle.CBOR.Gen (GenPhase, generateFromName)
 import Codec.CBOR.Cuddle.CBOR.Validator (validateCBOR)
 import Codec.CBOR.Cuddle.CDDL (Name)
 import Codec.CBOR.Cuddle.CDDL.CBORGenerator (WrappedTerm (..))
-import Codec.CBOR.Cuddle.CDDL.CTree (CTreeRoot)
-import Codec.CBOR.Cuddle.CDDL.Resolve (MonoReferenced, fullResolveCDDL)
+import Codec.CBOR.Cuddle.CDDL.CTree (CTreeRoot (..))
+import Codec.CBOR.Cuddle.CDDL.Resolve (MonoReferenced, MonoSimple, fullResolveCDDL)
 import Codec.CBOR.Cuddle.Huddle (
   CanQuantify (..),
   Huddle,
@@ -32,6 +32,7 @@ import Codec.CBOR.Term (Term (..), decodeTerm, encodeTerm)
 import Codec.CBOR.Term qualified as C
 import Codec.CBOR.Write (toStrictByteString)
 import Data.ByteString.Lazy qualified as LBS
+import Data.Text.Lazy qualified as TL
 import Data.Word (Word64)
 import Test.AntiGen (runAntiGen, zapAntiGen)
 import Test.Codec.CBOR.Cuddle.CDDL.Validator (expectInvalid)
@@ -39,6 +40,7 @@ import Test.Hspec (HasCallStack, Spec, describe, runIO, shouldBe, shouldSatisfy)
 import Test.Hspec.Core.Spec (SpecM)
 import Test.Hspec.QuickCheck (prop)
 import Test.QuickCheck (Gen, Property, Testable (..), choose, counterexample)
+import Text.Pretty.Simple (pShow)
 
 simpleRule :: Name -> H.Rule
 simpleRule n = withGenerator (S . C.TInt <$> choose (4, 6)) $ n =:= arr [1, 2, 3]
@@ -117,7 +119,8 @@ expectZapInvalidates cddl name = property $ do
 zapInvalidatesHuddle :: String -> Huddle -> Spec
 zapInvalidatesHuddle n huddle = do
   cddl <- tryResolveHuddle huddle
-  prop n . counterexample (undefined cddl) $ expectZapInvalidates cddl "root"
+  prop n . counterexample (TL.unpack . pShow $ mapIndex @_ @_ @MonoSimple cddl) $
+    expectZapInvalidates cddl "root"
 
 spec :: Spec
 spec = do
