@@ -699,8 +699,23 @@ isOptional (Occur _ oi) = case oi of
   _ -> False
 isOptional _ = False
 
-decrementBounds :: Maybe Word64 -> Maybe Word64 -> OccurrenceIndicator
-decrementBounds lb ub = OIBounded (clampedPred <$> lb) (clampedPred <$> ub)
+data BoundPlacement
+  = BelowBounds
+  | WithinBounds
+  | AboveBounds
+  deriving (Eq, Ord, Show)
+
+boundPlacement :: Ord a => a -> (Maybe a, Maybe a) -> RangeBound -> BoundPlacement
+boundPlacement _ (Nothing, Nothing) _ = WithinBounds
+boundPlacement x (Just lo, mHi) bounds
+  | lo > x = BelowBounds
+  | otherwise = boundPlacement x (Nothing, mHi) bounds
+boundPlacement x (Nothing, Just hi) bounds
+  | range bounds x hi = WithinBounds
+  | otherwise = AboveBounds
+
+decrementBounds :: (Maybe Word64, Maybe Word64) -> OccurrenceIndicator
+decrementBounds (lb, ub) = OIBounded (clampedPred <$> lb) (clampedPred <$> ub)
   where
     clampedPred 0 = 0
     clampedPred x = pred x
@@ -739,13 +754,16 @@ validateList cddl terms rule =
         OIOneOrMore -> case validateTermInList (t : ts) ct of
           (ValidatorSuccess, leftover) -> validate leftover (Occur ct OIZeroOrMore : rs)
           (err, _) -> err
-        OIBounded _ (Just ub) | ub < 0 -> ValidatorFail $ ValidatorFailure "term count above bounds"
-        OIBounded lb ub
-          | (ValidatorSuccess, leftover) <- validateTermInList (t : ts) ct ->
-              validate leftover (Occur ct (decrementBounds lb ub) : rs)
-          | isWithinBoundsInclusive 0 lb ub ->
-              validate (t : ts) rs
-          | otherwise -> ValidatorFail $ ValidatorFailure "term count below bounds"
+        OIBounded lb ub -> case boundPlacement 1 (lb, ub) Closed of
+          BelowBounds -> validate (t : ts) (ct : Occur ct (decrementBounds (lb, ub)) : rs)
+          WithinBounds
+            | (ValidatorSuccess, leftover) <- validateTermInList (t : ts) ct
+            , res@ValidatorSuccess <- validate leftover (Occur ct (decrementBounds (lb, ub)) : rs) ->
+                res
+            | otherwise -> validate (t : ts) rs
+          AboveBounds
+            | boundPlacement 0 (lb, ub) Closed == WithinBounds -> validate (t : ts) rs
+            | otherwise -> error "Negative upper bound"
       _ -> case validateTermInList (t : ts) (resolveIfRef cddl r) of
         (ValidatorSuccess, leftover) -> validate leftover rs
         (err, _) -> err
@@ -812,7 +830,7 @@ validateMap cddl terms rule =
                     validate
                       []
                       leftover
-                      (Occur ct (decrementBounds mlb mub) : exhausted <> rs) ->
+                      (Occur ct (decrementBounds (mlb, mub)) : exhausted <> rs) ->
                     res
                 | otherwise -> validate (r : exhausted) kvs rs
       _ -> case validateKVInMap kvs r of
