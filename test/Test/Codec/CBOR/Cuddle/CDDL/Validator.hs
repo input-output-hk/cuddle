@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ViewPatterns #-}
 
 module Test.Codec.CBOR.Cuddle.CDDL.Validator (
   spec,
@@ -11,8 +12,9 @@ import Codec.CBOR.Cuddle.CBOR.Gen (generateFromName)
 import Codec.CBOR.Cuddle.CBOR.Validator (
   validateCBOR,
  )
+import Codec.CBOR.Cuddle.CBOR.Validator.Trace (ValidationResult, isValid)
 import Codec.CBOR.Cuddle.CDDL (Name (..))
-import Codec.CBOR.Cuddle.CDDL.CBORGenerator (ValidationResult (..), ValidatorFailure (..))
+import Codec.CBOR.Cuddle.CDDL.CBORGenerator (CustomValidatorResult (..))
 import Codec.CBOR.Cuddle.CDDL.CTree (CTreeRoot (..))
 import Codec.CBOR.Cuddle.CDDL.CTree qualified as CTree
 import Codec.CBOR.Cuddle.CDDL.Postlude (appendPostlude)
@@ -287,22 +289,22 @@ validateHuddle huddle name term = do
   validateCBOR bs name (mapIndex resolvedCddl)
 
 expectValid :: ValidationResult -> Expectation
-expectValid ValidatorSuccess = pure ()
-expectValid (ValidatorFail e) = expectationFailure $ "Expected a success, got\n" <> show e
+expectValid (isValid -> True) = pure ()
+expectValid e = expectationFailure $ "Expected a success, got\n" <> show e
 
 expectInvalid :: ValidationResult -> Expectation
-expectInvalid ValidatorFail {} = pure ()
-expectInvalid ValidatorSuccess = expectationFailure "Expected a failure, but got success"
+expectInvalid (isValid -> True) = expectationFailure "Expected a failure, but got success"
+expectInvalid _ = pure ()
 
-stringValidator :: Term -> ValidationResult
-stringValidator (TString _) = ValidatorSuccess
-stringValidator (TStringI _) = ValidatorSuccess
-stringValidator t = ValidatorFail . ValidatorFailure $ "Expected a string, got\n" <> T.pack (show t)
+stringValidator :: Term -> CustomValidatorResult
+stringValidator (TString _) = CustomValidatorSuccess
+stringValidator (TStringI _) = CustomValidatorSuccess
+stringValidator t = CustomValidatorFailure $ "Expected a string, got\n" <> T.pack (show t)
 
-bytesValidator :: Term -> ValidationResult
-bytesValidator (TBytes _) = ValidatorSuccess
-bytesValidator (TBytesI _) = ValidatorSuccess
-bytesValidator t = ValidatorFail . ValidatorFailure $ "Expected bytes, got\n" <> T.pack (show t)
+bytesValidator :: Term -> CustomValidatorResult
+bytesValidator (TBytes _) = CustomValidatorSuccess
+bytesValidator (TBytesI _) = CustomValidatorSuccess
+bytesValidator t = CustomValidatorFailure $ "Expected bytes, got\n" <> T.pack (show t)
 
 spec :: Spec
 spec = describe "Validator" $ do

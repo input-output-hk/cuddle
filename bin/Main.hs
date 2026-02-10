@@ -1,13 +1,14 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE ViewPatterns #-}
 
 module Main (main) where
 
 import Codec.CBOR.Cuddle.CBOR.Gen (generateFromName)
 import Codec.CBOR.Cuddle.CBOR.Validator
+import Codec.CBOR.Cuddle.CBOR.Validator.Trace (isValid)
 import Codec.CBOR.Cuddle.CDDL (CDDL, Name (..), fromRules, sortCDDL)
-import Codec.CBOR.Cuddle.CDDL.CBORGenerator (ValidationResult (..), ValidatorFailure (..))
 import Codec.CBOR.Cuddle.CDDL.CTree (CTreeRoot)
 import Codec.CBOR.Cuddle.CDDL.Postlude (appendPostlude)
 import Codec.CBOR.Cuddle.CDDL.Resolve (
@@ -381,7 +382,7 @@ parseFromFile p file = runParser p file <$> T.readFile file
 runValidateCBOR :: BS.ByteString -> Name -> CTreeRoot ValidatorStage -> IO ()
 runValidateCBOR bs rule cddl =
   case validateCBOR bs rule cddl of
-    ValidatorSuccess -> exitSuccess
-    ValidatorFail (ValidatorFailure err) -> do
-      T.hPutStrLn stderr $ "Invalid " <> err
+    (isValid -> True) -> exitSuccess
+    err -> do
+      hPutStrLn stderr $ "Invalid " <> show err
       exitFailure
