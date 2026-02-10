@@ -37,8 +37,6 @@ Cuddle currently supports the following CDDL features:
   - Controls are correctly parsed and formatted, but only certain controls are
     understood in CBOR generation.
 - Operator precedence
-- Comments
-  - Comments are currently stripped during formatting.
 
 ### Unsupported
 
