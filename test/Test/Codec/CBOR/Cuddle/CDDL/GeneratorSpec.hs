@@ -23,6 +23,7 @@ import Codec.CBOR.Cuddle.Huddle (
   sized,
   toCDDL,
   withGenerator,
+  (...),
   (<+),
   (=:=),
   (==>),
@@ -109,6 +110,16 @@ rangeMapExample =
             ]
     ]
 
+optionalMapExample :: Huddle
+optionalMapExample =
+  collectFrom
+    [ HIRule $
+        "root"
+          =:= mp
+            [ 10 <+ asKey ((0 :: Integer) ... (10 :: Integer)) ==> VBool
+            ]
+    ]
+
 generateCDDL :: CTreeRoot GenPhase -> Gen Term
 generateCDDL cddl = runAntiGen $ generateFromName cddl "root"
 
@@ -146,6 +157,7 @@ spec = do
       zapInvalidatesHuddle "sizeBytes" sizeBytesExample
       zapInvalidatesHuddle "rangeList" rangeListExample
       zapInvalidatesHuddle "rangeMap" rangeMapExample
+      zapInvalidatesHuddle "optionalMapExample" optionalMapExample
 
   describe "Custom generators" $ do
     describe "Huddle" $ do
