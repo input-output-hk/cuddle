@@ -211,22 +211,13 @@ genCharAtMostBytes n
 genNBytesText :: MonadGen m => Int -> m Text
 genNBytesText n = do
   let
-    go 0 = pure mempty
-    go m = do
-      c <- genCharAtMostBytes m
-      rest <- go (m - utf8Length c)
-      pure $ LB.singleton c <> rest
-  builder <- go n
+    go m !acc
+      | m <= 0 = pure acc
+      | otherwise = do
+          c <- genCharAtMostBytes m
+          go (m - utf8Length c) (acc <> LB.singleton c)
+  builder <- go n mempty
   pure . LT.toStrict $ toLazyText builder
-
--- genNBytesText n = do
---  x <- arbitrary
---  let len = utf8Length x
---  if len <= n
---    then do
---      xs <- genNBytesText $ n - len
---      pure $ T.cons x xs
---    else genNBytesText n
 
 genText :: MonadGen m => m Text
 genText = sized $ \sz -> genNBytesText =<< choose (0, sz)
@@ -277,7 +268,7 @@ pairTermList _ = Nothing
 showSimple :: CTree GenPhase -> String
 showSimple = show . mapIndex @_ @_ @GenSimple
 
--- | Drop all negative generators
+-- | Remove all negative generators from the `AntiGen`.
 dropNegativeGen :: AntiGen a -> AntiGen a
 dropNegativeGen = liftGen . runAntiGen
 
