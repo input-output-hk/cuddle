@@ -75,7 +75,7 @@ import Test.QuickCheck (
  )
 import Test.QuickCheck qualified as QC
 import Test.QuickCheck.Gen (Gen (..), getSize)
-import Test.QuickCheck.GenT (MonadGen (..), elements, frequency, listOf, oneof, suchThat, vectorOf)
+import Test.QuickCheck.GenT (MonadGen (..), elements, listOf, oneof, suchThat, vectorOf)
 
 type data GenPhase
 
@@ -201,20 +201,12 @@ genNLazyBytes :: MonadGen m => Int -> m BSL.ByteString
 genNLazyBytes n = BSL.fromStrict <$> genNBytes n
 
 genCharAtMostBytes :: MonadGen m => Int -> m Char
-genCharAtMostBytes n =
-  frequency
-    [ (1, chr <$> choose (0x00, 0x7F))
-    , (if n >= 2 then 1 else 0, chr <$> choose (0x80, 0x7FF))
-    , (if n >= 3 then 1 else 0, gen3ByteChar)
-    , (if n >= 4 then 1 else 0, chr <$> choose (0x10000, 0x10FFFF))
-    ]
-  where
-    -- 3-byte chars have a gap for surrogates (0xD800-0xDFFF)
-    gen3ByteChar =
-      oneof
-        [ chr <$> choose (0x800, 0xD7FF)
-        , chr <$> choose (0xE000, 0xFFFF)
-        ]
+genCharAtMostBytes 1 = chr <$> choose (0x00, 0x7F)
+genCharAtMostBytes 2 = chr <$> choose (0x00, 0x7FF)
+genCharAtMostBytes 3 = chr <$> oneof [choose (0x00, 0xD7FF), choose (0xE000, 0xFFFF)]
+genCharAtMostBytes n
+  | n <= 0 = error "expected positive number"
+  | otherwise = chr <$> oneof [choose (0x00, 0xD7FF), choose (0xE000, 0x10FFFF)]
 
 genNBytesText :: MonadGen m => Int -> m Text
 genNBytesText n = do
