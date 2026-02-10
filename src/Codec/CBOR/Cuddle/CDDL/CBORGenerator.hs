@@ -6,17 +6,17 @@ module Codec.CBOR.Cuddle.CDDL.CBORGenerator (
   HasGenerator (..),
   WrappedTerm (..),
   CBORValidator (..),
-  ValidationResult (..),
   HasValidator (..),
-  ValidatorFailure (..),
   GenPhase,
   XXCTree (..),
+  CustomValidatorResult (..),
 ) where
 
 import Codec.CBOR.Cuddle.CDDL (Name)
 import Codec.CBOR.Cuddle.CDDL.CTree (CTree, CTreeRoot, XXCTree)
 import Codec.CBOR.Term (Term)
 import Data.Text (Text)
+import GHC.Generics (Generic)
 import Optics.Core (Lens')
 import Test.AntiGen (AntiGen)
 
@@ -43,11 +43,9 @@ class HasGenerator a where
 class HasValidator a where
   validatorL :: Lens' a (Maybe CBORValidator)
 
-newtype ValidatorFailure = ValidatorFailure Text
-  deriving (Show)
+data CustomValidatorResult
+  = CustomValidatorSuccess
+  | CustomValidatorFailure Text
+  deriving (Generic, Show, Eq)
 
-data ValidationResult
-  = ValidatorSuccess
-  | ValidatorFail ValidatorFailure
-
-newtype CBORValidator = CBORValidator (Term -> ValidationResult)
+newtype CBORValidator = CBORValidator (Term -> CustomValidatorResult)
