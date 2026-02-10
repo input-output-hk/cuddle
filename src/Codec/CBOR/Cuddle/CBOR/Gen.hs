@@ -42,6 +42,7 @@ import Codec.CBOR.Write qualified as CBOR
 import Control.Monad ((<=<))
 import Data.ByteString (ByteString)
 import Data.ByteString.Lazy qualified as BSL
+import Data.Char (chr)
 import Data.Containers.ListUtils (nubOrdOn)
 import Data.Functor ((<&>))
 import Data.List.NonEmpty qualified as NE
@@ -50,7 +51,10 @@ import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Internal.Encoding.Utf8 (utf8Length)
+import Data.Text.Lazy qualified as LT
 import Data.Text.Lazy qualified as TL
+import Data.Text.Lazy.Builder (toLazyText)
+import Data.Text.Lazy.Builder qualified as LB
 import Data.Word (Word64, Word8)
 import GHC.Generics (Generic)
 import GHC.Stack (HasCallStack)
@@ -71,7 +75,7 @@ import Test.QuickCheck (
  )
 import Test.QuickCheck qualified as QC
 import Test.QuickCheck.Gen (Gen (..), getSize)
-import Test.QuickCheck.GenT (MonadGen (..), elements, listOf, oneof, suchThat, vectorOf)
+import Test.QuickCheck.GenT (MonadGen (..), elements, frequency, listOf, oneof, suchThat, vectorOf)
 
 type data GenPhase
 
@@ -196,19 +200,44 @@ genBytes = sized $ \sz -> do
 genNLazyBytes :: MonadGen m => Int -> m BSL.ByteString
 genNLazyBytes n = BSL.fromStrict <$> genNBytes n
 
-genNText :: MonadGen m => Int -> m Text
-genNText 0 = pure mempty
-genNText n = do
-  x <- arbitrary
-  let len = utf8Length x
-  if len <= n
-    then do
-      xs <- genNText $ n - len
-      pure $ T.cons x xs
-    else genNText n
+genCharAtMostBytes :: MonadGen m => Int -> m Char
+genCharAtMostBytes n =
+  frequency
+    [ (1, chr <$> choose (0x00, 0x7F))
+    , (if n >= 2 then 1 else 0, chr <$> choose (0x80, 0x7FF))
+    , (if n >= 3 then 1 else 0, gen3ByteChar)
+    , (if n >= 4 then 1 else 0, chr <$> choose (0x10000, 0x10FFFF))
+    ]
+  where
+    -- 3-byte chars have a gap for surrogates (0xD800-0xDFFF)
+    gen3ByteChar =
+      oneof
+        [ chr <$> choose (0x800, 0xD7FF)
+        , chr <$> choose (0xE000, 0xFFFF)
+        ]
+
+genNBytesText :: MonadGen m => Int -> m Text
+genNBytesText n = do
+  let
+    go 0 = pure mempty
+    go m = do
+      c <- genCharAtMostBytes m
+      rest <- go (m - utf8Length c)
+      pure $ LB.singleton c <> rest
+  builder <- go n
+  pure . LT.toStrict $ toLazyText builder
+
+-- genNBytesText n = do
+--  x <- arbitrary
+--  let len = utf8Length x
+--  if len <= n
+--    then do
+--      xs <- genNBytesText $ n - len
+--      pure $ T.cons x xs
+--    else genNBytesText n
 
 genText :: MonadGen m => m Text
-genText = sized $ \sz -> genNText =<< choose (0, sz)
+genText = sized $ \sz -> genNBytesText =<< choose (0, sz)
 
 -- | Primitive types defined by the CDDL specification, with their generators
 genPostlude :: PTerm -> AntiGen Term
@@ -267,7 +296,7 @@ dropNegativeGen = liftGen . runAntiGen
 genSized :: HasCallStack => Word64 -> CTree i -> AntiGen WrappedTerm
 genSized s target = do
   case target of
-    CTree.Postlude PTText -> S . TString <$> genNText (fromIntegral s)
+    CTree.Postlude PTText -> S . TString <$> genNBytesText (fromIntegral s)
     CTree.Postlude PTBytes -> S . TBytes <$> genNBytes (fromIntegral s)
     CTree.Postlude PTUInt -> S . TInteger <$> choose (0, 256 ^ s - 1)
     _ -> error "Cannot apply size operator to target "
