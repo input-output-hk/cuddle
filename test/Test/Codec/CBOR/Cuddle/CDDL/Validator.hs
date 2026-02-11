@@ -25,18 +25,11 @@ import Codec.CBOR.Cuddle.Huddle (
   Value (..),
   a,
   arr,
-  asKey,
   collectFrom,
-  idx,
   int,
-  mp,
-  opt,
   toCDDL,
   withValidator,
-  (+>),
-  (<+),
   (=:=),
-  (==>),
  )
 import Codec.CBOR.Cuddle.IndexMappable (mapCDDLDropExt, mapIndex)
 import Codec.CBOR.Cuddle.Parser (pCDDL)
@@ -55,6 +48,12 @@ import Data.Text.IO qualified as T
 import Data.Text.Lazy qualified as LT
 import Paths_cuddle (getDataFileName)
 import Test.AntiGen (runAntiGen)
+import Test.Codec.CBOR.Cuddle.CDDL.Examples.Huddle (
+  huddleArray,
+  huddleMap,
+  huddleRangeArray,
+  huddleRangeMap,
+ )
 import Test.Hspec (
   Expectation,
   HasCallStack,
@@ -109,29 +108,6 @@ genAndValidateFromFile path = do
               ]
         pure . counterexample extraInfo $ expectValid res
 
-huddleMap :: Huddle
-huddleMap =
-  collectFrom
-    [ HIRule $
-        "a"
-          =:= mp
-            [ idx 1 ==> arr [0 <+ a VUInt]
-            , 1 <+ asKey VBytes ==> VAny
-            , opt $ idx 2 ==> VBool
-            , 0 <+ asKey VText ==> VInt
-            ]
-    ]
-
-huddleRangeMap :: Huddle
-huddleRangeMap =
-  collectFrom
-    [ HIRule $
-        "a"
-          =:= mp
-            [ 5 <+ asKey VInt ==> VBool +> 10
-            ]
-    ]
-
 genInfiniteUniqueList :: Ord a => Gen a -> Gen [a]
 genInfiniteUniqueList = fmap nubOrd . infiniteListOf
 
@@ -140,19 +116,6 @@ genHuddleRangeMap rng@(lo, hi) = do
   n <- choose rng
   let genKV = (,) <$> fmap TInt arbitrary <*> fmap TBool arbitrary
   genMapTerm . take n =<< scale (const $ max lo hi) (genInfiniteUniqueList genKV)
-
-huddleArray :: Huddle
-huddleArray =
-  collectFrom
-    [ HIRule $
-        "a"
-          =:= arr
-            [ 0 <+ a VBool
-            , 1 <+ a VInt
-            , opt $ a VText
-            , a VUInt
-            ]
-    ]
 
 genHuddleArrayRequiredTerms :: Gen [Term]
 genHuddleArrayRequiredTerms = do
@@ -183,19 +146,6 @@ genBadArrayMissingLastInt =
   where
     isNonNegativeInt (TInt x) | x >= 0 = True
     isNonNegativeInt _ = False
-
-huddleRangeArray :: Huddle
-huddleRangeArray =
-  collectFrom
-    [ HIRule $
-        "a"
-          =:= arr
-            [ opt $ a VInt
-            , 2 <+ a VInt +> 3
-            , a VBool +> 3
-            , 3 <+ a VText
-            ]
-    ]
 
 genHuddleRangeArray :: Gen Term
 genHuddleRangeArray = do

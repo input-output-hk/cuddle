@@ -1,0 +1,1 @@
+ValidationResult {vrValidity = SInvalid, vrTrace = UnapplicableRule (Postlude PTText)}
