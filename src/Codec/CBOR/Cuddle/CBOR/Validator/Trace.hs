@@ -1,4 +1,5 @@
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeData #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -14,6 +15,7 @@ module Codec.CBOR.Cuddle.CBOR.Validator.Trace (
   toResult,
   isValid,
   compareProgress,
+  prettyValidationResult,
 ) where
 
 import Codec.CBOR.Cuddle.CDDL (Name, XTerm)
@@ -24,6 +26,7 @@ import Codec.CBOR.Cuddle.CDDL.Resolve (MonoReferenced, XXCTree (..))
 import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
 import Data.Text (Text)
 import Data.Type.Equality (TestEquality (..), (:~:) (..))
+import Prettyprinter (Doc, viaShow)
 
 --------------------------------------------------------------------------------
 -- ValidatorStage
@@ -146,3 +149,6 @@ compareProgress (ValidationResult SInvalid _) (ValidationResult SValid _) = LT
 compareProgress (ValidationResult SValid _) (ValidationResult SInvalid _) = GT
 compareProgress (ValidationResult SInvalid x) (ValidationResult SInvalid y) =
   measureProgress x `compare` measureProgress y
+
+prettyValidationResult :: ValidationResult -> Doc ann
+prettyValidationResult = viaShow

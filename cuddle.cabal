@@ -146,11 +146,13 @@ test-suite cuddle-test
   other-modules:
     Paths_cuddle
     Test.Codec.CBOR.Cuddle.CDDL.Examples
+    Test.Codec.CBOR.Cuddle.CDDL.Examples.Huddle
     Test.Codec.CBOR.Cuddle.CDDL.Gen
     Test.Codec.CBOR.Cuddle.CDDL.GeneratorSpec
     Test.Codec.CBOR.Cuddle.CDDL.Parser
     Test.Codec.CBOR.Cuddle.CDDL.Pretty
     Test.Codec.CBOR.Cuddle.CDDL.Validator
+    Test.Codec.CBOR.Cuddle.CDDL.Validator.Golden
     Test.Codec.CBOR.Cuddle.Huddle
 
   type: exitcode-stdio-1.0
@@ -166,9 +168,11 @@ test-suite cuddle-test
     containers,
     cuddle,
     data-default-class,
+    filepath,
     generic-random,
     hspec >=2.11,
     hspec-core,
+    hspec-golden,
     hspec-megaparsec >=2.2,
     megaparsec,
     pretty-simple,
