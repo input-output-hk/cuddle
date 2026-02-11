@@ -1,0 +1,9 @@
+array
+[0;93m└ [0mapp: Literal (Value (VUInt 0) (Comment ""))
+  [0;91mfailed to apply required rule:[0m
+  [0;93m└ [0mref: [0;94mbar[0m
+    [0;93m└ [0marray
+      [0;93m└ [0mapp: Literal (Value (VUInt 1) (Comment ""))
+        app: Literal (Value (VUInt 2) (Comment ""))
+        app: Literal (Value (VUInt 3) (Comment ""))
+        [0;91mno more rules left to apply[0m

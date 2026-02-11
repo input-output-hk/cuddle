@@ -10,13 +10,17 @@ module Codec.CBOR.Cuddle.CBOR.Validator (
 ) where
 
 import Codec.CBOR.Cuddle.CBOR.Validator.Trace (
-  ValidationResult (..),
+  Evidenced (..),
+  ListValidationTrace (..),
+  MapValidationTrace (..),
+  SValidity (..),
   ValidationTrace (..),
   ValidatorStage,
   XXCTree (..),
+  evidence,
   isValid,
+  mapTrace,
   showSimple,
-  toResult,
  )
 import Codec.CBOR.Cuddle.CDDL hiding (CDDL, Group, Rule)
 import Codec.CBOR.Cuddle.CDDL.CBORGenerator (CBORValidator (..), CustomValidatorResult (..))
@@ -25,14 +29,16 @@ import Codec.CBOR.Cuddle.CDDL.CtlOp
 import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
 import Codec.CBOR.Read
 import Codec.CBOR.Term
+import Data.Bifunctor (Bifunctor (..))
 import Data.Bits hiding (And)
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as BSL
+import Data.Function ((&))
 import Data.IntSet qualified as IS
+import Data.List.NonEmpty (NonEmpty (..))
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as Map
 import Data.Maybe
-import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Encoding (encodeUtf8)
 import Data.Text.Lazy qualified as TL
@@ -49,13 +55,13 @@ validateCBOR ::
   BS.ByteString ->
   Name ->
   CTreeRoot ValidatorStage ->
-  ValidationResult
+  Evidenced ValidationTrace
 validateCBOR bs rule cddl@(CTreeRoot tree) =
   case deserialiseFromBytes decodeTerm (BSL.fromStrict bs) of
     Left e -> error $ show e
     Right (rest, term)
       | BSL.null rest -> validateTerm cddl term (tree Map.! rule)
-      | otherwise -> error $ "Leftover bytes in CBOR" <> show rest
+      | otherwise -> error $ "Leftover bytes in CBOR: " <> show rest
 
 --------------------------------------------------------------------------------
 -- Terms
@@ -66,12 +72,14 @@ validateTerm ::
   CTreeRoot ValidatorStage ->
   Term ->
   CTree ValidatorStage ->
-  ValidationResult
-validateTerm cddl term (resolveIfRef cddl -> rule)
+  Evidenced ValidationTrace
+validateTerm cddl term rule
+  | CTreeE (VRuleRef n) <- rule =
+      dereferenceAndValidate cddl n (validateTerm cddl term)
   | CTreeE (VValidator (CBORValidator validator) _) <- rule =
       case validator term of
-        CustomValidatorSuccess -> toResult CustomSuccess
-        CustomValidatorFailure err -> toResult $ CustomFailure err
+        CustomValidatorSuccess -> evidence CustomSuccess
+        CustomValidatorFailure err -> evidence $ CustomFailure err
   | otherwise =
       case term of
         TInt i -> validateInteger cddl (fromIntegral i) rule
@@ -92,14 +100,11 @@ validateTerm cddl term (resolveIfRef cddl -> rule)
         TFloat h -> validateFloat cddl h rule
         TDouble d -> validateDouble cddl d rule
 
-terminal :: CTree ValidatorStage -> ValidationResult
-terminal = toResult . TerminalRule . mapIndex
+terminal :: CTree ValidatorStage -> Evidenced ValidationTrace
+terminal = evidence . TerminalRule . mapIndex
 
-unapplicable :: CTree ValidatorStage -> ValidationResult
-unapplicable = toResult . UnapplicableRule . mapIndex
-
-inform :: Text -> ValidationResult -> ValidationResult
-inform info (ValidationResult v t) = ValidationResult v $ TraceInformation info t
+unapplicable :: CTree ValidatorStage -> Evidenced ValidationTrace
+unapplicable = evidence . UnapplicableRule . mapIndex
 
 --------------------------------------------------------------------------------
 -- Ints and integers
@@ -120,9 +125,10 @@ validateInteger ::
   CTreeRoot ValidatorStage ->
   Integer ->
   CTree ValidatorStage ->
-  ValidationResult
-validateInteger cddl i (resolveIfRef cddl -> rule) =
+  Evidenced ValidationTrace
+validateInteger cddl i rule =
   case rule of
+    CTreeE (VRuleRef n) -> dereferenceAndValidate cddl n $ validateInteger cddl i
     -- echo "C24101" | xxd -r -p - example.cbor
     -- echo "foo = int" > a.cddl
     -- cddl a.cddl validate example.cbor
@@ -156,7 +162,7 @@ validateInteger cddl i (resolveIfRef cddl -> rule) =
     Choice opts -> validateChoice (validateInteger cddl i) opts rule
     -- a = x..y
     Range low high bound ->
-      case (resolveIfRef cddl low, resolveIfRef cddl high) of
+      case (low, high) of
         (Literal (Value (VUInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _))
           | n <= i && range bound i m -> terminal rule
           | otherwise -> unapplicable rule
@@ -179,10 +185,15 @@ validateInteger cddl i (resolveIfRef cddl -> rule) =
         (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VBignum m) _))
           | (-n) <= i && range bound i m -> terminal rule
           | otherwise -> unapplicable rule
+        (CTreeE (VRuleRef n), _) ->
+          dereferenceAndValidate cddl n $ \lo -> validateInteger cddl i (Range lo high bound)
+        (_, CTreeE (VRuleRef n)) ->
+          dereferenceAndValidate cddl n $ \hi -> validateInteger cddl i (Range low hi bound)
         (lo, hi) -> error $ "Unable to validate range: (" <> showSimple lo <> ", " <> showSimple hi <> ")"
     -- a = &(x, y, z)
     Enum g ->
-      case resolveIfRef cddl g of
+      case g of
+        CTreeE (VRuleRef n) -> dereferenceAndValidate cddl n $ validateInteger cddl i
         Group g' -> validateInteger cddl i (Choice (NE.fromList g'))
         _ -> error "Not yet implemented"
     -- a = x: y
@@ -193,7 +204,8 @@ validateInteger cddl i (resolveIfRef cddl -> rule) =
     Tag 3 x -> validateBigInt x
     _ -> unapplicable rule
   where
-    validateBigInt (resolveIfRef cddl -> x) = case x of
+    validateBigInt x = case x of
+      CTreeE (VRuleRef n) -> dereferenceAndValidate cddl n validateBigInt
       Postlude PTBytes -> terminal rule
       Control op tgt@(Postlude PTBytes) ctrl ->
         ctrlDispatch (validateBytes cddl bs) op tgt ctrl (controlBytes cddl bs)
@@ -210,13 +222,15 @@ controlInteger ::
   Integer ->
   CtlOp ->
   CTree ValidatorStage ->
-  ValidationResult
-controlInteger cddl i op@Size (resolveIfRef cddl -> ctrl) =
+  Evidenced ValidationTrace
+controlInteger cddl i op (CTreeE (VRuleRef n)) =
+  dereferenceAndValidate cddl n $ controlInteger cddl i op
+controlInteger _ i op@Size ctrl =
   case ctrl of
     Literal (Value (VUInt sz) _)
       | 0 <= i && i < 256 ^ sz -> terminal ctrl
-    _ -> toResult $ UnsatisfiedControl op
-controlInteger cddl i op@Bits (resolveIfRef cddl -> ctrl) = do
+    _ -> evidence $ UnsatisfiedControl op
+controlInteger cddl i op@Bits ctrl = do
   let
     indices = case ctrl of
       Literal (Value (VUInt i') _) -> [i']
@@ -226,49 +240,49 @@ controlInteger cddl i op@Bits (resolveIfRef cddl -> ctrl) = do
       _ -> error "Not yet implemented"
   if go (IS.fromList (map fromIntegral indices)) i 0
     then terminal ctrl
-    else toResult $ UnsatisfiedControl op
+    else evidence $ UnsatisfiedControl op
   where
     go _ 0 _ = True
     go indices n idx =
       let bitSet = testBit n 0
           allowed = not bitSet || IS.member idx indices
        in allowed && go indices (shiftR n 1) (idx + 1)
-controlInteger cddl i op@Lt (resolveIfRef cddl -> ctrl) =
+controlInteger _ i op@Lt ctrl =
   case ctrl of
     Literal (Value (VUInt i') _) | i < fromIntegral i' -> terminal ctrl
     Literal (Value (VNInt i') _) | i < -fromIntegral i' -> terminal ctrl
     Literal (Value (VBignum i') _) | i < i' -> terminal ctrl
-    _ -> toResult $ UnsatisfiedControl op
-controlInteger cddl i op@Gt (resolveIfRef cddl -> ctrl) =
+    _ -> evidence $ UnsatisfiedControl op
+controlInteger _ i op@Gt ctrl =
   case ctrl of
     Literal (Value (VUInt i') _) | i > fromIntegral i' -> terminal ctrl
     Literal (Value (VNInt i') _) | i > -fromIntegral i' -> terminal ctrl
     Literal (Value (VBignum i') _) | i > i' -> terminal ctrl
-    _ -> toResult $ UnsatisfiedControl op
-controlInteger cddl i op@Le (resolveIfRef cddl -> ctrl) =
+    _ -> evidence $ UnsatisfiedControl op
+controlInteger _ i op@Le ctrl =
   case ctrl of
     Literal (Value (VUInt i') _) | i <= fromIntegral i' -> terminal ctrl
     Literal (Value (VNInt i') _) | i <= -fromIntegral i' -> terminal ctrl
     Literal (Value (VBignum i') _) | i <= i' -> terminal ctrl
-    _ -> toResult $ UnsatisfiedControl op
-controlInteger cddl i op@Ge (resolveIfRef cddl -> ctrl) =
+    _ -> evidence $ UnsatisfiedControl op
+controlInteger _ i op@Ge ctrl =
   case ctrl of
     Literal (Value (VUInt i') _) | i >= fromIntegral i' -> terminal ctrl
     Literal (Value (VNInt i') _) | i >= -fromIntegral i' -> terminal ctrl
     Literal (Value (VBignum i') _) | i >= i' -> terminal ctrl
-    _ -> toResult $ UnsatisfiedControl op
-controlInteger cddl i op@Eq (resolveIfRef cddl -> ctrl) =
+    _ -> evidence $ UnsatisfiedControl op
+controlInteger _ i op@Eq ctrl =
   case ctrl of
     Literal (Value (VUInt i') _) | i == fromIntegral i' -> terminal ctrl
     Literal (Value (VNInt i') _) | i == -fromIntegral i' -> terminal ctrl
     Literal (Value (VBignum i') _) | i == i' -> terminal ctrl
-    _ -> toResult $ UnsatisfiedControl op
-controlInteger cddl i op@Ne (resolveIfRef cddl -> ctrl) =
+    _ -> evidence $ UnsatisfiedControl op
+controlInteger _ i op@Ne ctrl =
   case ctrl of
     Literal (Value (VUInt i') _) | i /= fromIntegral i' -> terminal ctrl
     Literal (Value (VNInt i') _) | i /= -fromIntegral i' -> terminal ctrl
     Literal (Value (VBignum i') _) | i /= i' -> terminal ctrl
-    _ -> toResult $ UnsatisfiedControl op
+    _ -> evidence $ UnsatisfiedControl op
 controlInteger _ _ _ ctrl = error $ "unexpected control: " <> showSimple ctrl
 
 --------------------------------------------------------------------------------
@@ -283,8 +297,9 @@ validateHalf ::
   CTreeRoot ValidatorStage ->
   Float ->
   CTree ValidatorStage ->
-  ValidationResult
-validateHalf cddl f (resolveIfRef cddl -> rule) =
+  Evidenced ValidationTrace
+validateHalf cddl f (CTreeE (VRuleRef n)) = dereferenceAndValidate cddl n $ validateHalf cddl f
+validateHalf cddl f rule =
   case rule of
     -- a = any
     Postlude PTAny -> terminal rule
@@ -297,10 +312,12 @@ validateHalf cddl f (resolveIfRef cddl -> rule) =
     -- a = foo .ctrl bar
     Control op tgt ctrl -> ctrlDispatch (validateHalf cddl f) op tgt ctrl (controlHalf cddl f)
     -- a = x..y
-    Range
-      (resolveIfRef cddl -> Literal (Value (VFloat16 n) _))
-      (resolveIfRef cddl -> Literal (Value (VFloat16 m) _))
-      bound | n <= f && range bound f m -> terminal rule
+    Range (CTreeE (VRuleRef n)) high bound ->
+      dereferenceAndValidate cddl n $ \lo -> validateHalf cddl f $ Range lo high bound
+    Range low (CTreeE (VRuleRef n)) bound ->
+      dereferenceAndValidate cddl n $ \hi -> validateHalf cddl f $ Range low hi bound
+    Range (Literal (Value (VFloat16 n) _)) (Literal (Value (VFloat16 m) _)) bound
+      | n <= f && range bound f m -> terminal rule
     _ -> unapplicable rule
 
 -- | Controls for `Float16`
@@ -310,15 +327,17 @@ controlHalf ::
   Float ->
   CtlOp ->
   CTree ValidatorStage ->
-  ValidationResult
-controlHalf cddl f op@Eq (resolveIfRef cddl -> ctrl) =
+  Evidenced ValidationTrace
+controlHalf cddl f op (CTreeE (VRuleRef n)) =
+  dereferenceAndValidate cddl n $ controlHalf cddl f op
+controlHalf _ f op@Eq ctrl =
   case ctrl of
     Literal (Value (VFloat16 f') _) | f == f' -> terminal ctrl
-    _ -> toResult $ UnsatisfiedControl op
-controlHalf cddl f op@Ne (resolveIfRef cddl -> ctrl) =
+    _ -> evidence $ UnsatisfiedControl op
+controlHalf _ f op@Ne ctrl =
   case ctrl of
     Literal (Value (VFloat16 f') _) | f /= f' -> terminal ctrl
-    _ -> toResult $ UnsatisfiedControl op
+    _ -> evidence $ UnsatisfiedControl op
 controlHalf _ _ op _ = error $ "Not yet implemented for half: " <> show op
 
 -- | Validating a `Float32`
@@ -327,8 +346,10 @@ validateFloat ::
   CTreeRoot ValidatorStage ->
   Float ->
   CTree ValidatorStage ->
-  ValidationResult
-validateFloat cddl f (resolveIfRef cddl -> rule) =
+  Evidenced ValidationTrace
+validateFloat cddl f (CTreeE (VRuleRef n)) =
+  dereferenceAndValidate cddl n $ validateFloat cddl f
+validateFloat cddl f rule =
   case rule of
     -- a = any
     Postlude PTAny -> terminal rule
@@ -343,18 +364,19 @@ validateFloat cddl f (resolveIfRef cddl -> rule) =
     Control op tgt ctrl -> ctrlDispatch (validateFloat cddl f) op tgt ctrl (controlFloat cddl f)
     -- a = x..y
     -- TODO it is unclear if this should mix floating point types too
-    Range
-      (resolveIfRef cddl -> Literal (Value nv _))
-      (resolveIfRef cddl -> Literal (Value mv _))
-      bound
-        | VFloat16 n <- nv
-        , VFloat16 m <- mv
-        , n <= f && range bound f m ->
-            terminal rule
-        | VFloat32 n <- nv
-        , VFloat32 m <- mv
-        , n <= f && range bound f m ->
-            terminal rule
+    Range (CTreeE (VRuleRef n)) high bound ->
+      dereferenceAndValidate cddl n $ \lo -> validateFloat cddl f $ Range lo high bound
+    Range low (CTreeE (VRuleRef n)) bound ->
+      dereferenceAndValidate cddl n $ \hi -> validateFloat cddl f $ Range low hi bound
+    Range (Literal (Value nv _)) (Literal (Value mv _)) bound
+      | VFloat16 n <- nv
+      , VFloat16 m <- mv
+      , n <= f && range bound f m ->
+          terminal rule
+      | VFloat32 n <- nv
+      , VFloat32 m <- mv
+      , n <= f && range bound f m ->
+          terminal rule
     _ -> unapplicable rule
 
 -- | Controls for `Float32`
@@ -364,13 +386,15 @@ controlFloat ::
   Float ->
   CtlOp ->
   CTree ValidatorStage ->
-  ValidationResult
-controlFloat cddl f Eq (resolveIfRef cddl -> ctrl) =
+  Evidenced ValidationTrace
+controlFloat cddl f op (CTreeE (VRuleRef n)) =
+  dereferenceAndValidate cddl n $ controlFloat cddl f op
+controlFloat _ f Eq ctrl =
   case ctrl of
     Literal (Value (VFloat16 f') _) | f == f' -> terminal ctrl
     Literal (Value (VFloat32 f') _) | f == f' -> terminal ctrl
     _ -> unapplicable ctrl
-controlFloat cddl f Ne (resolveIfRef cddl -> ctrl) =
+controlFloat _ f Ne ctrl =
   case ctrl of
     Literal (Value (VFloat16 f') _) | f /= f' -> terminal ctrl
     Literal (Value (VFloat32 f') _) | f /= f' -> terminal ctrl
@@ -383,8 +407,10 @@ validateDouble ::
   CTreeRoot ValidatorStage ->
   Double ->
   CTree ValidatorStage ->
-  ValidationResult
-validateDouble cddl f (resolveIfRef cddl -> rule) =
+  Evidenced ValidationTrace
+validateDouble cddl f (CTreeE (VRuleRef n)) =
+  dereferenceAndValidate cddl n $ validateDouble cddl f
+validateDouble cddl f rule =
   case rule of
     -- a = any
     Postlude PTAny -> terminal rule
@@ -399,22 +425,23 @@ validateDouble cddl f (resolveIfRef cddl -> rule) =
     Control op tgt ctrl -> ctrlDispatch (validateDouble cddl f) op tgt ctrl (controlDouble cddl f)
     -- a = x..y
     -- TODO it is unclear if this should mix floating point types too
-    Range
-      (resolveIfRef cddl -> Literal (Value nv _))
-      (resolveIfRef cddl -> Literal (Value mv _))
-      bound
-        | VFloat16 n <- nv
-        , VFloat16 m <- mv
-        , float2Double n <= f && range bound f (float2Double m) ->
-            terminal rule
-        | VFloat32 n <- nv
-        , VFloat32 m <- mv
-        , float2Double n <= f && range bound f (float2Double m) ->
-            terminal rule
-        | VFloat64 n <- nv
-        , VFloat64 m <- mv
-        , n <= f && range bound f m ->
-            terminal rule
+    Range (CTreeE (VRuleRef n)) high bound ->
+      dereferenceAndValidate cddl n $ \lo -> validateDouble cddl f $ Range lo high bound
+    Range low (CTreeE (VRuleRef n)) bound ->
+      dereferenceAndValidate cddl n $ \hi -> validateDouble cddl f $ Range low hi bound
+    Range (Literal (Value nv _)) (Literal (Value mv _)) bound
+      | VFloat16 n <- nv
+      , VFloat16 m <- mv
+      , float2Double n <= f && range bound f (float2Double m) ->
+          terminal rule
+      | VFloat32 n <- nv
+      , VFloat32 m <- mv
+      , float2Double n <= f && range bound f (float2Double m) ->
+          terminal rule
+      | VFloat64 n <- nv
+      , VFloat64 m <- mv
+      , n <= f && range bound f m ->
+          terminal rule
     _ -> unapplicable rule
 
 -- | Controls for `Float64`
@@ -424,19 +451,21 @@ controlDouble ::
   Double ->
   CtlOp ->
   CTree ValidatorStage ->
-  ValidationResult
-controlDouble cddl f op@Eq (resolveIfRef cddl -> ctrl) =
+  Evidenced ValidationTrace
+controlDouble cddl f op (CTreeE (VRuleRef n)) =
+  dereferenceAndValidate cddl n $ controlDouble cddl f op
+controlDouble _ f op@Eq ctrl =
   case ctrl of
     Literal (Value (VFloat16 f') _) | f == float2Double f' -> terminal ctrl
     Literal (Value (VFloat32 f') _) | f == float2Double f' -> terminal ctrl
     Literal (Value (VFloat64 f') _) | f == f' -> terminal ctrl
-    _ -> toResult $ UnsatisfiedControl op
-controlDouble cddl f op@Ne (resolveIfRef cddl -> ctrl) =
+    _ -> evidence $ UnsatisfiedControl op
+controlDouble _ f op@Ne ctrl =
   case ctrl of
     Literal (Value (VFloat16 f') _) | f /= float2Double f' -> terminal ctrl
     Literal (Value (VFloat32 f') _) | f /= float2Double f' -> terminal ctrl
     Literal (Value (VFloat64 f') _) | f /= f' -> terminal ctrl
-    _ -> toResult $ UnsatisfiedControl op
+    _ -> evidence $ UnsatisfiedControl op
 controlDouble _ _ op _ = error $ "Not yet implmented for double: " <> show op
 
 --------------------------------------------------------------------------------
@@ -447,8 +476,10 @@ validateBool ::
   CTreeRoot ValidatorStage ->
   Bool ->
   CTree ValidatorStage ->
-  ValidationResult
-validateBool cddl b (resolveIfRef cddl -> rule) =
+  Evidenced ValidationTrace
+validateBool cddl b (CTreeE (VRuleRef n)) =
+  dereferenceAndValidate cddl n $ validateBool cddl b
+validateBool cddl b rule =
   case rule of
     -- a = any
     Postlude PTAny -> terminal rule
@@ -469,15 +500,17 @@ controlBool ::
   Bool ->
   CtlOp ->
   CTree ValidatorStage ->
-  ValidationResult
-controlBool cddl b op@Eq (resolveIfRef cddl -> ctrl) =
+  Evidenced ValidationTrace
+controlBool cddl b op (CTreeE (VRuleRef n)) =
+  dereferenceAndValidate cddl n $ controlBool cddl b op
+controlBool _ b op@Eq ctrl =
   case ctrl of
     Literal (Value (VBool b') _) | b == b' -> terminal ctrl
-    _ -> toResult $ UnsatisfiedControl op
-controlBool cddl b op@Ne (resolveIfRef cddl -> ctrl) =
+    _ -> evidence $ UnsatisfiedControl op
+controlBool _ b op@Ne ctrl =
   case ctrl of
     Literal (Value (VBool b') _) | b /= b' -> terminal ctrl
-    _ -> toResult $ UnsatisfiedControl op
+    _ -> evidence $ UnsatisfiedControl op
 controlBool _ _ op _ = error $ "Not yet implemented for bool: " <> show op
 
 --------------------------------------------------------------------------------
@@ -488,8 +521,10 @@ validateSimple ::
   CTreeRoot ValidatorStage ->
   Word8 ->
   CTree ValidatorStage ->
-  ValidationResult
-validateSimple cddl 23 (resolveIfRef cddl -> rule) =
+  Evidenced ValidationTrace
+validateSimple cddl i (CTreeE (VRuleRef n)) =
+  dereferenceAndValidate cddl n $ validateSimple cddl i
+validateSimple cddl 23 rule =
   case rule of
     -- a = any
     Postlude PTAny -> terminal rule
@@ -504,8 +539,10 @@ validateSimple _ n _ = error $ "Found simple different to 23! please report this
 -- Null/nil
 
 -- | Validating nil
-validateNull :: CTreeRoot ValidatorStage -> CTree ValidatorStage -> ValidationResult
-validateNull cddl (resolveIfRef cddl -> rule) =
+validateNull :: CTreeRoot ValidatorStage -> CTree ValidatorStage -> Evidenced ValidationTrace
+validateNull cddl (CTreeE (VRuleRef n)) =
+  dereferenceAndValidate cddl n $ validateNull cddl
+validateNull cddl rule =
   case rule of
     -- a = any
     Postlude PTAny -> terminal rule
@@ -519,8 +556,10 @@ validateNull cddl (resolveIfRef cddl -> rule) =
 
 -- | Validating a byte sequence
 validateBytes ::
-  CTreeRoot ValidatorStage -> BS.ByteString -> CTree ValidatorStage -> ValidationResult
-validateBytes cddl bs (resolveIfRef cddl -> rule) =
+  CTreeRoot ValidatorStage -> BS.ByteString -> CTree ValidatorStage -> Evidenced ValidationTrace
+validateBytes cddl bs (CTreeE (VRuleRef n)) =
+  dereferenceAndValidate cddl n $ validateBytes cddl bs
+validateBytes cddl bs rule =
   case rule of
     -- a = any
     Postlude PTAny -> terminal rule
@@ -541,22 +580,28 @@ controlBytes ::
   BS.ByteString ->
   CtlOp ->
   CTree ValidatorStage ->
-  ValidationResult
-controlBytes cddl bs op@Size (resolveIfRef cddl -> ctrl) =
+  Evidenced ValidationTrace
+controlBytes cddl bs op (CTreeE (VRuleRef n)) =
+  dereferenceAndValidate cddl n $ controlBytes cddl bs op
+controlBytes cddl bs op@Size ctrl =
   case ctrl of
     Literal (Value (VUInt (fromIntegral -> sz)) _) | BS.length bs == sz -> terminal ctrl
+    Range (CTreeE (VRuleRef n)) high bound ->
+      dereferenceAndValidate cddl n $ \lo -> controlBytes cddl bs op $ Range lo high bound
+    Range low (CTreeE (VRuleRef n)) bound ->
+      dereferenceAndValidate cddl n $ \hi -> controlBytes cddl bs op $ Range low hi bound
     Range low high bound ->
       let i = BS.length bs
-       in case (resolveIfRef cddl low, resolveIfRef cddl high) of
+       in case (low, high) of
             (Literal (Value (VUInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _))
               | n <= i && range bound i m -> terminal ctrl
             (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _))
               | -n <= i && range bound i m -> terminal ctrl
             (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VNInt (fromIntegral -> m)) _))
               | -n <= i && range bound i (-m) -> terminal ctrl
-            _ -> toResult $ UnsatisfiedControl op
-    _ -> toResult $ UnsatisfiedControl op
-controlBytes cddl bs op@Bits (resolveIfRef cddl -> ctrl) = do
+            _ -> evidence $ UnsatisfiedControl op
+    _ -> evidence $ UnsatisfiedControl op
+controlBytes cddl bs op@Bits ctrl = do
   let
     indices =
       case ctrl of
@@ -567,7 +612,7 @@ controlBytes cddl bs op@Bits (resolveIfRef cddl -> ctrl) = do
         _ -> error "Not yet implemented"
   if bitsControlCheck (map fromIntegral indices)
     then terminal ctrl
-    else toResult $ UnsatisfiedControl op
+    else evidence $ UnsatisfiedControl op
   where
     bitsControlCheck :: [Int] -> Bool
     bitsControlCheck allowedBits =
@@ -587,7 +632,7 @@ controlBytes cddl bs Cbor ctrl =
 controlBytes cddl bs op@Cborseq ctrl =
   case deserialiseFromBytes decodeTerm (BSL.fromStrict (BS.snoc (BS.cons 0x9f bs) 0xff)) of
     Right (BSL.null -> True, TListI terms) -> validateTerm cddl (TList terms) (Array [Occur ctrl OIZeroOrMore])
-    _ -> toResult $ UnsatisfiedControl op
+    _ -> evidence $ UnsatisfiedControl op
 controlBytes _ _ op _ = error $ "Not yet implmented for bytes: " <> show op
 
 --------------------------------------------------------------------------------
@@ -598,8 +643,10 @@ validateText ::
   CTreeRoot ValidatorStage ->
   T.Text ->
   CTree ValidatorStage ->
-  ValidationResult
-validateText cddl txt (resolveIfRef cddl -> rule) =
+  Evidenced ValidationTrace
+validateText cddl txt (CTreeE (VRuleRef n)) =
+  dereferenceAndValidate cddl n $ validateText cddl txt
+validateText cddl txt rule =
   case rule of
     -- a = any
     Postlude PTAny -> terminal rule
@@ -620,26 +667,32 @@ controlText ::
   T.Text ->
   CtlOp ->
   CTree ValidatorStage ->
-  ValidationResult
-controlText cddl bs op@Size (resolveIfRef cddl -> ctrl) =
+  Evidenced ValidationTrace
+controlText cddl bs op (CTreeE (VRuleRef n)) =
+  dereferenceAndValidate cddl n $ controlText cddl bs op
+controlText cddl bs op@Size ctrl =
   let bsSize = BS.length $ encodeUtf8 bs
    in case ctrl of
         Literal (Value (VUInt (fromIntegral -> sz)) _) | bsSize == sz -> terminal ctrl
+        Range (CTreeE (VRuleRef n)) high bound ->
+          dereferenceAndValidate cddl n $ \lo -> controlText cddl bs op $ Range lo high bound
+        Range low (CTreeE (VRuleRef n)) bound ->
+          dereferenceAndValidate cddl n $ \hi -> controlText cddl bs op $ Range low hi bound
         Range ff tt bound ->
-          case (resolveIfRef cddl ff, resolveIfRef cddl tt) of
+          case (ff, tt) of
             (Literal (Value (VUInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _))
               | n <= T.length bs && range bound bsSize m -> terminal ctrl
             (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _))
               | -n <= T.length bs && range bound bsSize m -> terminal ctrl
             (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VNInt (fromIntegral -> m)) _))
               | -n <= T.length bs && range bound bsSize (-m) -> terminal ctrl
-            _ -> toResult $ UnsatisfiedControl op
+            _ -> evidence $ UnsatisfiedControl op
         _ -> error "Invalid control value in .size"
-controlText cddl s op@Regexp ctrl =
-  case resolveIfRef cddl ctrl of
+controlText _ s op@Regexp ctrl =
+  case ctrl of
     Literal (Value (VText rxp) _) -> case s =~ rxp :: (T.Text, T.Text, T.Text) of
       ("", s', "") | s == s' -> terminal ctrl
-      _ -> toResult $ UnsatisfiedControl op
+      _ -> evidence $ UnsatisfiedControl op
     _ -> error "Invalid control value in .regexp"
 controlText _ _ op _ = error $ "Not yet implemented for text: " <> show op
 
@@ -648,17 +701,17 @@ controlText _ _ op _ = error $ "Not yet implemented for text: " <> show op
 
 -- | Validating a `TTagged`
 validateTagged ::
-  CTreeRoot ValidatorStage -> Word64 -> Term -> CTree ValidatorStage -> ValidationResult
-validateTagged cddl tag term (resolveIfRef cddl -> rule) =
+  CTreeRoot ValidatorStage -> Word64 -> Term -> CTree ValidatorStage -> Evidenced ValidationTrace
+validateTagged cddl tag term (CTreeE (VRuleRef n)) =
+  dereferenceAndValidate cddl n $ validateTagged cddl tag term
+validateTagged cddl tag term rule =
   case rule of
     Postlude PTAny -> terminal rule
     Tag tag' rule' ->
       -- If the tag does not match, this is a direct fail
       if tag == tag'
         then validateTerm cddl term rule'
-        else
-          let msg = T.pack $ "invalid tag: " <> show tag <> "\nexpected: " <> show tag'
-           in toResult . TraceInformation msg . UnapplicableRule $ mapIndex rule
+        else evidence . UnapplicableRule $ mapIndex rule
     Choice opts -> validateChoice (validateTagged cddl tag term) opts rule
     _ -> unapplicable rule
 
@@ -701,65 +754,68 @@ validateList ::
   CTreeRoot ValidatorStage ->
   [Term] ->
   CTree ValidatorStage ->
-  ValidationResult
-validateList cddl terms (resolveIfRef cddl -> rule) =
+  Evidenced ValidationTrace
+validateList cddl terms (CTreeE (VRuleRef n)) =
+  dereferenceAndValidate cddl n $ validateList cddl terms
+validateList cddl terms rule =
   case rule of
     Postlude PTAny -> terminal rule
-    Array rules -> validate terms rules
+    Array rules -> mapTrace ListTrace . fst $ validate finalize terms rules
+      where
+        finalize [] = evidence ListValidationDone
+        finalize (x : xs) = evidence . ListValidationLeftoverTerms $ x :| xs
     Choice opts -> validateChoice (validateList cddl terms) opts rule
     _ -> unapplicable rule
   where
-    validate :: [Term] -> [CTree ValidatorStage] -> ValidationResult
-    validate [] [] = terminal rule
-    validate _ [] =
-      inform "leftover terms after all rules have been applied" $ unapplicable rule
-    validate [] (r : rs)
-      | isOptional r = validate [] rs
-      | otherwise =
-          inform "leftover mandatory rules after all terms have been consumed" $
-            unapplicable rule
-    validate (t : ts) (r : rs) = case r of
-      Occur ct oi -> case oi of
-        OIOptional
-          | (isValid -> True, leftover) <- validateTermInList (t : ts) ct
-          , res <- validate leftover rs
-          , isValid res ->
-              res
-          | otherwise -> validate (t : ts) rs
-        OIZeroOrMore
-          | (isValid -> True, leftover) <- validateTermInList (t : ts) ct
-          , res <- validate leftover (r : rs)
-          , isValid res ->
-              res
-          | otherwise -> validate (t : ts) rs
-        OIOneOrMore -> case validateTermInList (t : ts) ct of
-          (isValid -> True, leftover) -> validate leftover (Occur ct OIZeroOrMore : rs)
-          (err, _) -> err
-        OIBounded lb ub -> case boundPlacement 1 (lb, ub) Closed of
-          BelowBounds -> validate (t : ts) (ct : Occur ct (decrementBounds (lb, ub)) : rs)
-          WithinBounds
-            | (isValid -> True, leftover) <- validateTermInList (t : ts) ct
-            , res <- validate leftover (Occur ct (decrementBounds (lb, ub)) : rs)
-            , isValid res ->
-                res
-            | otherwise -> validate (t : ts) rs
-          AboveBounds
-            | boundPlacement 0 (lb, ub) Closed == WithinBounds -> validate (t : ts) rs
-            | otherwise -> error "Negative upper bound"
-      _ -> case validateTermInList (t : ts) (resolveIfRef cddl r) of
-        (isValid -> True, leftover) -> validate leftover rs
-        (err, _) -> err
+    validate ::
+      ([Term] -> Evidenced ListValidationTrace) ->
+      [Term] ->
+      [CTree ValidatorStage] ->
+      (Evidenced ListValidationTrace, [Term])
+    validate f tss [] = (f tss, tss)
+    validate f [] (r : rs)
+      | isOptional r = validate f [] rs
+      | otherwise = (evidence $ ListValidationUnappliedRules (mapIndex <$> r :| rs), [])
+    validate f tss@(t : ts) (r : rs) =
+      let
+        consumeTerm ct g = case validateTerm cddl t ct of
+          Evidenced SValid trc -> first (mapTrace $ ListValidationConsume (mapIndex r) trc) $ g ts
+          Evidenced SInvalid trc -> (evidence $ ListValidationMissingRequired (mapIndex ct) trc, tss)
 
-    validateTermInList ts (KV _ v _) = validateTermInList ts v
-    validateTermInList ts (Group grp) = case grp of
-      (resolveIfRef cddl -> g) : gs
-        | (res, leftover) <- validateTermInList ts g ->
-            case res of
-              (isValid -> True) -> validateTermInList leftover (Group gs)
-              err -> (err, ts)
-      [] -> (terminal rule, ts)
-    validateTermInList (t : ts) r = (validateTerm cddl t r, ts)
-    validateTermInList [] g = (validate [] [g], [])
+        consumeGroup ns gp g = case validate (const $ evidence ListValidationDone) tss gp of
+          (Evidenced SValid trc, leftover) -> first (mapTrace $ ListValidationConsumeGroup (reverse ns) trc) $ g leftover
+          (Evidenced SInvalid trc, leftover) -> (evidence $ ListValidationBadGroup (reverse ns) trc, leftover)
+
+        consume ct@(CTreeE (VRuleRef n)) g = go n []
+          where
+            go name ns =
+              case dereference cddl name of
+                Group gp -> consumeGroup (name : ns) gp g
+                CTreeE (VRuleRef newName) -> go newName (name : ns)
+                _ -> consumeTerm ct g
+        consume (Group gp) g = consumeGroup [] gp g
+        consume (KV _ v _) g = consume v g
+        consume ct g = consumeTerm ct g
+        continue l = validate f l rs
+        skipRule = validate f tss rs
+        rewriteRule newRule l = validate f l (newRule : rs)
+        validateRule =
+          \case
+            Occur ct oi -> case oi of
+              OIOptional -> consume ct continue <> skipRule
+              OIZeroOrMore -> consume ct (rewriteRule r) <> skipRule
+              OIOneOrMore -> consume ct (rewriteRule (Occur ct OIZeroOrMore))
+              OIBounded lb ub ->
+                let bounds = (lb, ub)
+                 in case boundPlacement 1 bounds Closed of
+                      BelowBounds -> consume ct (rewriteRule (Occur ct $ decrementBounds bounds))
+                      WithinBounds -> consume ct (rewriteRule (Occur ct $ decrementBounds bounds)) <> skipRule
+                      AboveBounds
+                        | boundPlacement 0 (lb, ub) Closed == WithinBounds -> skipRule
+                        | otherwise -> error "Negative upper bound"
+            _ -> consume r continue
+       in
+        validateRule r
 
 --------------------------------------------------------------------------------
 -- Maps
@@ -769,77 +825,71 @@ validateMap ::
   CTreeRoot ValidatorStage ->
   [(Term, Term)] ->
   CTree ValidatorStage ->
-  ValidationResult
-validateMap cddl terms (resolveIfRef cddl -> rule) =
+  Evidenced ValidationTrace
+validateMap cddl terms (CTreeE (VRuleRef n)) =
+  dereferenceAndValidate cddl n $ validateMap cddl terms
+validateMap cddl terms rule =
   case rule of
     Postlude PTAny -> terminal rule
-    Map rules -> validate [] terms rules
+    Map rules -> mapTrace MapTrace $ validate [] terms rules
     Choice opts -> validateChoice (validateMap cddl terms) opts rule
     _ -> unapplicable rule
   where
     validate ::
-      [CTree ValidatorStage] -> [(Term, Term)] -> [CTree ValidatorStage] -> ValidationResult
-    validate [] [] [] = terminal rule
-    validate _ _ [] = unapplicable rule
-    validate [] [] (r : rs)
-      | isOptional r = validate [] [] rs
-      | otherwise = unapplicable rule
-    validate exhausted kvs (r : rs) = case r of
-      Occur ct oi -> case oi of
-        OIOptional
-          | (isValid -> True, leftover) <- validateKVInMap kvs ct
-          , res <- validate [] leftover (exhausted <> rs)
-          , isValid res ->
-              res
-          | otherwise -> validate (r : exhausted) kvs rs
-        OIZeroOrMore
-          | (isValid -> True, leftover) <- validateKVInMap kvs ct
-          , res <- validate [] leftover (r : exhausted <> rs)
-          , isValid res ->
-              res
-          | otherwise -> validate (r : exhausted) kvs rs
-        OIOneOrMore
-          | (isValid -> True, leftover) <- validateKVInMap kvs ct
-          , res <- validate [] leftover (Occur ct OIZeroOrMore : exhausted <> rs)
-          , isValid res ->
-              res
-          | otherwise -> validate (r : exhausted) kvs rs
-        OIBounded mlb mub
-          | Just lb <- mlb, Just ub <- mub, lb > ub -> error "Unsatisfiable range encountered"
-          | otherwise -> case compare 0 <$> mub of
-              Just EQ -> validate exhausted kvs rs
-              Just GT -> error "Unsatisfiable range encountered"
-              _
-                | (isValid -> True, leftover) <- validateKVInMap kvs ct
-                , res <-
-                    validate
-                      []
-                      leftover
-                      (Occur ct (decrementBounds (mlb, mub)) : exhausted <> rs)
-                , isValid res ->
-                    res
-                | otherwise -> validate (r : exhausted) kvs rs
-      _ -> case validateKVInMap kvs r of
-        (isValid -> True, leftover) -> validate [] leftover (exhausted <> rs)
-        _ -> validate (r : exhausted) kvs rs
-
-    validateKVInMap ((tk, tv) : ts) (KV k v _) = case (validateTerm cddl tk k, validateTerm cddl tv v) of
-      (isValid -> True, res) -> (res, ts)
-      (err, _) -> (err, ts)
-    validateKVInMap [] _ = error "No remaining KV pairs"
-    validateKVInMap _ x = error $ "Unexpected value in map: " <> showSimple x
+      [CTree ValidatorStage] -> [(Term, Term)] -> [CTree ValidatorStage] -> Evidenced MapValidationTrace
+    validate [] [] [] = evidence MapValidationDone
+    validate _ kvs [] = evidence $ MapValidationLeftoverKVs kvs
+    validate [] [] rs =
+      case NE.nonEmpty $ filter (not . isOptional) rs of
+        Nothing -> evidence MapValidationDone
+        Just requiredRules -> evidence $ MapValidationUnappliedRules (mapIndex <$> requiredRules)
+    validate exhausted kvs (r : rs) =
+      let
+        consume (KV k v _) f = case kvs of
+          ((tk, tv) : leftover) ->
+            case validateTerm cddl tk k of
+              Evidenced SValid kTrc ->
+                case validateTerm cddl tv v of
+                  Evidenced SValid vTrc -> mapTrace (MapValidationConsume (mapIndex r) kTrc vTrc) $ f leftover
+                  Evidenced SInvalid vTrc -> evidence $ MapValidationInvalidValue (mapIndex r) kTrc vTrc
+              Evidenced SInvalid _ -> evidence $ MapValidationUnappliedRules (NE.singleton $ mapIndex r)
+          [] -> error "No remaining KV pairs"
+        consume x _ = error $ "Unexpected value in map: " <> showSimple x
+        postponeRule l = validate (r : exhausted) l rs
+        dropRule l = validate exhausted l rs
+        resetDropRule l = validate [] l (exhausted <> rs)
+        rewriteRule newRule l = validate [] l (newRule : exhausted <> rs)
+       in
+        case r of
+          Occur ct oi ->
+            case oi of
+              OIOptional ->
+                consume ct resetDropRule <> postponeRule kvs
+              OIZeroOrMore ->
+                consume ct (rewriteRule r) <> postponeRule kvs
+              OIOneOrMore ->
+                consume ct (rewriteRule (Occur ct OIZeroOrMore)) <> postponeRule kvs
+              OIBounded mlb mub
+                | Just lb <- mlb, Just ub <- mub, lb > ub -> error "Unsatisfiable range encountered"
+                | otherwise -> case compare 0 <$> mub of
+                    Just EQ -> dropRule kvs
+                    Just GT -> error "Unsatisfiable range encountered"
+                    _ ->
+                      consume ct (rewriteRule (Occur ct $ decrementBounds (mlb, mub)))
+                        <> postponeRule kvs
+          _ -> consume r resetDropRule <> postponeRule kvs
 
 --------------------------------------------------------------------------------
 -- Choices
 
 validateChoice ::
-  (CTree ValidatorStage -> ValidationResult) ->
+  (CTree ValidatorStage -> Evidenced ValidationTrace) ->
   NE.NonEmpty (CTree ValidatorStage) ->
   CTree ValidatorStage ->
-  ValidationResult
+  Evidenced ValidationTrace
 validateChoice v rules = go rules
   where
-    go :: NE.NonEmpty (CTree ValidatorStage) -> CTree ValidatorStage -> ValidationResult
+    go :: NE.NonEmpty (CTree ValidatorStage) -> CTree ValidatorStage -> Evidenced ValidationTrace
     go (choice NE.:| xs) rule = do
       case v choice of
         (isValid -> True) -> terminal rule
@@ -852,10 +902,10 @@ validateChoice v rules = go rules
 
 -- | Validate both rules
 ctrlAnd ::
-  (CTree ValidatorStage -> ValidationResult) ->
+  (CTree ValidatorStage -> Evidenced ValidationTrace) ->
   CTree ValidatorStage ->
   CTree ValidatorStage ->
-  ValidationResult
+  Evidenced ValidationTrace
 ctrlAnd v tgt ctrl =
   case v tgt of
     (isValid -> True) -> v ctrl
@@ -863,12 +913,12 @@ ctrlAnd v tgt ctrl =
 
 -- | Dispatch to the appropriate control
 ctrlDispatch ::
-  (CTree ValidatorStage -> ValidationResult) ->
+  (CTree ValidatorStage -> Evidenced ValidationTrace) ->
   CtlOp ->
   CTree ValidatorStage ->
   CTree ValidatorStage ->
-  (CtlOp -> CTree ValidatorStage -> ValidationResult) ->
-  ValidationResult
+  (CtlOp -> CTree ValidatorStage -> Evidenced ValidationTrace) ->
+  Evidenced ValidationTrace
 ctrlDispatch v And tgt ctrl _ = ctrlAnd v tgt ctrl
 ctrlDispatch v Within tgt ctrl _ = ctrlAnd v tgt ctrl
 ctrlDispatch v op tgt ctrl vctrl =
@@ -880,26 +930,32 @@ ctrlDispatch v op tgt ctrl vctrl =
 -- Bits control
 
 getIndicesOfChoice :: CTreeRoot ValidatorStage -> NE.NonEmpty (CTree ValidatorStage) -> [Word64]
-getIndicesOfChoice cddl =
-  concatMap $ \case
-    Literal (Value (VUInt v) _) -> [fromIntegral v]
-    KV _ v _ ->
-      case resolveIfRef cddl v of
-        Literal (Value (VUInt v') _) -> [fromIntegral v']
-        somethingElse ->
-          error $
-            "Malformed value in KV in choice in .bits: "
-              <> showSimple somethingElse
-    Range ff tt incl -> getIndicesOfRange cddl ff tt incl
-    Enum g -> getIndicesOfEnum cddl g
-    somethingElse ->
-      error $
-        "Malformed alternative in choice in .bits: "
-          <> showSimple somethingElse
+getIndicesOfChoice cddl = concatMap go
+  where
+    go = \case
+      Literal (Value (VUInt v) _) -> [fromIntegral v]
+      KV _ v _ ->
+        case v of
+          CTreeE (VRuleRef n) -> go $ dereference cddl n
+          Literal (Value (VUInt v') _) -> [fromIntegral v']
+          somethingElse ->
+            error $
+              "Malformed value in KV in choice in .bits: "
+                <> showSimple somethingElse
+      Range ff tt incl -> getIndicesOfRange cddl ff tt incl
+      Enum g -> getIndicesOfEnum cddl g
+      somethingElse ->
+        error $
+          "Malformed alternative in choice in .bits: "
+            <> showSimple somethingElse
 
 getIndicesOfRange ::
   CTreeRoot ValidatorStage -> CTree ValidatorStage -> CTree ValidatorStage -> RangeBound -> [Word64]
-getIndicesOfRange cddl (resolveIfRef cddl -> ff) (resolveIfRef cddl -> tt) incl =
+getIndicesOfRange cddl (CTreeE (VRuleRef n)) tt incl =
+  dereference cddl n & \ff -> getIndicesOfRange cddl ff tt incl
+getIndicesOfRange cddl ff (CTreeE (VRuleRef n)) incl =
+  dereference cddl n & \tt -> getIndicesOfRange cddl ff tt incl
+getIndicesOfRange _ ff tt incl =
   case (ff, tt) of
     (Literal (Value (VUInt ff') _), Literal (Value (VUInt tt') _)) ->
       case incl of
@@ -910,20 +966,28 @@ getIndicesOfRange cddl (resolveIfRef cddl -> ff) (resolveIfRef cddl -> tt) incl 
     (lo, hi) -> error $ "Malformed range in .bits: (" <> showSimple lo <> ", " <> showSimple hi <> ")"
 
 getIndicesOfEnum :: CTreeRoot ValidatorStage -> CTree ValidatorStage -> [Word64]
-getIndicesOfEnum cddl (resolveIfRef cddl -> g) =
+getIndicesOfEnum cddl (CTreeE (VRuleRef n)) = getIndicesOfEnum cddl $ dereference cddl n
+getIndicesOfEnum cddl g =
   case g of
     Group g' -> getIndicesOfChoice cddl (fromJust $ NE.nonEmpty g')
     somethingElse -> error $ "Malformed enum in .bits: " <> showSimple somethingElse
 
---------------------------------------------------------------------------------
--- Resolving rules from the CDDL spec
+dereference ::
+  CTreeRoot ValidatorStage ->
+  Name ->
+  CTree ValidatorStage
+dereference (CTreeRoot m) n =
+  case Map.lookup n m of
+    Just r -> r
+    Nothing -> error $ "Nonexistent rule referenced: " <> T.unpack (unName n)
 
-resolveIfRef :: CTreeRoot ValidatorStage -> CTree ValidatorStage -> CTree ValidatorStage
-resolveIfRef ct@(CTreeRoot cddl) (CTreeE (VRuleRef n)) = do
-  case Map.lookup n cddl of
-    Nothing -> error $ "Unbound reference: " <> show n
-    Just val -> resolveIfRef ct val
-resolveIfRef _ r = r
+dereferenceAndValidate ::
+  CTreeRoot ValidatorStage ->
+  Name ->
+  (CTree ValidatorStage -> Evidenced ValidationTrace) ->
+  Evidenced ValidationTrace
+dereferenceAndValidate cddl n f =
+  mapTrace (ReferenceRule n) . f $ dereference cddl n
 
 --------------------------------------------------------------------------------
 -- Utils
