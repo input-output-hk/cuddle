@@ -1,1 +1,6 @@
-ValidationResult {vrValidity = SInvalid, vrTrace = UnapplicableRule (Postlude PTText)}
+array
+[0;93m└ [0mapp: Postlude PTInt
+  app: Postlude PTInt
+  app: Postlude PTText
+  app: Postlude PTText
+  [0;91mnot all required rules have been applied[0m

@@ -1,3 +1,4 @@
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -7,7 +8,11 @@ module Main (main) where
 
 import Codec.CBOR.Cuddle.CBOR.Gen (generateFromName)
 import Codec.CBOR.Cuddle.CBOR.Validator
-import Codec.CBOR.Cuddle.CBOR.Validator.Trace (isValid)
+import Codec.CBOR.Cuddle.CBOR.Validator.Trace (
+  Evidenced (..),
+  SValidity (..),
+  prettyValidationResult,
+ )
 import Codec.CBOR.Cuddle.CDDL (CDDL, Name (..), fromRules, sortCDDL)
 import Codec.CBOR.Cuddle.CDDL.CTree (CTreeRoot)
 import Codec.CBOR.Cuddle.CDDL.Postlude (appendPostlude)
@@ -44,6 +49,7 @@ import Prettyprinter (
   layoutPretty,
   removeTrailingWhitespace,
  )
+import Prettyprinter.Render.Terminal qualified as Ansi
 import Prettyprinter.Render.Text qualified as PT
 import System.Exit (exitFailure, exitSuccess)
 import System.IO (hPutStrLn, stderr)
@@ -141,8 +147,7 @@ pGenOpts =
           <> help "Generator size"
           <> value 30
       )
-    <*> option
-      auto
+    <*> switch
       ( long "negative"
           <> short 'n'
           <> help "Generate a negative example"
@@ -163,23 +168,30 @@ pFormatOpts =
       )
 
 data ValidateCBOROpts = ValidateCBOROpts
-  { vcItemName :: T.Text
-  , vcNoPrelude :: Bool
+  { vcNoPrelude :: Bool
+  , vcInputFormat :: CBORInputFormat
+  , vcItemName :: T.Text
   , vcInput :: FilePath
   }
 
 pValidateCBOROpts :: Parser ValidateCBOROpts
 pValidateCBOROpts =
   ValidateCBOROpts
-    <$> strOption
-      ( long "rule"
-          <> short 'r'
-          <> metavar "RULE"
-          <> help "Name of the CDDL rule to validate this file with"
-      )
-    <*> switch
+    <$> switch
       ( long "no-prelude"
           <> help "Do not include the CDDL prelude."
+      )
+    <*> option
+      pCBORInputFormat
+      ( long "format"
+          <> short 'f'
+          <> help "Output format"
+          <> completeWith (Map.keys inputFormatOptions)
+      )
+    <*> argument
+      str
+      ( metavar "RULE"
+          <> help "Name of the CDDL rule to validate this file with"
       )
     <*> argument str (metavar "CBOR_FILE")
 
@@ -296,6 +308,15 @@ formatTerm term = \case
 runGen :: Int -> Int -> Gen a -> a
 runGen seed size gen = unGen gen (mkQCGen seed) size
 
+tryReadCBOR :: CBORInputFormat -> FilePath -> IO ByteString
+tryReadCBOR format path = do
+  contentsRaw <- BS.readFile path
+  case format of
+    FromBinary -> pure contentsRaw
+    FromHex -> case Base16.decode . BSC.filter (not . isSpace) $ contentsRaw of
+      Right x -> pure x
+      Left err -> putStrLnErr (show err <> " when decoding hex input") >> exitFailure
+
 run :: Command -> IO ()
 run = \case
   Format fOpts cddlFile -> do
@@ -339,25 +360,20 @@ run = \case
         case outputTo of
           Just outputPath -> BS.writeFile outputPath formatted
           Nothing -> BSC.putStrLn formatted
-        putStrLn $ "seed: " <> show seed
-  ValidateCBOR vcOpts cddlFile -> do
+        putStrLnErr $ "seed: " <> show seed
+  ValidateCBOR ValidateCBOROpts {..} cddlFile -> do
     res <- tryParseFromFile cddlFile
     let
       cddl
-        | vcNoPrelude vcOpts = res
+        | vcNoPrelude = res
         | otherwise = appendPostlude res
     case fullResolveCDDL $ mapCDDLDropExt cddl of
       Left err -> putStrLnErr (show err) >> exitFailure
       Right mt -> do
-        cbor <- BS.readFile (vcInput vcOpts)
-        runValidateCBOR cbor (Name $ vcItemName vcOpts) (mapIndex mt)
+        cbor <- BS.readFile vcInput
+        runValidateCBOR cbor (Name vcItemName) (mapIndex mt)
   FormatCBOR FormatCBOROpts {..} cborFile -> do
-    contentsRaw <- BS.readFile cborFile
-    contents <- case dcInputFormat of
-      FromBinary -> pure contentsRaw
-      FromHex -> case Base16.decode . BSC.filter (not . isSpace) $ contentsRaw of
-        Right x -> pure x
-        Left err -> putStrLnErr (show err <> " when decoding hex input") >> exitFailure
+    contents <- tryReadCBOR dcInputFormat cborFile
     term <- case deserialiseFromBytes decodeTerm (LBS.fromStrict contents) of
       Right (leftover, term) -> do
         unless (LBS.null leftover) . putStrLnErr $
@@ -382,7 +398,13 @@ parseFromFile p file = runParser p file <$> T.readFile file
 runValidateCBOR :: BS.ByteString -> Name -> CTreeRoot ValidatorStage -> IO ()
 runValidateCBOR bs rule cddl =
   case validateCBOR bs rule cddl of
-    (isValid -> True) -> exitSuccess
-    err -> do
-      hPutStrLn stderr $ "Invalid " <> show err
-      exitFailure
+    Evidenced validity trc -> do
+      T.putStrLn . Ansi.renderStrict . layoutPretty defaultLayoutOptions $ prettyValidationResult trc
+      putStrLn mempty
+      case validity of
+        SValid -> do
+          putStrLn "Validation successful"
+          exitSuccess
+        SInvalid -> do
+          putStrLn "Validation failed"
+          exitFailure

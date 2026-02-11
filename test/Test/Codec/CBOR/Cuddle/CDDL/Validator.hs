@@ -1,6 +1,6 @@
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE ViewPatterns #-}
 
 module Test.Codec.CBOR.Cuddle.CDDL.Validator (
   spec,
@@ -12,7 +12,12 @@ import Codec.CBOR.Cuddle.CBOR.Gen (generateFromName)
 import Codec.CBOR.Cuddle.CBOR.Validator (
   validateCBOR,
  )
-import Codec.CBOR.Cuddle.CBOR.Validator.Trace (ValidationResult, isValid)
+import Codec.CBOR.Cuddle.CBOR.Validator.Trace (
+  Evidenced (..),
+  SValidity (..),
+  ValidationTrace,
+  prettyValidationResult,
+ )
 import Codec.CBOR.Cuddle.CDDL (Name (..))
 import Codec.CBOR.Cuddle.CDDL.CBORGenerator (CustomValidatorResult (..))
 import Codec.CBOR.Cuddle.CDDL.CTree (CTreeRoot (..))
@@ -33,6 +38,7 @@ import Codec.CBOR.Cuddle.Huddle (
  )
 import Codec.CBOR.Cuddle.IndexMappable (mapCDDLDropExt, mapIndex)
 import Codec.CBOR.Cuddle.Parser (pCDDL)
+import Codec.CBOR.Pretty (prettyHexEnc)
 import Codec.CBOR.Term (Term (..), encodeTerm)
 import Codec.CBOR.Write (toStrictByteString)
 import Control.Monad (forM_)
@@ -47,6 +53,8 @@ import Data.Text qualified as T
 import Data.Text.IO qualified as T
 import Data.Text.Lazy qualified as LT
 import Paths_cuddle (getDataFileName)
+import Prettyprinter (defaultLayoutOptions, layoutPretty)
+import Prettyprinter.Render.Terminal (renderStrict)
 import Test.AntiGen (runAntiGen)
 import Test.Codec.CBOR.Cuddle.CDDL.Examples.Huddle (
   huddleArray,
@@ -80,7 +88,6 @@ import Test.QuickCheck (
   vectorOf,
  )
 import Text.Megaparsec (runParser)
-import Text.Pretty.Simple (pShow)
 
 genAndValidateFromFile :: FilePath -> Spec
 genAndValidateFromFile path = do
@@ -104,7 +111,7 @@ genAndValidateFromFile path = do
           extraInfo =
             unlines
               [ "CBOR term:"
-              , LT.unpack $ pShow cborTerm
+              , prettyHexEnc $ encodeTerm cborTerm
               ]
         pure . counterexample extraInfo $ expectValid res
 
@@ -229,7 +236,7 @@ validateHuddle ::
   Huddle ->
   Name ->
   Term ->
-  ValidationResult
+  Evidenced ValidationTrace
 validateHuddle huddle name term = do
   let
     resolvedCddl = case fullResolveCDDL . mapCDDLDropExt $ toCDDL huddle of
@@ -238,12 +245,18 @@ validateHuddle huddle name term = do
     bs = toStrictByteString $ encodeTerm term
   validateCBOR bs name (mapIndex resolvedCddl)
 
-expectValid :: ValidationResult -> Expectation
-expectValid (isValid -> True) = pure ()
-expectValid e = expectationFailure $ "Expected a success, got\n" <> show e
+expectValid :: Evidenced ValidationTrace -> Expectation
+expectValid (Evidenced SValid _) = pure ()
+expectValid (Evidenced SInvalid t) =
+  expectationFailure . T.unpack $
+    "Expected a success, got failure:\n"
+      <> renderStrict (layoutPretty defaultLayoutOptions $ prettyValidationResult t)
 
-expectInvalid :: ValidationResult -> Expectation
-expectInvalid (isValid -> True) = expectationFailure "Expected a failure, but got success"
+expectInvalid :: Evidenced ValidationTrace -> Expectation
+expectInvalid (Evidenced SValid t) =
+  expectationFailure . T.unpack $
+    "Expected a failure, but got success:\n"
+      <> renderStrict (layoutPretty defaultLayoutOptions $ prettyValidationResult t)
 expectInvalid _ = pure ()
 
 stringValidator :: Term -> CustomValidatorResult
