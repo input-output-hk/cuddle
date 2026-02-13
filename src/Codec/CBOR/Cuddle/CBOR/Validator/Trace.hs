@@ -3,6 +3,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeData #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -18,17 +19,21 @@ module Codec.CBOR.Cuddle.CBOR.Validator.Trace (
   ListValidationTrace (..),
   MapValidationTrace (..),
   Evidenced (..),
+  ControlInfo (..),
+  TraceOptions (..),
+  defaultTraceOptions,
   showSimple,
   traceValidity,
   isValid,
-  prettyValidationResult,
+  prettyValidationTrace,
+  showValidationTrace,
   mapTrace,
   compareEvidencedProgress,
   evidence,
   foldEvidenced,
 ) where
 
-import Codec.CBOR.Cuddle.CDDL (Name (..), XTerm)
+import Codec.CBOR.Cuddle.CDDL (Name (..), OccurrenceIndicator (..), RangeBound (..), XTerm)
 import Codec.CBOR.Cuddle.CDDL.CBORGenerator (CBORValidator)
 import Codec.CBOR.Cuddle.CDDL.CTree (CTree (..), CTreeRoot (..), Node, XXCTree, foldCTree)
 import Codec.CBOR.Cuddle.CDDL.CtlOp (CtlOp)
@@ -40,9 +45,26 @@ import Data.Function (on)
 import Data.Kind (Type)
 import Data.List.NonEmpty (NonEmpty)
 import Data.Text (Text)
+import Data.Text qualified as T
 import Data.Type.Equality (TestEquality (..), (:~:) (..))
-import Prettyprinter (Doc, Pretty (..), annotate, hang, viaShow, vsep, (<+>))
-import Prettyprinter.Render.Terminal (AnsiStyle, Color (..), color)
+import Prettyprinter (
+  Doc,
+  Pretty (..),
+  annotate,
+  defaultLayoutOptions,
+  encloseSep,
+  group,
+  hang,
+  indent,
+  layoutPretty,
+  list,
+  punctuate,
+  tupled,
+  vsep,
+  (<+>),
+ )
+import Prettyprinter.Render.Terminal (AnsiStyle, Color (..), color, italicized)
+import Prettyprinter.Render.Terminal qualified as Ansi
 
 --------------------------------------------------------------------------------
 -- ValidatorStage
@@ -79,6 +101,29 @@ instance IndexMappable CTree ValidatorStage ValidatorStageSimple where
       mapExt (VRuleRef n) = CTreeE $ VRuleRefSimple n
       mapExt (VValidator _ x) = mapIndex x
 
+instance Pretty (CTree ValidatorStageSimple) where
+  pretty = \case
+    Literal v -> pretty v
+    Postlude v -> pretty v
+    Range lo hi ClOpen -> pretty lo <+> "..." <+> pretty hi
+    Range lo hi Closed -> pretty lo <+> ".." <+> pretty hi
+    KV k v _ -> pretty k <+> "==>" <+> pretty v
+    CTreeE (VRuleRefSimple (Name n)) -> pretty n
+    Occur v oi ->
+      case oi of
+        OIOptional -> "?" <+> pretty v
+        OIZeroOrMore -> "*" <+> pretty v
+        OIOneOrMore -> "+" <+> pretty v
+        OIBounded lo hi -> foldMap pretty lo <> "*" <> foldMap pretty hi <+> pretty v
+    Map m -> encloseSep "{" "}" "," $ pretty <$> m
+    Array e -> list $ pretty <$> e
+    Choice c -> group . vsep . punctuate "//" $ pretty <$> toList c
+    Group g -> tupled $ pretty <$> g
+    Control op tgt ctl -> pretty tgt <+> pretty op <+> pretty ctl
+    Enum e -> "&" <> pretty e
+    Unwrap x -> "~" <> pretty x
+    Tag t x -> "#6." <> pretty t <> "(" <> pretty x <> ")"
+
 showSimple ::
   ( IndexMappable a ValidatorStage ValidatorStageSimple
   , Show (a ValidatorStageSimple)
@@ -112,13 +157,22 @@ instance TestEquality SValidity where
   testEquality SInvalid SInvalid = Just Refl
   testEquality _ _ = Nothing
 
+data ControlInfo = ControlInfo
+  { ciOp :: CtlOp
+  , ciRule :: CTree ValidatorStageSimple
+  }
+  deriving (Show)
+
+instance Pretty ControlInfo where
+  pretty ControlInfo {..} = pretty ciOp <+> pretty ciRule
+
 data ValidationTrace (v :: Validity) where
   UnapplicableRule :: CTree ValidatorStageSimple -> ValidationTrace IsInvalid
-  TerminalRule :: CTree ValidatorStageSimple -> ValidationTrace IsValid
+  TerminalRule :: Maybe ControlInfo -> CTree ValidatorStageSimple -> ValidationTrace IsValid
   ReferenceRule :: Name -> ValidationTrace v -> ValidationTrace v
   CustomFailure :: Text -> ValidationTrace IsInvalid
   CustomSuccess :: ValidationTrace IsValid
-  UnsatisfiedControl :: CtlOp -> ValidationTrace IsInvalid
+  UnsatisfiedControl :: CtlOp -> CTree ValidatorStageSimple -> ValidationTrace IsInvalid
   ChoiceBranch :: Int -> ValidationTrace IsValid -> ValidationTrace IsValid
   ListTrace :: ListValidationTrace v -> ValidationTrace v
   MapTrace :: MapValidationTrace v -> ValidationTrace v
@@ -211,7 +265,7 @@ instance IsValidationTrace ValidationTrace where
     MapTrace x -> traceValidity x
 
   measureProgress = \case
-    TerminalRule _ -> 1
+    TerminalRule {} -> 1
     CustomSuccess -> 1
     ChoiceBranch {} -> 1
     UnapplicableRule {} -> 0
@@ -273,27 +327,36 @@ compareInvalidProgress :: IsValidationTrace t => t IsInvalid -> t IsInvalid -> O
 compareInvalidProgress = compare `on` measureProgress
 
 nestContainer :: Doc AnsiStyle -> Doc AnsiStyle
-nestContainer = hang 2 . (annotate (color Yellow) "└ " <>)
+nestContainer = hang 2 . ("└ " <>)
 
-prettyListValidationResult :: ListValidationTrace v -> Doc AnsiStyle
-prettyListValidationResult = \case
+newtype TraceOptions = TraceOptions
+  { toFoldValid :: Bool
+  }
+
+defaultTraceOptions :: TraceOptions
+defaultTraceOptions = TraceOptions {toFoldValid = False}
+
+prettyListValidationResult :: TraceOptions -> ListValidationTrace v -> Doc AnsiStyle
+prettyListValidationResult opts@TraceOptions {..} = \case
   ListValidationDone -> mempty
-  ListValidationLeftoverTerms _ -> annotate (color Red) "no more rules left to apply"
+  ListValidationLeftoverTerms _ -> annotate (color Red) "leftover elements after all rules have been applied"
   ListValidationUnappliedRules _ -> annotate (color Red) "not all required rules have been applied"
-  ListValidationConsume _ t c ->
-    vsep $ continue c [prettyValidationResult t]
+  ListValidationConsume _ t c
+    | toFoldValid -> foldValid 1 c
+    | otherwise -> vsep $ continue c [prettyValidationTrace opts t]
   ListValidationMissingRequired _ t ->
     vsep
       [ annotate (color Red) "failed to apply required rule:"
-      , nestContainer $ prettyValidationResult t
+      , nestContainer $ prettyValidationTrace opts t
       ]
   ListValidationConsumeGroup refs x c -> vsep . continue c $ prettyGroup SValid refs x
   ListValidationBadGroup refs x -> vsep $ prettyGroup SInvalid refs x
   where
     -- This prevents unnecessary empty lines
     continue ListValidationDone l = l
-    continue x l = l <> [prettyListValidationResult x]
+    continue x l = l <> [prettyListValidationResult opts x]
 
+    prettyGroup :: SValidity v -> [Name] -> ListValidationTrace v -> [Doc AnsiStyle]
     prettyGroup v refs x = go refs
       where
         go (n : ns) =
@@ -304,64 +367,97 @@ prettyListValidationResult = \case
           [ case v of
               SValid -> "grp"
               SInvalid -> "grp" <+> annotate (color Red) "(fail)"
-          , nestContainer $ prettyListValidationResult x
+          , nestContainer $ prettyListValidationResult opts x
           ]
 
-prettyMapValidationResult :: MapValidationTrace v -> Doc AnsiStyle
-prettyMapValidationResult = \case
+    foldValid !n (ListValidationConsume _ _ c) = foldValid (n + 1) c
+    foldValid !n t =
+      vsep $ continue t [annotate italicized $ pretty (n :: Int) <> " valid elements"]
+
+prettyMapValidationResult :: TraceOptions -> MapValidationTrace v -> Doc AnsiStyle
+prettyMapValidationResult opts@TraceOptions {..} = \case
   MapValidationDone -> mempty
   MapValidationLeftoverKVs _ -> annotate (color Red) "no more rules left to apply"
   MapValidationUnappliedRules rs ->
     hang 2 $
       vsep
         [ annotate (color Red) "not all required rules have been applied:"
-        , vsep (toList $ viaShow <$> rs)
+        , vsep (toList $ pretty <$> rs)
         ]
-  MapValidationConsume _ k v c ->
-    vsep $
-      continue
-        c
-        [ "key:"
-        , nestContainer $ prettyValidationResult k
-        , "value:"
-        , nestContainer $ prettyValidationResult v
-        ]
+  MapValidationConsume _ k v c
+    | toFoldValid -> foldValid 1 c
+    | otherwise ->
+        vsep $
+          continue
+            c
+            [ "key:"
+            , nestContainer $ prettyValidationTrace opts k
+            , "value:"
+            , nestContainer $ prettyValidationTrace opts v
+            ]
   MapValidationInvalidValue _ k v ->
     vsep
       [ "key:"
-      , nestContainer $ prettyValidationResult k
-      , annotate (color Red) "value:"
-      , nestContainer $ prettyValidationResult v
+      , nestContainer $ prettyValidationTrace opts k
+      , "value:" <+> annotate (color Red) "(fail)"
+      , nestContainer $ prettyValidationTrace opts v
       ]
   where
+    foldValid !n (MapValidationConsume _ _ _ c) = foldValid (n + 1) c
+    foldValid !n t =
+      vsep . continue t $
+        [ annotate italicized $ pretty (n :: Int) <> " valid key-value pairs"
+        , "..."
+        ]
+
     -- This prevents unnecessary empty lines
     continue MapValidationDone l = l
-    continue x l = l <> [prettyMapValidationResult x]
+    continue x l = l <> [prettyMapValidationResult opts x]
 
-prettyValidationResult :: ValidationTrace v -> Doc AnsiStyle
-prettyValidationResult = \case
-  UnapplicableRule x -> annotate (color Red) $ "failed to apply: " <> viaShow x
-  TerminalRule x -> "app: " <> viaShow x
+prettyValidationTrace :: TraceOptions -> ValidationTrace v -> Doc AnsiStyle
+prettyValidationTrace opts = \case
+  UnapplicableRule x -> annotate (color Red) $ vsep ["failed to apply: ", indent 2 $ pretty x]
+  TerminalRule mCi x -> case mCi of
+    Just ci ->
+      vsep
+        [ appMsg
+        , nestContainer $ "ctrl:" <+> annotate (color Yellow) ("." <> pretty ci)
+        ]
+    Nothing -> appMsg
+    where
+      appMsg = "app: " <> annotate (color Green) (pretty x)
   ChoiceBranch i c ->
     vsep
-      [ "choice #" <> pretty i
-      , nestContainer $ prettyValidationResult c
+      [ "choice (idx: " <> pretty i <> ")"
+      , nestContainer $ prettyValidationTrace opts c
       ]
   ReferenceRule (Name n) x ->
     vsep
       [ "ref: " <> annotate (color Blue) (pretty n)
-      , nestContainer $ prettyValidationResult x
+      , nestContainer $ prettyValidationTrace opts x
       ]
-  CustomFailure e -> annotate (color Red) $ viaShow e
+  CustomFailure e -> annotate (color Red) $ pretty e
   CustomSuccess -> "<custom validator>"
-  UnsatisfiedControl c -> "unsatisfied control: " <> viaShow c
+  UnsatisfiedControl ctl op ->
+    annotate (color Red) $
+      vsep
+        [ "unsatisfied control:"
+        , indent 2 $ "." <> pretty op <+> pretty ctl
+        ]
   ListTrace l ->
     vsep
       [ "array"
-      , nestContainer $ prettyListValidationResult l
+      , nestContainer $ prettyListValidationResult opts l
       ]
   MapTrace m ->
     vsep
       [ "map"
-      , nestContainer $ prettyMapValidationResult m
+      , nestContainer $ prettyMapValidationResult opts m
       ]
+
+showValidationTrace :: ValidationTrace v -> String
+showValidationTrace =
+  T.unpack
+    . Ansi.renderStrict
+    . layoutPretty defaultLayoutOptions
+    . prettyValidationTrace defaultTraceOptions

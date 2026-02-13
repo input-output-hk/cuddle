@@ -1,4 +1,5 @@
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeData #-}
@@ -17,6 +18,7 @@ module Codec.CBOR.Cuddle.Pretty (
 ) where
 
 import Codec.CBOR.Cuddle.CDDL
+import Codec.CBOR.Cuddle.CDDL.CTree (PTerm (..))
 import Codec.CBOR.Cuddle.CDDL.CtlOp (CtlOp)
 import Codec.CBOR.Cuddle.Comments (CollectComments (..), Comment (..), HasComment (..), unComment)
 import Codec.CBOR.Cuddle.Pretty.Columnar (
@@ -256,3 +258,18 @@ instance Pretty ValueVariant where
   pretty (VBytes b) = fromString $ "h" <> "'" <> BS.unpack (B16.encode b) <> "'"
   pretty (VBool True) = "true"
   pretty (VBool False) = "false"
+
+instance Pretty PTerm where
+  pretty = \case
+    PTBool -> "bool"
+    PTUInt -> "uint"
+    PTNInt -> "nint"
+    PTInt -> "int"
+    PTHalf -> "half"
+    PTFloat -> "float"
+    PTDouble -> "double"
+    PTBytes -> "bytes"
+    PTText -> "text"
+    PTAny -> "any"
+    PTNil -> "nil"
+    PTUndefined -> "undefined"

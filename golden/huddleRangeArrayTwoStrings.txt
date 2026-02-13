@@ -1,6 +1,6 @@
 array
-[0;93m└ [0mapp: Postlude PTInt
-  app: Postlude PTInt
-  app: Postlude PTText
-  app: Postlude PTText
+└ app: [0;92mint[0m
+  app: [0;92mint[0m
+  app: [0;92mtext[0m
+  app: [0;92mtext[0m
   [0;91mnot all required rules have been applied[0m
