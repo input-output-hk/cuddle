@@ -11,7 +11,8 @@ import Codec.CBOR.Cuddle.CBOR.Validator
 import Codec.CBOR.Cuddle.CBOR.Validator.Trace (
   Evidenced (..),
   SValidity (..),
-  prettyValidationResult,
+  TraceOptions (..),
+  prettyValidationTrace,
  )
 import Codec.CBOR.Cuddle.CDDL (CDDL, Name (..), fromRules, sortCDDL)
 import Codec.CBOR.Cuddle.CDDL.CTree (CTreeRoot)
@@ -170,9 +171,20 @@ pFormatOpts =
 data ValidateCBOROpts = ValidateCBOROpts
   { vcNoPrelude :: Bool
   , vcInputFormat :: CBORInputFormat
+  , vcTraceOpts :: TraceOptions
   , vcItemName :: T.Text
   , vcInput :: FilePath
   }
+
+pTraceOpts :: Parser TraceOptions
+pTraceOpts =
+  TraceOptions
+    <$> flag
+      True
+      False
+      ( long "no-fold-valid"
+          <> help "Do not squash valid elements in lists/maps when printing validation trace"
+      )
 
 pValidateCBOROpts :: Parser ValidateCBOROpts
 pValidateCBOROpts =
@@ -188,6 +200,7 @@ pValidateCBOROpts =
           <> help "Output format"
           <> completeWith (Map.keys inputFormatOptions)
       )
+    <*> pTraceOpts
     <*> argument
       str
       ( metavar "RULE"
@@ -371,7 +384,7 @@ run = \case
       Left err -> putStrLnErr (show err) >> exitFailure
       Right mt -> do
         cbor <- BS.readFile vcInput
-        runValidateCBOR cbor (Name vcItemName) (mapIndex mt)
+        runValidateCBOR cbor (Name vcItemName) (mapIndex mt) vcTraceOpts
   FormatCBOR FormatCBOROpts {..} cborFile -> do
     contents <- tryReadCBOR dcInputFormat cborFile
     term <- case deserialiseFromBytes decodeTerm (LBS.fromStrict contents) of
@@ -395,11 +408,12 @@ parseFromFile ::
   IO (Either (ParseErrorBundle T.Text e) a)
 parseFromFile p file = runParser p file <$> T.readFile file
 
-runValidateCBOR :: BS.ByteString -> Name -> CTreeRoot ValidatorStage -> IO ()
-runValidateCBOR bs rule cddl =
+runValidateCBOR :: BS.ByteString -> Name -> CTreeRoot ValidatorStage -> TraceOptions -> IO ()
+runValidateCBOR bs rule cddl traceOpts =
   case validateCBOR bs rule cddl of
     Evidenced validity trc -> do
-      T.putStrLn . Ansi.renderStrict . layoutPretty defaultLayoutOptions $ prettyValidationResult trc
+      T.putStrLn . Ansi.renderStrict . layoutPretty defaultLayoutOptions $
+        prettyValidationTrace traceOpts trc
       putStrLn mempty
       case validity of
         SValid -> do

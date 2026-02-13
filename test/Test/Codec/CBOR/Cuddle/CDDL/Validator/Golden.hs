@@ -5,6 +5,7 @@ module Test.Codec.CBOR.Cuddle.CDDL.Validator.Golden (spec) where
 
 import Codec.CBOR.Cuddle.CBOR.Validator (validateCBOR)
 import Codec.CBOR.Cuddle.CBOR.Validator.Trace (
+  defaultTraceOptions,
   foldEvidenced,
   prettyValidationResult,
  )
@@ -59,7 +60,7 @@ validatorPrettyGolden testName huddle n term =
     str =
       Ansi.renderStrict
         . layoutPretty defaultLayoutOptions
-        . foldEvidenced prettyValidationResult
+        . foldEvidenced (prettyValidationResult defaultTraceOptions)
         . validateCBOR bs n
         $ mapIndex treeRoot
 
