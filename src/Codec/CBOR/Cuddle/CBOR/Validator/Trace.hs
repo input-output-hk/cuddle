@@ -119,6 +119,7 @@ data ValidationTrace (v :: Validity) where
   CustomFailure :: Text -> ValidationTrace IsInvalid
   CustomSuccess :: ValidationTrace IsValid
   UnsatisfiedControl :: CtlOp -> ValidationTrace IsInvalid
+  ChoiceBranch :: Int -> ValidationTrace IsValid -> ValidationTrace IsValid
   ListTrace :: ListValidationTrace v -> ValidationTrace v
   MapTrace :: MapValidationTrace v -> ValidationTrace v
 
@@ -201,6 +202,7 @@ instance IsValidationTrace ValidationTrace where
   traceValidity = \case
     CustomSuccess {} -> SValid
     TerminalRule {} -> SValid
+    ChoiceBranch {} -> SValid
     UnapplicableRule {} -> SInvalid
     CustomFailure {} -> SInvalid
     UnsatisfiedControl {} -> SInvalid
@@ -211,6 +213,7 @@ instance IsValidationTrace ValidationTrace where
   measureProgress = \case
     TerminalRule _ -> 1
     CustomSuccess -> 1
+    ChoiceBranch {} -> 1
     UnapplicableRule {} -> 0
     CustomFailure {} -> 0
     UnsatisfiedControl {} -> 0
@@ -339,6 +342,11 @@ prettyValidationResult :: ValidationTrace v -> Doc AnsiStyle
 prettyValidationResult = \case
   UnapplicableRule x -> annotate (color Red) $ "failed to apply: " <> viaShow x
   TerminalRule x -> "app: " <> viaShow x
+  ChoiceBranch i c ->
+    vsep
+      [ "choice #" <> pretty i
+      , nestContainer $ prettyValidationResult c
+      ]
   ReferenceRule (Name n) x ->
     vsep
       [ "ref: " <> annotate (color Blue) (pretty n)

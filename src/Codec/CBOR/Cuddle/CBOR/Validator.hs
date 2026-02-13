@@ -887,15 +887,15 @@ validateChoice ::
   NE.NonEmpty (CTree ValidatorStage) ->
   CTree ValidatorStage ->
   Evidenced ValidationTrace
-validateChoice v rules = go rules
+validateChoice v rules = go 0 rules
   where
-    go :: NE.NonEmpty (CTree ValidatorStage) -> CTree ValidatorStage -> Evidenced ValidationTrace
-    go (choice NE.:| xs) rule = do
+    go :: Int -> NE.NonEmpty (CTree ValidatorStage) -> CTree ValidatorStage -> Evidenced ValidationTrace
+    go i (choice NE.:| xs) rule = do
       case v choice of
-        (isValid -> True) -> terminal rule
+        Evidenced SValid trc -> evidence $ ChoiceBranch i trc
         err -> case xs of
           [] -> err -- TODO return something more useful instead of the last failure
-          y : ys -> go (y NE.:| ys) rule
+          y : ys -> go (succ i) (y NE.:| ys) rule
 
 --------------------------------------------------------------------------------
 -- Control helpers
