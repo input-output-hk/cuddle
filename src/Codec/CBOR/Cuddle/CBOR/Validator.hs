@@ -889,8 +889,8 @@ validateChoice v = go 0
       case v choice of
         Evidenced SValid trc -> evidence $ ChoiceBranch i trc
         err -> case xs of
-          [] -> err -- TODO return something more useful instead of the last failure
-          y : ys -> go (succ i) (y NE.:| ys)
+          [] -> err
+          y : ys -> err <> go (succ i) (y NE.:| ys)
 
 --------------------------------------------------------------------------------
 -- Control helpers

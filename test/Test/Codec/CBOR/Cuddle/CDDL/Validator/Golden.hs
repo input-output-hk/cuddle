@@ -7,7 +7,7 @@ import Codec.CBOR.Cuddle.CBOR.Validator (validateCBOR)
 import Codec.CBOR.Cuddle.CBOR.Validator.Trace (
   defaultTraceOptions,
   foldEvidenced,
-  prettyValidationResult,
+  prettyValidationTrace,
  )
 import Codec.CBOR.Cuddle.CDDL (Name)
 import Codec.CBOR.Cuddle.CDDL.Resolve (fullResolveCDDL)
@@ -20,7 +20,11 @@ import Data.Text qualified as T
 import Prettyprinter (defaultLayoutOptions, layoutPretty)
 import Prettyprinter.Render.Terminal qualified as Ansi
 import System.FilePath ((</>))
-import Test.Codec.CBOR.Cuddle.CDDL.Examples.Huddle (huddleRangeArray, refTermExample)
+import Test.Codec.CBOR.Cuddle.CDDL.Examples.Huddle (
+  choicesExample,
+  huddleRangeArray,
+  refTermExample,
+ )
 import Test.Hspec (Spec, describe, it)
 import Test.Hspec.Golden (Golden (..), defaultGolden)
 
@@ -45,6 +49,14 @@ refTermTooLong =
         ]
     ]
 
+choiceAlmostSecond :: Term
+choiceAlmostSecond =
+  TList
+    [ TInt 1
+    , TBool True
+    , TInt 1
+    ]
+
 validatorPrettyGolden :: String -> Huddle -> Name -> Term -> Spec
 validatorPrettyGolden testName huddle n term =
   it testName $
@@ -60,7 +72,7 @@ validatorPrettyGolden testName huddle n term =
     str =
       Ansi.renderStrict
         . layoutPretty defaultLayoutOptions
-        . foldEvidenced (prettyValidationResult defaultTraceOptions)
+        . foldEvidenced (prettyValidationTrace defaultTraceOptions)
         . validateCBOR bs n
         $ mapIndex treeRoot
 
@@ -77,3 +89,8 @@ spec = describe "golden" $ do
       refTermExample
       "root"
       refTermTooLong
+    validatorPrettyGolden
+      "choiceAlmostSecond"
+      choicesExample
+      "root"
+      choiceAlmostSecond
