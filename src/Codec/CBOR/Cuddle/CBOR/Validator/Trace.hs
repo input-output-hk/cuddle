@@ -438,7 +438,7 @@ prettyValidationTrace opts = \case
       ]
   CustomFailure e -> annotate (color Red) $ pretty e
   CustomSuccess -> "<custom validator>"
-  UnsatisfiedControl ctl op ->
+  UnsatisfiedControl op ctl ->
     annotate (color Red) $
       vsep
         [ "unsatisfied control:"

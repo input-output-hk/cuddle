@@ -17,7 +17,7 @@ import Codec.CBOR.Cuddle.CBOR.Validator.Trace (
   SValidity (..),
   ValidationTrace,
   defaultTraceOptions,
-  prettyValidationResult,
+  prettyValidationTrace,
  )
 import Codec.CBOR.Cuddle.CDDL (Name (..))
 import Codec.CBOR.Cuddle.CDDL.CBORGenerator (CustomValidatorResult (..))
@@ -251,13 +251,13 @@ expectValid (Evidenced SValid _) = pure ()
 expectValid (Evidenced SInvalid t) =
   expectationFailure . T.unpack $
     "Expected a success, got failure:\n"
-      <> renderStrict (layoutPretty defaultLayoutOptions $ prettyValidationResult defaultTraceOptions t)
+      <> renderStrict (layoutPretty defaultLayoutOptions $ prettyValidationTrace defaultTraceOptions t)
 
 expectInvalid :: Evidenced ValidationTrace -> Expectation
 expectInvalid (Evidenced SValid t) =
   expectationFailure . T.unpack $
     "Expected a failure, but got success:\n"
-      <> renderStrict (layoutPretty defaultLayoutOptions $ prettyValidationResult defaultTraceOptions t)
+      <> renderStrict (layoutPretty defaultLayoutOptions $ prettyValidationTrace defaultTraceOptions t)
 expectInvalid _ = pure ()
 
 stringValidator :: Term -> CustomValidatorResult

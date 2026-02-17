@@ -16,6 +16,7 @@ module Test.Codec.CBOR.Cuddle.CDDL.Examples.Huddle (
   rangeListExample,
   rangeMapExample,
   optionalMapExample,
+  choicesExample,
 ) where
 
 import Codec.CBOR.Cuddle.CDDL (Name)
@@ -165,4 +166,14 @@ optionalMapExample =
           =:= mp
             [ 10 <+ asKey ((0 :: Integer) ... (10 :: Integer)) ==> VBool
             ]
+    ]
+
+choicesExample :: Huddle
+choicesExample =
+  collectFrom
+    [ HIRule $
+        "root"
+          =:= arr [1, a VInt, 3]
+          H./ arr [1, a VBool, 6]
+          H./ arr [1, a VText]
     ]
