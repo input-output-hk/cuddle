@@ -706,8 +706,8 @@ validateTagged cddl tag term rule =
     Tag tag' rule' ->
       -- If the tag does not match, this is a direct fail
       if tag == tag'
-        then validateTerm cddl term rule'
-        else evidence . UnapplicableRule $ mapIndex rule
+        then mapTrace (TagTrace tag) $ validateTerm cddl term rule'
+        else evidence $ InvalidTag tag
     Choice opts -> validateChoice (validateTagged cddl tag term) opts
     _ -> unapplicable rule
 

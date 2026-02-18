@@ -47,6 +47,7 @@ import Data.List.NonEmpty (NonEmpty)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Type.Equality (TestEquality (..), (:~:) (..))
+import Data.Word (Word64)
 import Prettyprinter (
   Doc,
   Pretty (..),
@@ -176,6 +177,8 @@ data ValidationTrace (v :: Validity) where
   ChoiceBranch :: Int -> ValidationTrace IsValid -> ValidationTrace IsValid
   ListTrace :: ListValidationTrace v -> ValidationTrace v
   MapTrace :: MapValidationTrace v -> ValidationTrace v
+  TagTrace :: Word64 -> ValidationTrace v -> ValidationTrace v
+  InvalidTag :: Word64 -> ValidationTrace IsInvalid
 
 deriving instance Show (ValidationTrace v)
 
@@ -259,9 +262,11 @@ instance IsValidationTrace ValidationTrace where
     UnapplicableRule {} -> SInvalid
     CustomFailure {} -> SInvalid
     UnsatisfiedControl {} -> SInvalid
+    InvalidTag {} -> SInvalid
     ReferenceRule _ x -> traceValidity x
     ListTrace x -> traceValidity x
     MapTrace x -> traceValidity x
+    TagTrace _ x -> traceValidity x
 
   measureProgress = \case
     TerminalRule {} -> 1
@@ -270,9 +275,11 @@ instance IsValidationTrace ValidationTrace where
     UnapplicableRule {} -> 0
     CustomFailure {} -> 0
     UnsatisfiedControl {} -> 0
-    (ReferenceRule _ x) -> succ $ measureProgress x
-    (ListTrace x) -> measureProgress x
-    (MapTrace x) -> measureProgress x
+    InvalidTag {} -> 0
+    ReferenceRule _ x -> succ $ measureProgress x
+    ListTrace x -> measureProgress x
+    MapTrace x -> measureProgress x
+    TagTrace _ x -> succ $ measureProgress x
 
 instance IsValidationTrace ListValidationTrace where
   traceValidity = \case
@@ -453,6 +460,13 @@ prettyValidationTrace opts = \case
       [ "map"
       , nestContainer $ prettyMapValidationResult opts m
       ]
+  TagTrace t x ->
+    vsep
+      [ "tag:" <+> annotate (color Green) ("#6." <> pretty t)
+      , nestContainer $ prettyValidationTrace opts x
+      ]
+  InvalidTag t ->
+    "expected tag #6." <> pretty t
 
 showValidationTrace :: ValidationTrace v -> String
 showValidationTrace =
