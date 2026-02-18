@@ -226,7 +226,6 @@ mapTrace f (Evidenced v t) = Evidenced v $ f t
 
 data Evidenced t where
   Evidenced ::
-    Show (t v) =>
     { eValidity :: SValidity v
     , eTrace :: t v
     } ->
@@ -238,7 +237,7 @@ foldEvidenced f (Evidenced v t) =
     SValid -> f t
     SInvalid -> f t
 
-deriving instance Show (Evidenced t)
+deriving instance (forall v. Show (t v)) => Show (Evidenced t)
 
 instance IsValidationTrace t => Semigroup (Evidenced t) where
   x@(Evidenced SValid _) <> _ = x
