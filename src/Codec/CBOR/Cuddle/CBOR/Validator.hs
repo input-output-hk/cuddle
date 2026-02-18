@@ -514,7 +514,7 @@ controlBool _ _ op _ = error $ "Not yet implemented for bool: " <> show op
 --------------------------------------------------------------------------------
 -- Simple
 
--- | Validating a `TSimple`. It is unclear if this is used for anything else than.
+-- | Validating a `TSimple`. It is unclear if this is used for anything else than `undefined`.
 validateSimple ::
   CTreeRoot ValidatorStage ->
   Word8 ->
