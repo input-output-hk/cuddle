@@ -1,3 +1,6 @@
+{-# LANGUAGE TypeData #-}
+{-# LANGUAGE TypeFamilies #-}
+
 module Codec.CBOR.Cuddle.CDDL.CBORGenerator (
   CBORGenerator (..),
   HasGenerator (..),
@@ -6,12 +9,22 @@ module Codec.CBOR.Cuddle.CDDL.CBORGenerator (
   ValidationResult (..),
   HasValidator (..),
   ValidatorFailure (..),
+  GenPhase,
+  XXCTree (..),
 ) where
 
+import Codec.CBOR.Cuddle.CDDL (Name)
+import Codec.CBOR.Cuddle.CDDL.CTree (CTree, XXCTree)
 import Codec.CBOR.Term (Term)
 import Data.Text (Text)
 import Optics.Core (Lens')
 import Test.AntiGen (AntiGen)
+
+type data GenPhase
+
+data instance XXCTree GenPhase
+  = GenRef Name
+  | GenGenerator CBORGenerator (CTree GenPhase)
 
 data WrappedTerm
   = -- | Single term

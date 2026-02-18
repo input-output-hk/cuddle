@@ -30,11 +30,16 @@ import Codec.CBOR.Cuddle.CDDL (
   Value (..),
   ValueVariant (..),
  )
-import Codec.CBOR.Cuddle.CDDL.CBORGenerator (CBORGenerator (..), WrappedTerm (..))
+import Codec.CBOR.Cuddle.CDDL.CBORGenerator (
+  CBORGenerator (..),
+  GenPhase,
+  WrappedTerm (..),
+  XXCTree (..),
+ )
 import Codec.CBOR.Cuddle.CDDL.CTree (CTree (..), CTreeRoot (..), PTerm (..), foldCTree)
 import Codec.CBOR.Cuddle.CDDL.CTree qualified as CTree
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
-import Codec.CBOR.Cuddle.CDDL.Resolve (MonoReferenced, XXCTree (..))
+import Codec.CBOR.Cuddle.CDDL.Resolve (XXCTree (..))
 import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
 import Codec.CBOR.Term (Term (..))
 import Codec.CBOR.Term qualified as CBOR
@@ -76,22 +81,6 @@ import Test.QuickCheck (
 import Test.QuickCheck qualified as QC
 import Test.QuickCheck.Gen (Gen (..), getSize)
 import Test.QuickCheck.GenT (MonadGen (..), elements, listOf, oneof, suchThat, vectorOf)
-
-type data GenPhase
-
-data instance XXCTree GenPhase
-  = GenRef Name
-  | GenGenerator CBORGenerator (CTree GenPhase)
-
-instance IndexMappable CTree MonoReferenced GenPhase where
-  mapIndex = foldCTree mapExt mapIndex
-    where
-      mapExt (MRuleRef n) = CTreeE $ GenRef n
-      mapExt (MGenerator g x) = CTreeE . GenGenerator g $ mapIndex x
-      mapExt (MValidator _ x) = mapIndex x
-
-instance IndexMappable CTreeRoot MonoReferenced GenPhase where
-  mapIndex (CTreeRoot m) = CTreeRoot $ mapIndex <$> m
 
 -- TODO remove this once QuickCheck gets QC
 data QC = QC
