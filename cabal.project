@@ -1,7 +1,28 @@
 packages:
   .
 
+tests:True
+
 test-show-details: streaming
 
 program-options
   ghc-options: -Werror
+
+-- cabal-allow-newer
+if impl (ghc >= 9.14)
+  allow-newer:
+    , aeson:containers
+    , aeson:template-haskell
+    , boring:base
+    , cborg:base
+    , cborg:containers
+    , indexed-traversable:base
+    , indexed-traversable:containers
+    , indexed-traversable-instances:base
+    , ordered-containers:containers
+    , semialign:base
+    , semialign:containers
+    , these:base
+    , tree-diff:base
+    , tree-diff:containers
+    , uuid-types:template-haskell
