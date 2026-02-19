@@ -113,11 +113,13 @@ import Codec.CBOR.Cuddle.CDDL qualified as C
 import Codec.CBOR.Cuddle.CDDL.CBORGenerator (
   CBORGenerator (..),
   CBORValidator (..),
+  GenPhase,
   HasGenerator (..),
   HasValidator (..),
   ValidationResult,
   WrappedTerm,
  )
+import Codec.CBOR.Cuddle.CDDL.CTree (CTreeRoot)
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
 import Codec.CBOR.Cuddle.Comments (Comment (..), HasComment (..))
 import Codec.CBOR.Cuddle.Comments qualified as C
@@ -1374,13 +1376,13 @@ toCDDL' HuddleConfig {..} hdl =
 
 -- | Use a custom `QuickCheck` generator to generate the term. Will override
 -- the generator passed via `withAntiGen`
-withGenerator :: HasGenerator a => Gen WrappedTerm -> a -> a
-withGenerator f = L.set generatorL (Just . CBORGenerator $ liftGen f)
+withGenerator :: HasGenerator a => (CTreeRoot GenPhase -> Gen WrappedTerm) -> a -> a
+withGenerator f = L.set generatorL (Just . CBORGenerator $ liftGen . f)
 
 -- | Use a custom `AntiGen` generator to generate the term. Will override
 -- the custom generator passed via `withGenerator`. The advantage of using
 -- `AntiGen` generator is that it can also be used to generate negative examples.
-withAntiGen :: HasGenerator a => AntiGen WrappedTerm -> a -> a
+withAntiGen :: HasGenerator a => (CTreeRoot GenPhase -> AntiGen WrappedTerm) -> a -> a
 withAntiGen f = L.set generatorL (Just $ CBORGenerator f)
 
 withValidator :: HasValidator a => (Term -> ValidationResult) -> a -> a

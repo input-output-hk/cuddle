@@ -394,7 +394,7 @@ genForCTree cddl (CTree.Tag t node) = do
     S x -> pure $ S $ TTagged tag x
     _ -> error "Tag controller does not correspond to a single term"
 genForCTree cddl (CTree.CTreeE (GenRef n)) = genForNode cddl n
-genForCTree _ (CTree.CTreeE (GenGenerator (CBORGenerator gen) _)) = gen
+genForCTree cddl (CTree.CTreeE (GenGenerator (CBORGenerator gen) _)) = gen cddl
 
 genForNode :: HasCallStack => CTreeRoot GenPhase -> Name -> AntiGen WrappedTerm
 genForNode cddl = genForCTree cddl <=< resolveRef cddl
