@@ -2,6 +2,12 @@
 
 ## 1.2.0.0
 
+* Add `Pretty` instance for `PTerm` 
+* Replace `ValidationResult` with `Evidenced ValidationTrace`
+* Move `ValidatorStageSimple` and `showSimple` to `Codec.CBOR.Cuddle.CBOR.Validator.Trace`
+* Add `Codec.CBOR.Cuddle.CBOR.Validator.Trace`
+* Add `--no-fold-valid` and `--format` options to `validate-cbor`
+* Changed `--rule` to a required argument in the `validate-cbor` subcommand
 * Export `Type0`
 * Removed `Codec.CBOR.Cuddle.Huddle.HuddleM`
 * Add `format-cbor` subcommand
@@ -24,7 +30,6 @@
 * Added index type parameter to `CDDLResult`, `CBORTermResult`, `AMatchedItem`, `ANonMatchedItem`
 * Remove `CDDL` and `Rule` type synonyms from `Codec.CBOR.Cuddle.CBOR.Validator`
 * Remove `CBORTermResult`, `CDDLResult`, `AMatchedItem`, `ANonMatchedItem`, `CustomValidatorResult`
-* Add `ValidationResult`, `ValidatorFailure`
 * Add `--negative` option to `gen` for generating negative examples
 * `CBORGenerator` now uses `AntiGen` instead of `Gen`
 * Add `withAntiGen`
