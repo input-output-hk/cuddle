@@ -47,7 +47,7 @@ import Test.QuickCheck (Gen, Property, Testable (..), choose, counterexample)
 import Text.Pretty.Simple (pShow)
 
 simpleRule :: Name -> H.Rule
-simpleRule n = withGenerator (S . C.TInt <$> choose (4, 6)) $ n =:= arr [1, 2, 3]
+simpleRule n = withGenerator (\_ -> S . C.TInt <$> choose (4, 6)) $ n =:= arr [1, 2, 3]
 
 simpleTermExample :: Huddle
 simpleTermExample =

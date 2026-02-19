@@ -14,7 +14,7 @@ module Codec.CBOR.Cuddle.CDDL.CBORGenerator (
 ) where
 
 import Codec.CBOR.Cuddle.CDDL (Name)
-import Codec.CBOR.Cuddle.CDDL.CTree (CTree, XXCTree)
+import Codec.CBOR.Cuddle.CDDL.CTree (CTree, CTreeRoot, XXCTree)
 import Codec.CBOR.Term (Term)
 import Data.Text (Text)
 import Optics.Core (Lens')
@@ -35,7 +35,7 @@ data WrappedTerm
     G [WrappedTerm]
   deriving (Eq, Show)
 
-newtype CBORGenerator = CBORGenerator (AntiGen WrappedTerm)
+newtype CBORGenerator = CBORGenerator (CTreeRoot GenPhase -> AntiGen WrappedTerm)
 
 class HasGenerator a where
   generatorL :: Lens' a (Maybe CBORGenerator)
