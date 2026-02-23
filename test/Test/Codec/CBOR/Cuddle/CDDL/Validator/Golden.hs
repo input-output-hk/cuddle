@@ -15,8 +15,11 @@ import Codec.CBOR.Cuddle.Huddle (Huddle, toCDDL)
 import Codec.CBOR.Cuddle.IndexMappable (mapCDDLDropExt, mapIndex)
 import Codec.CBOR.Term (Term (..), encodeTerm)
 import Codec.CBOR.Write qualified as CBOR
+import Control.Monad ((<=<))
 import Data.Either (fromRight)
 import Data.Text qualified as T
+import Data.Text.IO qualified as T
+import Paths_cuddle (getDataFileName)
 import Prettyprinter (defaultLayoutOptions, layoutPretty)
 import Prettyprinter.Render.Terminal qualified as Ansi
 import System.FilePath ((</>))
@@ -26,7 +29,7 @@ import Test.Codec.CBOR.Cuddle.CDDL.Examples.Huddle (
   refTermExample,
  )
 import Test.Hspec (Spec, describe, it)
-import Test.Hspec.Golden (Golden (..), defaultGolden)
+import Test.Hspec.Golden (Golden (..))
 
 huddleRangeArrayTermTwoStrings :: Term
 huddleRangeArrayTermTwoStrings =
@@ -60,9 +63,14 @@ choiceAlmostSecond =
 validatorPrettyGolden :: String -> Huddle -> Name -> Term -> Spec
 validatorPrettyGolden testName huddle n term =
   it testName $
-    (defaultGolden testName $ T.unpack str)
+    Golden
       { goldenFile = "golden" </> testName <> ".txt"
+      , readFromFile = T.readFile <=< getDataFileName
+      , writeToFile = \fp txt -> getDataFileName fp >>= (`T.writeFile` txt)
       , actualFile = Nothing
+      , output = str
+      , encodePretty = T.unpack
+      , failFirstTime = False
       }
   where
     bs = CBOR.toStrictByteString $ encodeTerm term
