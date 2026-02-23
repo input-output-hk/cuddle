@@ -25,7 +25,7 @@ data instance XTerm CTreePhase = CTreeXTerm
   deriving (Generic, Show, Eq, Ord)
   deriving anyclass (Hashable, Default)
 
-newtype instance XXTopLevel CTreePhase = CTreeXXTopLevel Void
+data instance XXTopLevel CTreePhase
   deriving (Generic, Show, Eq, Ord)
 
 data instance XCddl CTreePhase = CTreeXCddl
@@ -34,6 +34,6 @@ data instance XCddl CTreePhase = CTreeXCddl
 data instance XRule CTreePhase = CTreeXRule (Maybe CBORGenerator) (Maybe CBORValidator)
   deriving (Generic)
 
-newtype instance XXType2 CTreePhase = CTreeXXType2 Void
+data instance XXType2 CTreePhase
   deriving (Generic, Show, Eq, Ord)
   deriving anyclass (Hashable)
