@@ -6,17 +6,15 @@
 module Codec.CBOR.Cuddle.CDDL.CTreePhase (
   CTreePhase,
   XTerm (..),
-  XXTopLevel (..),
   XCddl (..),
   XRule (..),
-  XXType2 (..),
+  XXTopLevel,
 ) where
 
 import Codec.CBOR.Cuddle.CDDL (XCddl, XRule, XTerm, XXTopLevel, XXType2)
 import Codec.CBOR.Cuddle.CDDL.CBORGenerator (CBORGenerator, CBORValidator)
 import Data.Default.Class (Default)
 import Data.Hashable (Hashable)
-import Data.Void (Void)
 import GHC.Generics (Generic)
 
 type data CTreePhase

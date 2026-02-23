@@ -29,7 +29,6 @@ import Codec.CBOR.Cuddle.CDDL.CTreePhase (
   XCddl (..),
   XRule (..),
   XTerm (..),
-  XXType2 (..),
  )
 import Codec.CBOR.Cuddle.Huddle (
   HuddleStage,
@@ -225,7 +224,7 @@ instance IndexMappable XCddl ParserStage CTreePhase where
   mapIndex _ = CTreeXCddl
 
 instance IndexMappable XXType2 ParserStage CTreePhase where
-  mapIndex (ParserXXType2 c) = CTreeXXType2 c
+  mapIndex (ParserXXType2 c) = case c of {}
 
 instance IndexMappable XTerm ParserStage CTreePhase where
   mapIndex _ = CTreeXTerm
@@ -253,7 +252,7 @@ instance IndexMappable XCddl HuddleStage CTreePhase where
   mapIndex _ = CTreeXCddl
 
 instance IndexMappable XXType2 HuddleStage CTreePhase where
-  mapIndex (HuddleXXType2 c) = CTreeXXType2 c
+  mapIndex (HuddleXXType2 c) = case c of {}
 
 instance IndexMappable XTerm HuddleStage CTreePhase where
   mapIndex _ = CTreeXTerm

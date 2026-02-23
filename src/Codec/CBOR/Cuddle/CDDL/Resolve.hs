@@ -71,12 +71,11 @@ import Codec.CBOR.Cuddle.CDDL.CBORGenerator (
   GenPhase,
   XXCTree (..),
  )
-import Codec.CBOR.Cuddle.CDDL.CTreePhase (CTreePhase, XRule (..), XXType2 (..))
+import Codec.CBOR.Cuddle.CDDL.CTreePhase (CTreePhase, XRule (..))
 import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
-import Data.Void (absurd)
 import GHC.Generics (Generic)
 import Optics.Core
 
@@ -252,7 +251,7 @@ buildRefCTree rules = PartialCTreeRoot $ toCTreeRule <$> rules
       -- We don't validate numerical items yet
       CTree.Postlude PTAny
     toCTreeT2 T2Any = CTree.Postlude PTAny
-    toCTreeT2 (XXType2 (CTreeXXType2 v)) = absurd v
+    toCTreeT2 (XXType2 v) = case v of {}
 
     toCTreeDataItem 20 =
       CTree.Literal $ Value (VBool False) mempty
