@@ -1,5 +1,9 @@
 # Changelog for `cuddle`
 
+## 1.2.0.1
+
+*
+
 ## 1.2.0.0
 
 * Add `Pretty` instance for `PTerm` 
