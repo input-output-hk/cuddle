@@ -624,7 +624,7 @@ controlBytes cddl bs Bits ctrl = do
 controlBytes cddl bs Cbor ctrl =
   case deserialiseFromBytes decodeTerm (BSL.fromStrict bs) of
     Right (BSL.null -> True, term) -> isValid $ validateTerm cddl term ctrl
-    _ -> error "Not yet implemented"
+    _ -> False
 controlBytes cddl bs Cborseq ctrl =
   case deserialiseFromBytes decodeTerm (BSL.fromStrict (BS.snoc (BS.cons 0x9f bs) 0xff)) of
     Right (BSL.null -> True, TListI terms) -> isValid $ validateTerm cddl (TList terms) (Array [Occur ctrl OIZeroOrMore])
