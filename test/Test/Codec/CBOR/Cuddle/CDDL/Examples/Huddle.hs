@@ -6,8 +6,8 @@ module Test.Codec.CBOR.Cuddle.CDDL.Examples.Huddle (
   huddleArray,
   huddleMap,
   huddleRangeMap,
-  simpleRule,
-  simpleTermExample,
+  customGenRule,
+  customGenExample,
   refTermExample,
   bytesExample,
   opCertExample,
@@ -17,6 +17,7 @@ module Test.Codec.CBOR.Cuddle.CDDL.Examples.Huddle (
   rangeMapExample,
   optionalMapExample,
   choicesExample,
+  cborControlExample,
 ) where
 
 import Codec.CBOR.Cuddle.CDDL (Name)
@@ -95,18 +96,21 @@ huddleRangeMap =
     ]
 
 simpleRule :: Name -> Rule
-simpleRule n = withGenerator (\_ -> S . C.TInt <$> choose (4, 6)) $ n =:= arr [1, 2, 3]
+simpleRule n = n =:= arr [1, 2, 3]
 
-simpleTermExample :: Huddle
-simpleTermExample =
+customGenRule :: Name -> Rule
+customGenRule = withGenerator (\_ -> S . C.TInt <$> choose (4, 6)) . simpleRule
+
+customGenExample :: Huddle
+customGenExample =
   collectFrom
-    [ HIRule $ simpleRule "root"
+    [ HIRule $ customGenRule "root"
     ]
 
 refTermExample :: Huddle
 refTermExample =
   collectFrom
-    [ HIRule $ "root" =:= arr [0, a $ simpleRule "bar"]
+    [ HIRule $ "root" =:= arr [0, a $ customGenRule "bar"]
     ]
 
 bytesExample :: Huddle
@@ -176,4 +180,13 @@ choicesExample =
           =:= arr [1, a VInt, 3]
           H./ arr [1, a VBool, 6]
           H./ arr [1, a VText]
+    ]
+
+cborControlExample :: Huddle
+cborControlExample =
+  collectFrom
+    [ HIRule $
+        "root"
+          =:= VBytes
+          `H.cbor` simpleRule "simpleRule"
     ]

@@ -20,12 +20,12 @@ import Data.Text.Lazy qualified as TL
 import Test.AntiGen (runAntiGen, zapAntiGen)
 import Test.Codec.CBOR.Cuddle.CDDL.Examples.Huddle (
   bytesExample,
+  customGenExample,
   opCertExample,
   optionalMapExample,
   rangeListExample,
   rangeMapExample,
   refTermExample,
-  simpleTermExample,
   sizeBytesExample,
   sizeTextExample,
  )
@@ -66,7 +66,7 @@ spec :: Spec
 spec = do
   describe "Negative generator" $ do
     describe "Zapped value fails to validate" $ do
-      zapInvalidatesHuddle "simpleTerm" simpleTermExample
+      zapInvalidatesHuddle "customGen" customGenExample
       zapInvalidatesHuddle "refTerm" refTermExample
       zapInvalidatesHuddle "opCert" opCertExample
       zapInvalidatesHuddle "sizeText" sizeTextExample
@@ -77,7 +77,7 @@ spec = do
 
   describe "Custom generators" $ do
     describe "Huddle" $ do
-      simpleTermExampleCddl <- tryResolveHuddle simpleTermExample
+      simpleTermExampleCddl <- tryResolveHuddle customGenExample
       prop "If a term has a custom generator then it is used" $ do
         res <- generateCDDL $ mapIndex simpleTermExampleCddl
         pure $

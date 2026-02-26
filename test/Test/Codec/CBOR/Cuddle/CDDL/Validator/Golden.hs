@@ -14,6 +14,7 @@ import Codec.CBOR.Cuddle.CDDL.Resolve (fullResolveCDDL)
 import Codec.CBOR.Cuddle.Huddle (Huddle, toCDDL)
 import Codec.CBOR.Cuddle.IndexMappable (mapCDDLDropExt, mapIndex)
 import Codec.CBOR.Term (Term (..), encodeTerm)
+import Codec.CBOR.Write (toStrictByteString)
 import Codec.CBOR.Write qualified as CBOR
 import Control.Monad ((<=<))
 import Data.Either (fromRight)
@@ -24,6 +25,7 @@ import Prettyprinter (defaultLayoutOptions, layoutPretty)
 import Prettyprinter.Render.Terminal qualified as Ansi
 import System.FilePath ((</>))
 import Test.Codec.CBOR.Cuddle.CDDL.Examples.Huddle (
+  cborControlExample,
   choicesExample,
   huddleRangeArray,
   refTermExample,
@@ -59,6 +61,9 @@ choiceAlmostSecond =
     , TBool True
     , TInt 1
     ]
+
+cborControlBad :: Term
+cborControlBad = TBytes . toStrictByteString $ encodeTerm (TList [TInt 1, TInt 2, TInt 4])
 
 validatorPrettyGolden :: String -> Huddle -> Name -> Term -> Spec
 validatorPrettyGolden testName huddle n term =
@@ -102,3 +107,8 @@ spec = describe "golden" $ do
       choicesExample
       "root"
       choiceAlmostSecond
+    validatorPrettyGolden
+      "cborControlBad"
+      cborControlExample
+      "root"
+      cborControlBad
