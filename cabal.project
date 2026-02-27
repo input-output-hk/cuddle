@@ -21,3 +21,10 @@ if impl(ghc >=9.14)
     , tree-diff:semialign
     , binary:containers
     , uuid-types:template-haskell
+    , aeson:binary
+    , aeson:containers
+    , binary:base
+    , ordered-containers:containers
+    , cborg:base
+    , cborg:containers
+    , boring:base
