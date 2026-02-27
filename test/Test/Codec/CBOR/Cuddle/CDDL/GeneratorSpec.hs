@@ -77,9 +77,9 @@ spec = do
 
   describe "Custom generators" $ do
     describe "Huddle" $ do
-      simpleTermExampleCddl <- tryResolveHuddle customGenExample
+      customGenExampleCddl <- tryResolveHuddle customGenExample
       prop "If a term has a custom generator then it is used" $ do
-        res <- generateCDDL $ mapIndex simpleTermExampleCddl
+        res <- generateCDDL $ mapIndex customGenExampleCddl
         pure $
           res `shouldSatisfy` \case
             TInt i -> i > 3 && i < 7
