@@ -21,6 +21,7 @@ let
       ghc98.compiler-nix-name = "ghc984";
       ghc910.compiler-nix-name = "ghc9102";
       ghc912.compiler-nix-name = "ghc9122";
+      ghc914.compiler-nix-name = "ghc914";
     };
   });
 
