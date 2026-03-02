@@ -8,23 +8,23 @@ program-options
 
 if impl(ghc >=9.14)
   allow-newer:
+    , aeson:binary
+    , aeson:containers
+    , aeson:template-haskell
+    , binary:base
+    , binary:containers
+    , boring:base
+    , cborg:base
+    , cborg:containers
     , indexed-traversable-instances:base
     , indexed-traversable:base
     , indexed-traversable:containers
+    , ordered-containers:containers
     , semialign:base
     , semialign:containers
     , these:base
-    , aeson:template-haskell
-    , tree-diff:containers
-    , tree-diff:base
     , tree-diff:aeson
+    , tree-diff:base
+    , tree-diff:containers
     , tree-diff:semialign
-    , binary:containers
     , uuid-types:template-haskell
-    , aeson:binary
-    , aeson:containers
-    , binary:base
-    , ordered-containers:containers
-    , cborg:base
-    , cborg:containers
-    , boring:base
