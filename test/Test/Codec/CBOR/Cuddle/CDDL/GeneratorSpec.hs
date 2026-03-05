@@ -16,8 +16,9 @@ import Codec.CBOR.Read (deserialiseFromBytes)
 import Codec.CBOR.Term (Term (..), decodeTerm, encodeTerm)
 import Codec.CBOR.Write (toStrictByteString)
 import Data.ByteString.Lazy qualified as LBS
+import Data.Text qualified as T
 import Data.Text.Lazy qualified as TL
-import Test.AntiGen (runAntiGen, zapAntiGen)
+import Test.AntiGen (ZapResult (..), prettyZapResult, runAntiGen, zapAntiGenResult)
 import Test.Codec.CBOR.Cuddle.CDDL.Examples.Huddle (
   bytesExample,
   customGenExample,
@@ -47,13 +48,18 @@ tryResolveHuddle huddle = do
 
 expectZapInvalidates :: CTreeRoot MonoReferenced -> Name -> Property
 expectZapInvalidates cddl name = property $ do
-  value <- zapAntiGen 1 $ generateFromName (mapIndex cddl) name
+  res@ZapResult {zrValue} <- zapAntiGenResult 1 $ generateFromName (mapIndex cddl) name
   let
-    bs = toStrictByteString $ encodeTerm value
+    bs = toStrictByteString $ encodeTerm zrValue
     validationRes = validateCBOR bs name $ mapIndex cddl
-    failMsg = case deserialiseFromBytes decodeTerm (LBS.fromStrict bs) of
-      Right (_, t) -> prettyHexEnc (encodeTerm t)
-      Left _ -> mempty
+    failMsg =
+      unlines
+        [ case deserialiseFromBytes decodeTerm (LBS.fromStrict bs) of
+            Right (_, t) -> prettyHexEnc (encodeTerm t)
+            Left _ -> mempty
+        , mempty
+        , T.unpack $ prettyZapResult res
+        ]
   pure . counterexample failMsg $ expectInvalid validationRes
 
 zapInvalidatesHuddle :: String -> Huddle -> Spec

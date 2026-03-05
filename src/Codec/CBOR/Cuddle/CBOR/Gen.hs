@@ -70,14 +70,15 @@ import Data.Text.Lazy.Builder qualified as LB
 import Data.Word (Word64, Word8)
 import GHC.Stack (HasCallStack)
 import Numeric.Half (Half (..), fromHalf)
+import Prettyprinter (Pretty (..), layoutCompact)
+import Prettyprinter.Render.Text (renderStrict)
 import System.Random.Stateful (Random, StatefulGen (..), runStateGen_, uniformByteStringM)
 import Test.AntiGen (
   AntiGen,
   antiChoose,
-  antiNonNegative,
-  antiNonPositive,
   faultyNum,
   runAntiGen,
+  withAnnotation,
   (|!),
  )
 import Test.QuickCheck (
@@ -233,20 +234,32 @@ genText :: MonadGen m => m Text
 genText = sized $ \sz -> genNBytesText =<< choose (0, sz)
 
 -- | Primitive types defined by the CDDL specification, with their generators
-genPostlude :: PTerm -> CBORGen Term
-genPostlude pt = case pt of
-  PTBool -> TBool <$> arbitrary
-  PTUInt -> TInteger <$> liftAntiGen antiNonNegative
-  PTNInt -> TInteger <$> liftAntiGen antiNonPositive
-  PTInt -> TInteger . fromIntegral <$> choose (minBound :: Int, maxBound)
-  PTHalf -> THalf <$> choose (-65504, 65504)
-  PTFloat -> TFloat <$> arbitrary
-  PTDouble -> TDouble <$> arbitrary
-  PTBytes -> twiddleBytes =<< genBytes
-  PTText -> twiddleString =<< genText
-  PTAny -> genTerm
-  PTNil -> pure TNull
-  PTUndefined -> pure $ TSimple 23
+genPostlude :: PTerm -> AntiGen Term
+genPostlude pt = genPTerm =<< faultyPTerm pt
+  where
+    genExcluding ls =
+      elements (filter (`notElem` ls) [minBound .. maxBound])
+    nonPInteger p =
+      pure p |! genExcluding [PTUInt, PTNInt, PTInt, PTAny]
+    faultyPTerm t = withAnnotation (renderStrict . layoutCompact $ pretty t) $ case t of
+      PTAny -> pure PTAny
+      p@PTUInt -> nonPInteger p
+      p@PTNInt -> nonPInteger p
+      p@PTInt -> nonPInteger p
+      p -> pure p |! genExcluding [PTAny, p]
+    genPTerm = \case
+      PTBool -> TBool <$> arbitrary
+      PTUInt -> TInteger <$> choose (0, 2 ^ (64 :: Integer) - 1)
+      PTNInt -> TInteger <$> choose (-(2 ^ (64 :: Integer) - 1), -1)
+      PTInt -> TInteger <$> choose (-(2 ^ (64 :: Integer) - 1), 2 ^ (64 :: Integer) - 1)
+      PTHalf -> THalf <$> genHalf
+      PTFloat -> TFloat <$> arbitrary
+      PTDouble -> TDouble <$> arbitrary
+      PTBytes -> twiddleBytes =<< genBytes
+      PTText -> twiddleString =<< genText
+      PTAny -> genTerm
+      PTNil -> pure TNull
+      PTUndefined -> pure $ TSimple 23
 
 --------------------------------------------------------------------------------
 -- Kinds of terms
@@ -299,7 +312,7 @@ range ClOpen x y = (x, pred y)
 range Closed x y = (x, y)
 
 genBetween :: (Integral a, Random a) => (a, a) -> CBORGen a
-genBetween rng = do
+genBetween rng = withAnnotation "genBetween" $ do
   size <- liftGen getSize
   let
     sizeBounds :: Integral a => (a, a)

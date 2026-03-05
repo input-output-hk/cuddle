@@ -13,6 +13,8 @@ import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as Map
 import Data.Word (Word64)
 import GHC.Generics (Generic)
+import Generic.Random (genericArbitraryU)
+import Test.QuickCheck (Arbitrary (..))
 
 --------------------------------------------------------------------------------
 
@@ -137,6 +139,9 @@ data PTerm
   | PTAny
   | PTNil
   | PTUndefined
-  deriving (Eq, Generic, Ord, Show)
+  deriving (Eq, Generic, Ord, Show, Enum, Bounded)
+
+instance Arbitrary PTerm where
+  arbitrary = genericArbitraryU
 
 instance Hashable PTerm
