@@ -30,8 +30,8 @@ import Test.Codec.CBOR.Cuddle.CDDL.Examples.Huddle (
   sizeBytesExample,
   sizeTextExample,
  )
-import Test.Codec.CBOR.Cuddle.CDDL.Validator (expectInvalid)
-import Test.Hspec (HasCallStack, Spec, describe, runIO, shouldSatisfy)
+import Test.Codec.CBOR.Cuddle.CDDL.Validator (expectInvalid, genAndValidateRule)
+import Test.Hspec (HasCallStack, Spec, describe, runIO, shouldBe, shouldSatisfy)
 import Test.Hspec.Core.Spec (SpecM)
 import Test.Hspec.QuickCheck (prop)
 import Test.QuickCheck (Gen, Property, Testable (..), counterexample)
@@ -68,8 +68,25 @@ zapInvalidatesHuddle n huddle = do
   prop n . counterexample (TL.unpack . pShow $ mapIndex @_ @_ @MonoSimple cddl) $
     expectZapInvalidates cddl "root"
 
+-- | Test that generated values are valid for a Huddle schema
+genAndValidateHuddle :: String -> Huddle -> Spec
+genAndValidateHuddle n huddle = do
+  cddl <- tryResolveHuddle huddle
+  genAndValidateRule n "root" cddl
+
 spec :: Spec
 spec = do
+  describe "Positive generator" $ do
+    describe "Generated value validates" $ do
+      -- Note: simpleTermExample and refTermExample use custom generators
+      -- that intentionally produce type-mismatched values, so they're excluded
+      genAndValidateHuddle "opCert" opCertExample
+      genAndValidateHuddle "sizeText" sizeTextExample
+      genAndValidateHuddle "sizeBytes" sizeBytesExample
+      genAndValidateHuddle "rangeList" rangeListExample
+      genAndValidateHuddle "rangeMap" rangeMapExample
+      genAndValidateHuddle "optionalMapExample" optionalMapExample
+
   describe "Negative generator" $ do
     describe "Zapped value fails to validate" $ do
       zapInvalidatesHuddle "customGen" customGenExample
