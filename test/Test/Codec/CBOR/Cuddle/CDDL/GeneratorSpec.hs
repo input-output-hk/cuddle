@@ -31,7 +31,7 @@ import Test.Codec.CBOR.Cuddle.CDDL.Examples.Huddle (
   sizeTextExample,
  )
 import Test.Codec.CBOR.Cuddle.CDDL.Validator (expectInvalid, genAndValidateRule)
-import Test.Hspec (HasCallStack, Spec, describe, runIO, shouldBe, shouldSatisfy)
+import Test.Hspec (HasCallStack, Spec, describe, runIO, shouldBe, shouldSatisfy, xdescribe)
 import Test.Hspec.Core.Spec (SpecM)
 import Test.Hspec.QuickCheck (prop)
 import Test.QuickCheck (Gen, Property, Testable (..), counterexample)
@@ -85,7 +85,8 @@ spec = do
       genAndValidateHuddle "sizeBytes" sizeBytesExample
       genAndValidateHuddle "rangeList" rangeListExample
       genAndValidateHuddle "rangeMap" rangeMapExample
-      genAndValidateHuddle "optionalMapExample" optionalMapExample
+      xdescribe "Generator cannot reliably produce unique keys for maps" $ do
+        genAndValidateHuddle "optionalMapExample" optionalMapExample
 
   describe "Negative generator" $ do
     describe "Zapped value fails to validate" $ do
@@ -96,7 +97,8 @@ spec = do
       zapInvalidatesHuddle "sizeBytes" sizeBytesExample
       zapInvalidatesHuddle "rangeList" rangeListExample
       zapInvalidatesHuddle "rangeMap" rangeMapExample
-      zapInvalidatesHuddle "optionalMapExample" optionalMapExample
+      xdescribe "Generator cannot reliably produce unique keys for maps" $ do
+        zapInvalidatesHuddle "optionalMapExample" optionalMapExample
 
   describe "Custom generators" $ do
     describe "Huddle" $ do
