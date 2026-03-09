@@ -250,8 +250,8 @@ genPostlude pt = genPTerm =<< faultyPTerm pt
     genPTerm = \case
       PTBool -> TBool <$> arbitrary
       PTUInt -> TInteger <$> choose (0, 2 ^ (64 :: Integer) - 1)
-      PTNInt -> TInteger <$> choose (-(2 ^ (64 :: Integer) - 1), -1)
-      PTInt -> TInteger <$> choose (-(2 ^ (64 :: Integer) - 1), 2 ^ (64 :: Integer) - 1)
+      PTNInt -> TInteger <$> choose (-(2 ^ (64 :: Integer)), -1)
+      PTInt -> TInteger <$> choose (-(2 ^ (64 :: Integer)), 2 ^ (64 :: Integer) - 1)
       PTHalf -> THalf <$> genHalf
       PTFloat -> TFloat <$> arbitrary
       PTDouble -> TDouble <$> arbitrary
