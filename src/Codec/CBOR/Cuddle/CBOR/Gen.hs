@@ -50,12 +50,11 @@ import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
 import Codec.CBOR.Term (Term (..))
 import Codec.CBOR.Term qualified as CBOR
 import Codec.CBOR.Write qualified as CBOR
-import Control.Monad ((<=<))
 import Control.Monad.Reader (asks)
+import Control.Monad (foldM, (<=<))
 import Data.ByteString (ByteString)
 import Data.ByteString.Lazy qualified as LBS
 import Data.Char (chr)
-import Data.Containers.ListUtils (nubOrdOn)
 import Data.Functor ((<&>))
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as Map
@@ -292,13 +291,6 @@ singleTermList (S x : xs) = (x :) <$> singleTermList xs
 singleTermList (P _ y : xs) = (y :) <$> singleTermList xs
 singleTermList _ = Nothing
 
--- | Convert a list of wrapped terms to a list of pairs of terms, or fail if any
--- 'SingleTerm's are present.
-pairTermList :: [WrappedTerm] -> Maybe [(Term, Term)]
-pairTermList [] = Just []
-pairTermList (P x y : xs) = ((x, y) :) <$> pairTermList xs
-pairTermList _ = Nothing
-
 showSimple :: CTree GenPhase -> String
 showSimple = show . mapIndex @_ @_ @GenSimple
 
@@ -337,22 +329,19 @@ genForCTree = \case
   CTree.Literal v -> withAnnotation "literal" $ pure . S $ valueToTerm v
   CTree.Postlude pt -> withAnnotation "postlude" $ S <$> genPostlude pt
   CTree.Map nodes -> withAnnotation "map" $ do
-    items <-
-      pairTermList . flattenWrappedList
-        <$> traverse
-          (\(i, node) -> withAnnotation (T.pack $ show i) $ genForCTree cddl node)
-          ([0 :: Int ..] `zip` nodes)
-    case items of
-      Just ts ->
-        let
-          -- De-duplicate keys in the map.
-          -- Per RFC7049:
-          -- >> A map that has duplicate keys may be well-formed, but it is not
-          -- >> valid, and thus it causes indeterminate decoding
-          tsNodup = nubOrdOn fst ts
-         in
-          S <$> twiddleMap tsNodup
-      Nothing -> error "Single terms in map context"
+    let
+      go m = \case
+        KV kNode vNode _ -> do
+          let
+            unS (S x) = x
+            unS x = error $ "Expected single, got " <> show x
+          k <- (unS <$> genForCTree kNode) `suchThat` (`Map.notMember` m)
+          v <- unS <$> genForCTree vNode
+          pure $ Map.insert k v m
+        Occur node oi -> undefined
+        node -> error $ "Unexpected node: " <> showSimple node
+    items <- foldM go Map.empty nodes
+    S <$> twiddleMap (Map.toList items)
   CTree.Array nodes -> withAnnotation "array" $ do
     items <-
       singleTermList . flattenWrappedList
