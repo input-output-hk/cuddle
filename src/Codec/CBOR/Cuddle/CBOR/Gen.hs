@@ -89,7 +89,7 @@ import Test.QuickCheck (
  )
 import Test.QuickCheck qualified as QC
 import Test.QuickCheck.Gen (Gen (..), getSize)
-import Test.QuickCheck.GenT (MonadGen (..), elements, listOf, oneof, suchThat, vectorOf)
+import Test.QuickCheck.GenT (MonadGen (..), elements, frequency, listOf, oneof, suchThat, vectorOf)
 
 -- TODO remove this once QuickCheck gets QC
 data QC = QC
@@ -358,44 +358,56 @@ genMap cddl nodes = do
     elemsNeeded (Occur _ (OIBounded (Just lo) _)) = lo
     elemsNeeded _ = 0
 
-    tryGenKV 0 _ _ _ = pure Nothing
+    tryGenKV (0 :: Int) _ _ _ = pure Nothing
     tryGenKV nTries m kNode vNode = do
       let
         unS (S x) = x
         unS x = error $ "Expected single, got " <> show x
       k <- unS <$> scale (`div` 2) (genForCTree cddl kNode)
-      if Map.member k m
+      if Map.notMember k m
         then do
           v <- unS <$> scale (`div` 2) (genForCTree cddl vNode)
           pure . Just $ (k, v)
         else tryGenKV (nTries - 1) m kNode vNode
 
-    genTarget ::
-      (Int, Int) -> Map.Map Term Term -> CTree GenPhase -> AntiGen (Maybe (Map.Map Term Term))
-    genTarget (min, target) = undefined
-
-    go :: Int -> Map.Map Term Term -> [CTree GenPhase] -> AntiGen (Maybe (Map.Map Term Term))
-    go 0 _ _ = pure Nothing
-    go _ m [] = pure $ Just m
-    go !nTries !m (n : ns) = case n of
-      KV kNode vNode _ -> do
-        mKV <- tryGenKV nTries m kNode vNode
-        pure $ (\(k, v) -> Map.insert k v m) <$> mKV
-      Occur (KV kNode vNode _) oi -> case oi of
-        OIOptional ->
-          oneof
-            [ do
-                mKV <- tryGenKV 10 m kNode vNode
-                pure $ fmap (\(k, v) -> Map.insert k v m) mKV <|> Just m
-            , pure . Just $ m
-            ]
-        OIZeroOrMore -> do
-          nElems <- choose (0 :: Int, 10)
-          undefined
-        OIOneOrMore -> undefined
-        OIBounded _ _ -> undefined
-      node -> error $ "Unexpected node: " <> showSimple node
-  mItems <- go 50 Map.empty $ sortOn (negate . elemsNeeded) nodes
+    genNodes :: Map.Map Term Term -> [CTree GenPhase] -> AntiGen (Maybe (Map.Map Term Term))
+    genNodes m [] = pure $ Just m
+    genNodes !m (n : ns) =
+      let
+        cont x y = scale (\s -> s - 1) $ genNodes x y
+        optGenKV kNode vNode = sized $ \sz -> frequency [(100, pure Nothing), (sz, tryGenKV 10 m kNode vNode)]
+       in
+        case n of
+          KV kNode vNode _ -> do
+            mKV <- tryGenKV 100 m kNode vNode
+            pure $ (\(k, v) -> Map.insert k v m) <$> mKV
+          Occur kv@(KV kNode vNode _) oi -> case oi of
+            OIOptional -> sized $ \sz -> do
+              mt <- frequency [(100, pure Nothing), (sz, tryGenKV 10 m kNode vNode)]
+              case mt of
+                Just (k, v) -> cont (Map.insert k v m) ns
+                Nothing -> cont m ns
+            OIZeroOrMore -> do
+              mt <- optGenKV kNode vNode
+              case mt of
+                Just (k, v) -> cont (Map.insert k v m) (n : ns)
+                Nothing -> cont m ns
+            OIOneOrMore -> genNodes m (kv : Occur kv OIZeroOrMore : ns)
+            OIBounded mlb mub -> do
+              let
+                newLow = mlb <&> \x -> x - 1
+                newHigh = mub <&> \x -> x - 1
+                res
+                  | maybe False (> 0) mlb = genNodes m (kv : Occur kv (OIBounded newLow newHigh) : ns)
+                  | maybe False (< 1) mub = genNodes m ns
+                  | otherwise = do
+                      mt <- optGenKV kNode vNode
+                      case mt of
+                        Just (k, v) -> cont (Map.insert k v m) (Occur kv (OIBounded newLow newHigh) : ns)
+                        Nothing -> genNodes m ns
+              res
+          node -> error $ "Unexpected node: " <> showSimple node
+  mItems <- genNodes Map.empty $ sortOn (negate . elemsNeeded) nodes
   case mItems of
     Just items -> pure . S . TMap $ Map.toList items
     Nothing -> undefined
