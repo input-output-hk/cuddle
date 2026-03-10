@@ -375,15 +375,18 @@ genMap cddl nodes = do
     genNodes !m (n : ns) =
       let
         cont x y = scale (\s -> s - 1) $ genNodes x y
-        optGenKV kNode vNode = sized $ \sz -> frequency [(100, pure Nothing), (sz, tryGenKV 10 m kNode vNode)]
+        optGenKV kNode vNode = sized $ \sz ->
+          frequency [(100, pure Nothing), (max 0 sz, tryGenKV 10 m kNode vNode)]
        in
         case n of
           KV kNode vNode _ -> do
             mKV <- tryGenKV 100 m kNode vNode
-            pure $ (\(k, v) -> Map.insert k v m) <$> mKV
+            case mKV of
+              Just (k, v) -> cont (Map.insert k v m) ns
+              Nothing -> pure Nothing
           Occur kv@(KV kNode vNode _) oi -> case oi of
-            OIOptional -> sized $ \sz -> do
-              mt <- frequency [(100, pure Nothing), (sz, tryGenKV 10 m kNode vNode)]
+            OIOptional -> do
+              mt <- optGenKV kNode vNode
               case mt of
                 Just (k, v) -> cont (Map.insert k v m) ns
                 Nothing -> cont m ns
@@ -395,8 +398,10 @@ genMap cddl nodes = do
             OIOneOrMore -> genNodes m (kv : Occur kv OIZeroOrMore : ns)
             OIBounded mlb mub -> do
               let
-                newLow = mlb <&> \x -> x - 1
-                newHigh = mub <&> \x -> x - 1
+                clampedPred 0 = 0
+                clampedPred x = x - 1
+                newLow = clampedPred <$> mlb
+                newHigh = clampedPred <$> mub
                 res
                   | maybe False (> 0) mlb = genNodes m (kv : Occur kv (OIBounded newLow newHigh) : ns)
                   | maybe False (< 1) mub = genNodes m ns
@@ -410,7 +415,7 @@ genMap cddl nodes = do
   mItems <- genNodes Map.empty $ sortOn (negate . elemsNeeded) nodes
   case mItems of
     Just items -> pure . S . TMap $ Map.toList items
-    Nothing -> undefined
+    Nothing -> error "Failed to generate unique keys for map after max retries"
 
 -- | Generate an array from a list of nodes
 genArray ::
