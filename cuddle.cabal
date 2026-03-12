@@ -140,6 +140,12 @@ executable cuddle
     random,
     text,
 
+  autogen-modules:
+    Paths_cuddle
+
+  other-modules:
+    Paths_cuddle
+
 test-suite cuddle-test
   import: warnings
   default-language: GHC2021
