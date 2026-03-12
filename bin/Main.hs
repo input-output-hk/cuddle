@@ -41,7 +41,9 @@ import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import Data.Text.Encoding (encodeUtf8)
 import Data.Text.IO qualified as T
+import Data.Version (showVersion)
 import Options.Applicative
+import Paths_cuddle (version)
 import Prettyprinter (
   LayoutOptions (..),
   PageWidth (..),
@@ -295,7 +297,7 @@ main = do
   options <-
     execParser $
       info
-        (pCommand <**> helper)
+        (pCommand <**> helper <**> simpleVersioner (showVersion version))
         ( fullDesc
             <> progDesc "Manipulate CDDL files"
             <> header "cuddle"
