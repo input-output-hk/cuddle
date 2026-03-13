@@ -247,11 +247,17 @@ genPostlude pt = genPTerm =<< faultyPTerm pt
       p@PTNInt -> nonPInteger p
       p@PTInt -> nonPInteger p
       p -> pure p |! genExcluding [PTAny, p]
+    maxUInt = 2 ^ (64 :: Integer) - 1
+    minNInt = -(2 ^ (64 :: Integer))
+    genUInt = choose (0, maxUInt)
+    genNInt = choose (minNInt, -1)
+    genAboveUInt = choose (maxUInt + 1, 2 * maxUInt)
+    genBelowNInt = choose (2 * minNInt, minNInt - 1)
     genPTerm = \case
       PTBool -> TBool <$> arbitrary
-      PTUInt -> TInteger <$> choose (0, 2 ^ (64 :: Integer) - 1)
-      PTNInt -> TInteger <$> choose (-(2 ^ (64 :: Integer)), -1)
-      PTInt -> TInteger <$> choose (-(2 ^ (64 :: Integer)), 2 ^ (64 :: Integer) - 1)
+      PTUInt -> TInteger <$> (genUInt |! oneof [genNInt, genBelowNInt, genAboveUInt])
+      PTNInt -> TInteger <$> (genNInt |! oneof [genUInt, genBelowNInt, genAboveUInt])
+      PTInt -> TInteger <$> choose (minNInt, maxUInt)
       PTHalf -> THalf <$> genHalf
       PTFloat -> TFloat <$> arbitrary
       PTDouble -> TDouble <$> arbitrary
