@@ -147,7 +147,7 @@ simple =
 genHalf :: MonadGen m => m Float
 genHalf = do
   half <- Half <$> arbitrary
-  if isInfinite half || isDenormalized half || isNaN half
+  if isDenormalized half
     then genHalf
     else pure $ fromHalf half
 
@@ -180,12 +180,11 @@ twiddleMap t = do
     else pure $ TMap t
 
 
--- | Generate faulty Half values: NaN, Infinity, or values outside Half range (±65504)
+-- | Generate faulty Half values: values outside Half range (±65504)
 genFaultyHalf :: MonadGen m => m Float
 genFaultyHalf =
   oneof
-    [ elements [0 / 0, 1 / 0, -1 / 0] -- NaN, +Inf, -Inf
-    , choose (65505, 1e38) -- Above half max
+    [ choose (65505, 1e38) -- Above half max
     , choose (-1e38, -65505) -- Below half min
     ]
 
