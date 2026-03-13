@@ -269,7 +269,7 @@ genPostlude pt = genPTerm =<< faultyPTerm pt
       PTUInt -> TInteger <$> (genUInt |! oneof [genNInt, genBelowNInt, genAboveUInt])
       PTNInt -> TInteger <$> (genNInt |! oneof [genUInt, genBelowNInt, genAboveUInt])
       PTInt -> TInteger <$> choose (minNInt, maxUInt)
-      PTHalf -> THalf <$> (genHalf |! genFaultyHalf)
+      PTHalf -> THalf <$> genHalf
       PTFloat -> TFloat <$> arbitrary
       PTDouble -> TDouble <$> arbitrary
       PTBytes -> twiddleBytes =<< genBytes
