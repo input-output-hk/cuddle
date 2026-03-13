@@ -179,6 +179,16 @@ twiddleMap t = do
     then ($ t) <$> elements [TMap, TMapI]
     else pure $ TMap t
 
+
+-- | Generate faulty Half values: NaN, Infinity, or values outside Half range (±65504)
+genFaultyHalf :: MonadGen m => m Float
+genFaultyHalf =
+  oneof
+    [ elements [0 / 0, 1 / 0, -1 / 0] -- NaN, +Inf, -Inf
+    , choose (65505, 1e38) -- Above half max
+    , choose (-1e38, -65505) -- Below half min
+    ]
+
 genTerm :: CBORGen Term
 genTerm =
   oneof
@@ -260,7 +270,7 @@ genPostlude pt = genPTerm =<< faultyPTerm pt
       PTUInt -> TInteger <$> (genUInt |! oneof [genNInt, genBelowNInt, genAboveUInt])
       PTNInt -> TInteger <$> (genNInt |! oneof [genUInt, genBelowNInt, genAboveUInt])
       PTInt -> TInteger <$> choose (minNInt, maxUInt)
-      PTHalf -> THalf <$> genHalf
+      PTHalf -> THalf <$> (genHalf |! genFaultyHalf)
       PTFloat -> TFloat <$> arbitrary
       PTDouble -> TDouble <$> arbitrary
       PTBytes -> twiddleBytes =<< genBytes
