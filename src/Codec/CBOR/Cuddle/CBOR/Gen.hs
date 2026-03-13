@@ -77,6 +77,7 @@ import Test.AntiGen (
   AntiGen,
   antiChoose,
   faultyNum,
+  reweigh,
   runAntiGen,
   withAnnotation,
   (|!),
@@ -241,12 +242,13 @@ genPostlude pt = genPTerm =<< faultyPTerm pt
       elements (filter (`notElem` ls) [minBound .. maxBound])
     nonPInteger p =
       pure p |! genExcluding [PTUInt, PTNInt, PTInt, PTAny]
-    faultyPTerm t = withAnnotation (renderStrict . layoutCompact $ pretty t) $ case t of
-      PTAny -> pure PTAny
-      p@PTUInt -> nonPInteger p
-      p@PTNInt -> nonPInteger p
-      p@PTInt -> nonPInteger p
-      p -> pure p |! genExcluding [PTAny, p]
+    faultyPTerm t = reweigh 0.1 . withAnnotation (renderStrict . layoutCompact $ pretty t) $
+      case t of
+        PTAny -> pure PTAny
+        p@PTUInt -> nonPInteger p
+        p@PTNInt -> nonPInteger p
+        p@PTInt -> nonPInteger p
+        p -> pure p |! genExcluding [PTAny, p]
     maxUInt = 2 ^ (64 :: Integer) - 1
     minNInt = -(2 ^ (64 :: Integer))
     genUInt = choose (0, maxUInt)
