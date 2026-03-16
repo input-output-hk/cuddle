@@ -346,7 +346,12 @@ prettyListValidationResult :: TraceOptions -> ListValidationTrace v -> Doc AnsiS
 prettyListValidationResult opts@TraceOptions {..} = \case
   ListValidationDone -> mempty
   ListValidationLeftoverTerms _ -> annotate (color Red) "leftover elements after all rules have been applied"
-  ListValidationUnappliedRules _ -> annotate (color Red) "not all required rules have been applied"
+  ListValidationUnappliedRules rs ->
+    hang 2 $
+      vsep
+        [ annotate (color Red) "not all required rules have been applied:"
+        , vsep (toList $ pretty <$> rs)
+        ]
   ListValidationConsume _ t c
     | toFoldValid -> foldValid 1 c
     | otherwise -> vsep $ continue c [prettyValidationTrace opts t]

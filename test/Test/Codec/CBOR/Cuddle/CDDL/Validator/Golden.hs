@@ -28,10 +28,14 @@ import Test.Codec.CBOR.Cuddle.CDDL.Examples.Huddle (
   cborControlExample,
   choicesExample,
   huddleRangeArray,
+  listTooShortExample,
   refTermExample,
  )
 import Test.Hspec (Spec, describe, it)
 import Test.Hspec.Golden (Golden (..))
+
+listTooShortTerm :: Term
+listTooShortTerm = TList [TInt 42]
 
 huddleRangeArrayTermTwoStrings :: Term
 huddleRangeArrayTermTwoStrings =
@@ -112,3 +116,8 @@ spec = describe "golden" $ do
       cborControlExample
       "root"
       cborControlBad
+    validatorPrettyGolden
+      "listTooShort"
+      listTooShortExample
+      "root"
+      listTooShortTerm

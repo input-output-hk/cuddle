@@ -18,6 +18,7 @@ module Test.Codec.CBOR.Cuddle.CDDL.Examples.Huddle (
   optionalMapExample,
   choicesExample,
   cborControlExample,
+  listTooShortExample,
 ) where
 
 import Codec.CBOR.Cuddle.CDDL (Name)
@@ -188,4 +189,16 @@ cborControlExample =
         "root"
           =:= VBytes
           `H.cbor` simpleRule "simpleRule"
+    ]
+
+listTooShortExample :: Huddle
+listTooShortExample =
+  collectFrom
+    [ HIRule $
+        "root"
+          =:= arr
+            [ a VInt
+            , a VText
+            , a VBool
+            ]
     ]
