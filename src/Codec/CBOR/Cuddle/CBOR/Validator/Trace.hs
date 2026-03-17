@@ -188,8 +188,13 @@ data ListValidationTrace (v :: Validity) where
     NonEmpty Term ->
     Maybe (CTree ValidatorStageSimple, ValidationTrace IsInvalid) ->
     ListValidationTrace IsInvalid
+<<<<<<< HEAD
   ListValidationUnappliedRule ::
     CTree ValidatorStageSimple ->
+=======
+  ListValidationUnappliedRules ::
+    NonEmpty (CTree ValidatorStageSimple) ->
+>>>>>>> d212208 (Improve list leftover elements validation trace)
     ListValidationTrace IsInvalid
   ListValidationConsume ::
     CTree ValidatorStageSimple ->

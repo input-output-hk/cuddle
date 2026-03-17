@@ -21,10 +21,13 @@ module Test.Codec.CBOR.Cuddle.CDDL.Examples.Huddle (
   listTooShortExample,
   listSkippedRuleExample,
   listSkippedRuleNestedExample,
+<<<<<<< HEAD
   mapLeftoverKVExample,
   mapNoMatchingKeyExample,
   listZeroOrMoreExample,
   mapNestedValueExample,
+=======
+>>>>>>> d212208 (Improve list leftover elements validation trace)
 ) where
 
 import Codec.CBOR.Cuddle.CDDL (Name)
