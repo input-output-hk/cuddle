@@ -214,7 +214,10 @@ deriving instance Show (ListValidationTrace v)
 
 data MapValidationTrace (v :: Validity) where
   MapValidationDone :: MapValidationTrace IsValid
-  MapValidationLeftoverKVs :: [(Term, Term)] -> MapValidationTrace IsInvalid
+  MapValidationLeftoverKVs ::
+    (Term, Term) ->
+    Maybe (CTree ValidatorStageSimple, MapValidationTrace IsInvalid) ->
+    MapValidationTrace IsInvalid
   MapValidationUnappliedRules :: NonEmpty (CTree ValidatorStageSimple) -> MapValidationTrace IsInvalid
   MapValidationInvalidValue ::
     CTree ValidatorStageSimple ->
@@ -310,14 +313,15 @@ instance IsValidationTrace ListValidationTrace where
 instance IsValidationTrace MapValidationTrace where
   traceValidity = \case
     MapValidationDone -> SValid
-    MapValidationLeftoverKVs _ -> SInvalid
+    MapValidationLeftoverKVs _ _ -> SInvalid
     MapValidationUnappliedRules _ -> SInvalid
     MapValidationInvalidValue {} -> SInvalid
     MapValidationConsume _ _ _ x -> traceValidity x
 
   measureProgress = \case
     MapValidationDone -> 10
-    MapValidationLeftoverKVs _ -> 0
+    MapValidationLeftoverKVs _ Nothing -> 0
+    MapValidationLeftoverKVs _ (Just (_, trc)) -> measureProgress trc
     MapValidationUnappliedRules _ -> 0
     MapValidationConsume _ _ _ x -> 3 + measureProgress x
     MapValidationInvalidValue {} -> 2
@@ -403,7 +407,15 @@ prettyListValidationResult opts@TraceOptions {..} = \case
 prettyMapValidationResult :: TraceOptions -> MapValidationTrace v -> Doc AnsiStyle
 prettyMapValidationResult opts@TraceOptions {..} = \case
   MapValidationDone -> mempty
-  MapValidationLeftoverKVs _ -> annotate (color Red) "no more rules left to apply"
+  MapValidationLeftoverKVs _ Nothing ->
+    annotate (color Red) "leftover key-value pairs not matched by any rule"
+  MapValidationLeftoverKVs _ (Just (rule, trc)) ->
+    hang 2 $
+      vsep
+        [ annotate (color Red) "leftover key-value pairs, closest matching rule:"
+        , annotate (color Green) $ pretty rule
+        , nestContainer $ prettyMapValidationResult opts trc
+        ]
   MapValidationUnappliedRules rs ->
     hang 2 $
       vsep

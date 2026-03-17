@@ -31,6 +31,7 @@ import Test.Codec.CBOR.Cuddle.CDDL.Examples.Huddle (
   listSkippedRuleExample,
   listSkippedRuleNestedExample,
   listTooShortExample,
+  mapLeftoverKVExample,
   refTermExample,
  )
 import Test.Hspec (Spec, describe, it)
@@ -73,6 +74,9 @@ listSkippedRuleTerm = TList [TInt 1, TInt 2]
 
 listSkippedRuleNestedTerm :: Term
 listSkippedRuleNestedTerm = TList [TInt 1, TList [TInt 2, TInt 3]]
+
+mapLeftoverKVTerm :: Term
+mapLeftoverKVTerm = TMap [(TInt 2, TString "hello")]
 
 cborControlBad :: Term
 cborControlBad = TBytes . toStrictByteString $ encodeTerm (TList [TInt 1, TInt 2, TInt 4])
@@ -139,3 +143,8 @@ spec = describe "golden" $ do
       listSkippedRuleNestedExample
       "root"
       listSkippedRuleNestedTerm
+    validatorPrettyGolden
+      "mapLeftoverKV"
+      mapLeftoverKVExample
+      "root"
+      mapLeftoverKVTerm

@@ -851,8 +851,24 @@ validateMap cddl terms rule =
   where
     validate ::
       [CTree ValidatorStage] -> [(Term, Term)] -> [CTree ValidatorStage] -> Evidenced MapValidationTrace
-    validate [] [] [] = evidence MapValidationDone
-    validate _ kvs [] = evidence $ MapValidationLeftoverKVs kvs
+    validate _ [] [] = evidence MapValidationDone
+    validate exhausted (kv : _) [] =
+      let
+        unwrapOccur (Occur ct _) = ct
+        unwrapOccur ct = ct
+        attempts =
+          [ (mapIndex r, MapValidationInvalidValue (mapIndex r) kTrc vTrc)
+          | r <- exhausted
+          , KV k v _ <- [unwrapOccur r]
+          , Evidenced SValid kTrc <- [validateTerm cddl (fst kv) k]
+          , Evidenced SInvalid vTrc <- [validateTerm cddl (snd kv) v]
+          , measureProgress (MapValidationInvalidValue (mapIndex r) kTrc vTrc) > 0
+          ]
+        bestAttempt = case attempts of
+          [] -> Nothing
+          _ -> Just $ maximumBy (compare `on` (measureProgress . snd)) attempts
+       in
+        evidence $ MapValidationLeftoverKVs kv bestAttempt
     validate [] [] rs =
       case NE.nonEmpty $ filter (not . isOptional) rs of
         Nothing -> evidence MapValidationDone
