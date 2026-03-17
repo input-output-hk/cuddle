@@ -22,6 +22,9 @@ module Test.Codec.CBOR.Cuddle.CDDL.Examples.Huddle (
   listSkippedRuleExample,
   listSkippedRuleNestedExample,
   mapLeftoverKVExample,
+  mapNoMatchingKeyExample,
+  listZeroOrMoreExample,
+  mapNestedValueExample,
 ) where
 
 import Codec.CBOR.Cuddle.CDDL (Name)
@@ -238,8 +241,6 @@ listSkippedRuleNestedExample =
         , HIRule quux
         ]
 
--- Map with three optional KV rules: { ? (1 => text), ? (2 => int), ? (3 => bool) }
--- Against { 2: "hello" }: key 2 matches middle rule, but value "hello" is text not int
 mapLeftoverKVExample :: Huddle
 mapLeftoverKVExample =
   collectFrom
@@ -251,3 +252,37 @@ mapLeftoverKVExample =
             , opt $ idx 3 ==> VBool
             ]
     ]
+
+mapNoMatchingKeyExample :: Huddle
+mapNoMatchingKeyExample =
+  collectFrom
+    [ HIRule $
+        "root"
+          =:= mp
+            [ opt $ idx 1 ==> VText
+            , opt $ idx 2 ==> VInt
+            ]
+    ]
+
+listZeroOrMoreExample :: Huddle
+listZeroOrMoreExample =
+  collectFrom
+    [ HIRule $
+        "root"
+          =:= arr
+            [ 0 <+ a VInt
+            , a VText
+            ]
+    ]
+
+mapNestedValueExample :: Huddle
+mapNestedValueExample =
+  let bar = "bar" =:= arr [a VInt, a VText]
+   in collectFrom
+        [ HIRule $
+            "root"
+              =:= mp
+                [ opt $ idx 1 ==> bar
+                ]
+        , HIRule bar
+        ]
