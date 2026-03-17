@@ -28,6 +28,8 @@ import Test.Codec.CBOR.Cuddle.CDDL.Examples.Huddle (
   cborControlExample,
   choicesExample,
   huddleRangeArray,
+  listSkippedRuleExample,
+  listSkippedRuleNestedExample,
   listTooShortExample,
   refTermExample,
  )
@@ -65,6 +67,12 @@ choiceAlmostSecond =
     , TBool True
     , TInt 1
     ]
+
+listSkippedRuleTerm :: Term
+listSkippedRuleTerm = TList [TInt 1, TInt 2]
+
+listSkippedRuleNestedTerm :: Term
+listSkippedRuleNestedTerm = TList [TInt 1, TList [TInt 2, TInt 3]]
 
 cborControlBad :: Term
 cborControlBad = TBytes . toStrictByteString $ encodeTerm (TList [TInt 1, TInt 2, TInt 4])
@@ -121,3 +129,13 @@ spec = describe "golden" $ do
       listTooShortExample
       "root"
       listTooShortTerm
+    validatorPrettyGolden
+      "listSkippedRule"
+      listSkippedRuleExample
+      "root"
+      listSkippedRuleTerm
+    validatorPrettyGolden
+      "listSkippedRuleNested"
+      listSkippedRuleNestedExample
+      "root"
+      listSkippedRuleNestedTerm

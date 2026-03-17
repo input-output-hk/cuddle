@@ -19,11 +19,11 @@ module Codec.CBOR.Cuddle.CBOR.Validator.Trace (
   ListValidationTrace (..),
   MapValidationTrace (..),
   Evidenced (..),
+  IsValidationTrace (..),
   ControlInfo (..),
   TraceOptions (..),
   defaultTraceOptions,
   showSimple,
-  traceValidity,
   isValid,
   prettyValidationTrace,
   showValidationTrace,
@@ -184,16 +184,22 @@ deriving instance Show (ValidationTrace v)
 
 data ListValidationTrace (v :: Validity) where
   ListValidationDone :: ListValidationTrace IsValid
-  ListValidationLeftoverTerms :: NonEmpty Term -> ListValidationTrace IsInvalid
+  ListValidationLeftoverTerms ::
+    NonEmpty Term ->
+    Maybe (CTree ValidatorStageSimple, ValidationTrace IsInvalid) ->
+    ListValidationTrace IsInvalid
   ListValidationUnappliedRules ::
-    NonEmpty (CTree ValidatorStageSimple) -> ListValidationTrace IsInvalid
+    NonEmpty (CTree ValidatorStageSimple) ->
+    ListValidationTrace IsInvalid
   ListValidationConsume ::
     CTree ValidatorStageSimple ->
     ValidationTrace IsValid ->
     ListValidationTrace v ->
     ListValidationTrace v
   ListValidationMissingRequired ::
-    CTree ValidatorStageSimple -> ValidationTrace IsInvalid -> ListValidationTrace IsInvalid
+    CTree ValidatorStageSimple ->
+    ValidationTrace IsInvalid ->
+    ListValidationTrace IsInvalid
   ListValidationConsumeGroup ::
     [Name] ->
     ListValidationTrace IsValid ->
@@ -294,7 +300,8 @@ instance IsValidationTrace ListValidationTrace where
   measureProgress = \case
     ListValidationDone -> 10
     ListValidationConsume _ _ x -> succ $ measureProgress x
-    ListValidationLeftoverTerms _ -> 0
+    ListValidationLeftoverTerms _ Nothing -> 0
+    ListValidationLeftoverTerms _ (Just (_, trc)) -> measureProgress trc
     ListValidationMissingRequired _ _ -> 0
     ListValidationUnappliedRules _ -> 0
     ListValidationConsumeGroup _ g x -> measureProgress g + measureProgress x
@@ -345,7 +352,15 @@ defaultTraceOptions = TraceOptions {toFoldValid = False}
 prettyListValidationResult :: TraceOptions -> ListValidationTrace v -> Doc AnsiStyle
 prettyListValidationResult opts@TraceOptions {..} = \case
   ListValidationDone -> mempty
-  ListValidationLeftoverTerms _ -> annotate (color Red) "leftover elements after all rules have been applied"
+  ListValidationLeftoverTerms _ Nothing ->
+    annotate (color Red) "leftover elements not matched by any rule"
+  ListValidationLeftoverTerms _ (Just (rule, trc)) ->
+    hang 2 $
+      vsep
+        [ annotate (color Red) "leftover elements, closest matching rule:"
+        , annotate (color Green) $ pretty rule
+        , nestContainer $ prettyValidationTrace opts trc
+        ]
   ListValidationUnappliedRules rs ->
     hang 2 $
       vsep

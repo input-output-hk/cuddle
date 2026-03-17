@@ -1,0 +1,10 @@
+array
+└ app: [0;92mint[0m
+  [0;91mleftover elements, closest matching rule:[0m
+    [0;92m? baz[0m
+    └ ref: [0;94mbaz[0m
+      └ array
+        └ app: [0;92mint[0m
+          [0;91mfailed to apply required rule:[0m
+          └ [0;91mfailed to apply: 
+              text[0m

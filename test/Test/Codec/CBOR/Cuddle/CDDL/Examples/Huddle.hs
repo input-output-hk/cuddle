@@ -19,6 +19,8 @@ module Test.Codec.CBOR.Cuddle.CDDL.Examples.Huddle (
   choicesExample,
   cborControlExample,
   listTooShortExample,
+  listSkippedRuleExample,
+  listSkippedRuleNestedExample,
 ) where
 
 import Codec.CBOR.Cuddle.CDDL (Name)
@@ -202,3 +204,35 @@ listTooShortExample =
             , a VBool
             ]
     ]
+
+listSkippedRuleExample :: Huddle
+listSkippedRuleExample =
+  let bar = "bar" =:= VText
+   in collectFrom
+        [ HIRule $
+            "root"
+              =:= arr
+                [ a VInt
+                , opt $ a bar
+                ]
+        , HIRule bar
+        ]
+
+listSkippedRuleNestedExample :: Huddle
+listSkippedRuleNestedExample =
+  let baz = "baz" =:= arr [a VInt, a VText]
+      qux = "qux" =:= VText
+      quux = "quux" =:= VInt
+   in collectFrom
+        [ HIRule $
+            "root"
+              =:= arr
+                [ a VInt
+                , opt $ a qux
+                , opt $ a baz
+                , opt $ a quux
+                ]
+        , HIRule baz
+        , HIRule qux
+        , HIRule quux
+        ]
