@@ -45,7 +45,7 @@ import Codec.CBOR.Term (Term (..))
 import Codec.CBOR.Term qualified as CBOR
 import Codec.CBOR.Write qualified as CBOR
 import Control.Monad ((<=<))
-import Control.Monad.Reader (ReaderT (..), asks, mapReaderT)
+import Control.Monad.Reader (MonadReader (..), ReaderT (..), asks, mapReaderT)
 import Data.ByteString (ByteString)
 import Data.ByteString.Lazy qualified as LBS
 import Data.Char (chr)
@@ -134,7 +134,7 @@ data GenEnv = GenEnv
   deriving (Generic)
 
 newtype CBORGen a = CBORGen (ReaderT GenEnv AntiGen a)
-  deriving (Functor, Applicative, Monad)
+  deriving (Functor, Applicative, Monad, MonadReader GenEnv)
 
 instance MonadGen CBORGen where
   liftGen g = CBORGen $ ReaderT $ \_ -> liftGen g
@@ -174,19 +174,35 @@ genHalf = do
     then genHalf
     else pure $ fromHalf half
 
-twiddleString :: MonadGen m => Text -> m Term
-twiddleString t = ($ t) <$> elements [TString, TStringI . TL.fromStrict]
+twiddleString :: Text -> CBORGen Term
+twiddleString t = do
+  twiddle <- asks geTwiddle
+  if twiddle
+    then ($ t) <$> elements [TString, TStringI . TL.fromStrict]
+    else pure $ TString t
 
-twiddleList :: MonadGen m => [Term] -> m Term
-twiddleList t = ($ t) <$> elements [TList, TListI]
+twiddleList :: [Term] -> CBORGen Term
+twiddleList t = do
+  twiddle <- asks geTwiddle
+  if twiddle
+    then ($ t) <$> elements [TList, TListI]
+    else pure $ TList t
 
-twiddleBytes :: MonadGen m => ByteString -> m Term
-twiddleBytes t = ($ t) <$> elements [TBytes, TBytesI . LBS.fromStrict]
+twiddleBytes :: ByteString -> CBORGen Term
+twiddleBytes t = do
+  twiddle <- asks geTwiddle
+  if twiddle
+    then ($ t) <$> elements [TBytes, TBytesI . LBS.fromStrict]
+    else pure $ TBytes t
 
-twiddleMap :: MonadGen m => [(Term, Term)] -> m Term
-twiddleMap t = ($ t) <$> elements [TMap, TMapI]
+twiddleMap :: [(Term, Term)] -> CBORGen Term
+twiddleMap t = do
+  twiddle <- asks geTwiddle
+  if twiddle
+    then ($ t) <$> elements [TMap, TMapI]
+    else pure $ TMap t
 
-genTerm :: AntiGen Term
+genTerm :: CBORGen Term
 genTerm =
   oneof
     [ TInt <$> choose (minBound, maxBound)
@@ -208,7 +224,7 @@ genTerm =
     , TDouble <$> arbitrary
     ]
   where
-    smallerTerm :: AntiGen Term
+    smallerTerm :: CBORGen Term
     smallerTerm = scale (`div` 5) genTerm
 
 genNBytes :: MonadGen m => Int -> m ByteString
@@ -242,11 +258,11 @@ genText :: MonadGen m => m Text
 genText = sized $ \sz -> genNBytesText =<< choose (0, sz)
 
 -- | Primitive types defined by the CDDL specification, with their generators
-genPostlude :: PTerm -> AntiGen Term
+genPostlude :: PTerm -> CBORGen Term
 genPostlude pt = case pt of
   PTBool -> TBool <$> arbitrary
-  PTUInt -> TInteger <$> antiNonNegative
-  PTNInt -> TInteger <$> antiNonPositive
+  PTUInt -> TInteger <$> liftAntiGen antiNonNegative
+  PTNInt -> TInteger <$> liftAntiGen antiNonPositive
   PTInt -> TInteger . fromIntegral <$> choose (minBound :: Int, maxBound)
   PTHalf -> THalf <$> choose (-65504, 65504)
   PTFloat -> TFloat <$> arbitrary
@@ -295,7 +311,7 @@ dropNegativeGen = liftGen . runAntiGen
 -- Generator functions
 --------------------------------------------------------------------------------
 
-genSized :: HasCallStack => Word64 -> CTree i -> AntiGen WrappedTerm
+genSized :: HasCallStack => Word64 -> CTree i -> CBORGen WrappedTerm
 genSized s target = do
   case target of
     CTree.Postlude PTText -> fmap S . twiddleString =<< genNBytesText (fromIntegral s)
@@ -317,7 +333,7 @@ genBetween rng = do
 
 genForCTree :: HasCallStack => CTree GenPhase -> CBORGen WrappedTerm
 genForCTree (CTree.Literal v) = S <$> valueToTerm v
-genForCTree (CTree.Postlude pt) = liftAntiGen $ S <$> genPostlude pt
+genForCTree (CTree.Postlude pt) = S <$> genPostlude pt
 genForCTree (CTree.Map nodes) = do
   items <- pairTermList . flattenWrappedList <$> traverse genForCTree nodes
   case items of
@@ -386,7 +402,7 @@ genForCTree (CTree.Control op target controller) = do
     (CtlOp.Lt, _) -> error $ "Invalid controller for .lt operator: " <> showSimple controller
     (CtlOp.Size, CTree.Literal (Value (VUInt s) _)) -> do
       s' <- liftAntiGen $ pure s |! sized (\sz -> choose (0, fromIntegral sz) `suchThat` (/= s))
-      liftAntiGen $ genSized s' target
+      genSized s' target
     (CtlOp.Size, CTree.Range {CTree.from, CTree.to}) ->
       case (from, to) of
         (CTree.Literal (Value (VUInt f) _), CTree.Literal (Value (VUInt t) _)) -> do
@@ -394,7 +410,7 @@ genForCTree (CTree.Control op target controller) = do
             antiChoose
               (fromIntegral f, fromIntegral t)
               (0, max (succ t) $ fromIntegral sz)
-          liftAntiGen $ genSized s target
+          genSized s target
         _ ->
           error $
             "Invalid controller for .size operator: "
@@ -497,10 +513,10 @@ applyOccurenceIndicator (OIBounded mlb mub) oldGen =
     i <- fromIntegral <$> liftAntiGen (genBetween (lb, ub))
     G <$> vectorOf i (scale (`div` (i + 1)) oldGen)
 
-valueToTerm :: MonadGen m => Value -> m Term
+valueToTerm :: Value -> CBORGen Term
 valueToTerm (Value x _) = valueVariantToTerm x
 
-valueVariantToTerm :: MonadGen m => ValueVariant -> m Term
+valueVariantToTerm :: ValueVariant -> CBORGen Term
 valueVariantToTerm (VUInt i)
   | toInteger i <= toInteger (maxBound :: Int) = pure $ TInt (fromIntegral i)
   | otherwise = pure $ TInteger (fromIntegral i)
