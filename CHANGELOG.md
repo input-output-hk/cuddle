@@ -3,6 +3,7 @@
 ## 1.3.0.0
 
 * Add `withTwiddle`
+* `generateFromName` now enables twiddling by default (`geTwiddle = True`), which can change the shape of generated terms (e.g. `TBytes` vs `TBytesI`, `TList` vs `TListI`)
 
 ## 1.2.0.0
 
