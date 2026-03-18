@@ -46,7 +46,7 @@ import Codec.CBOR.Term qualified as CBOR
 import Codec.CBOR.Write qualified as CBOR
 import Control.Monad ((<=<))
 import Data.ByteString (ByteString)
-import Data.ByteString.Lazy qualified as BSL
+import Data.ByteString.Lazy qualified as LBS
 import Data.Char (chr)
 import Data.Containers.ListUtils (nubOrdOn)
 import Data.Functor ((<&>))
@@ -149,6 +149,18 @@ genHalf = do
     then genHalf
     else pure $ fromHalf half
 
+twiddleString :: MonadGen m => Text -> m Term
+twiddleString t = ($ t) <$> elements [TString, TStringI . TL.fromStrict]
+
+twiddleList :: MonadGen m => [Term] -> m Term
+twiddleList t = ($ t) <$> elements [TList, TListI]
+
+twiddleBytes :: MonadGen m => ByteString -> m Term
+twiddleBytes t = ($ t) <$> elements [TBytes, TBytesI . LBS.fromStrict]
+
+twiddleMap :: MonadGen m => [(Term, Term)] -> m Term
+twiddleMap t = ($ t) <$> elements [TMap, TMapI]
+
 genTerm :: AntiGen Term
 genTerm =
   oneof
@@ -158,14 +170,10 @@ genTerm =
           [ choose (toInteger (maxBound :: Int) + 1, toInteger (maxBound :: Word64))
           , choose (negate (toInteger (maxBound :: Word64)), toInteger (minBound :: Int) - 1)
           ]
-    , TBytes <$> (genNBytes . getNonNegative =<< arbitrary)
-    , TBytesI <$> (genNLazyBytes . getNonNegative =<< arbitrary)
-    , TString . T.pack <$> arbitrary
-    , TStringI . TL.pack <$> arbitrary
-    , TList <$> listOf smallerTerm
-    , TListI <$> listOf smallerTerm
-    , TMap <$> listOf ((,) <$> smallerTerm <*> smallerTerm)
-    , TMapI <$> listOf ((,) <$> smallerTerm <*> smallerTerm)
+    , twiddleBytes =<< genNBytes . getNonNegative =<< arbitrary
+    , twiddleString . T.pack =<< arbitrary
+    , twiddleList =<< listOf smallerTerm
+    , twiddleMap =<< listOf ((,) <$> smallerTerm <*> smallerTerm)
     , TTagged <$> choose (6, maxBound :: Word64) <*> smallerTerm
     , TBool <$> arbitrary
     , pure TNull
@@ -185,9 +193,6 @@ genBytes :: MonadGen m => m ByteString
 genBytes = sized $ \sz -> do
   numElems <- choose (0, sz)
   genNBytes numElems
-
-genNLazyBytes :: MonadGen m => Int -> m BSL.ByteString
-genNLazyBytes n = BSL.fromStrict <$> genNBytes n
 
 genCharAtMostBytes :: MonadGen m => Int -> m Char
 genCharAtMostBytes 1 = chr <$> choose (0x00, 0x7F)
@@ -221,8 +226,8 @@ genPostlude pt = case pt of
   PTHalf -> THalf <$> choose (-65504, 65504)
   PTFloat -> TFloat <$> arbitrary
   PTDouble -> TDouble <$> arbitrary
-  PTBytes -> TBytes <$> genBytes
-  PTText -> TString <$> genText
+  PTBytes -> twiddleBytes =<< genBytes
+  PTText -> twiddleString =<< genText
   PTAny -> genTerm
   PTNil -> pure TNull
   PTUndefined -> pure $ TSimple 23
@@ -268,8 +273,8 @@ dropNegativeGen = liftGen . runAntiGen
 genSized :: HasCallStack => Word64 -> CTree i -> AntiGen WrappedTerm
 genSized s target = do
   case target of
-    CTree.Postlude PTText -> S . TString <$> genNBytesText (fromIntegral s)
-    CTree.Postlude PTBytes -> S . TBytes <$> genNBytes (fromIntegral s)
+    CTree.Postlude PTText -> fmap S . twiddleString =<< genNBytesText (fromIntegral s)
+    CTree.Postlude PTBytes -> fmap S . twiddleBytes =<< genNBytes (fromIntegral s)
     CTree.Postlude PTUInt -> S . TInteger <$> choose (0, 256 ^ s - 1)
     _ -> error "Cannot apply size operator to target "
 
@@ -287,7 +292,7 @@ genBetween rng = do
 
 genForCTree ::
   HasCallStack => CTreeRoot GenPhase -> CTree GenPhase -> AntiGen WrappedTerm
-genForCTree _ (CTree.Literal v) = pure . S $ valueToTerm v
+genForCTree _ (CTree.Literal v) = S <$> valueToTerm v
 genForCTree _ (CTree.Postlude pt) = S <$> genPostlude pt
 genForCTree cddl (CTree.Map nodes) = do
   items <- pairTermList . flattenWrappedList <$> traverse (genForCTree cddl) nodes
@@ -305,7 +310,7 @@ genForCTree cddl (CTree.Map nodes) = do
 genForCTree cddl (CTree.Array nodes) = do
   items <- singleTermList . flattenWrappedList <$> traverse (genForCTree cddl) nodes
   case items of
-    Just ts -> pure . S $ TList ts
+    Just ts -> S <$> twiddleList ts
     Nothing -> error "Something weird happened which shouldn't be possible"
 genForCTree cddl (CTree.Choice (NE.toList -> nodes)) = do
   ix <- choose (0, length nodes - 1)
@@ -377,7 +382,7 @@ genForCTree cddl (CTree.Control op target controller) = do
     (CtlOp.Cbor, _) -> do
       enc <- genForCTree cddl controller
       case enc of
-        S x -> pure . S . TBytes . CBOR.toStrictByteString $ CBOR.encodeTerm x
+        S x -> fmap S . twiddleBytes $ CBOR.toStrictByteString (CBOR.encodeTerm x)
         _ -> error "Controller does not correspond to a single term"
     (c, _) -> error $ "Controller not yet implemented: " <> show c
 genForCTree cddl (CTree.Enum tree) = do
@@ -464,20 +469,20 @@ applyOccurenceIndicator (OIBounded mlb mub) oldGen =
     i <- fromIntegral <$> genBetween (lb, ub)
     G <$> vectorOf i (scale (`div` (i + 1)) oldGen)
 
-valueToTerm :: Value -> Term
+valueToTerm :: MonadGen m => Value -> m Term
 valueToTerm (Value x _) = valueVariantToTerm x
 
-valueVariantToTerm :: ValueVariant -> Term
+valueVariantToTerm :: MonadGen m => ValueVariant -> m Term
 valueVariantToTerm (VUInt i)
-  | toInteger i <= toInteger (maxBound :: Int) = TInt (fromIntegral i)
-  | otherwise = TInteger (fromIntegral i)
+  | toInteger i <= toInteger (maxBound :: Int) = pure $ TInt (fromIntegral i)
+  | otherwise = pure $ TInteger (fromIntegral i)
 valueVariantToTerm (VNInt i)
-  | -toInteger i >= toInteger (minBound :: Int) = TInt (-fromIntegral i)
-  | otherwise = TInteger (-fromIntegral i)
-valueVariantToTerm (VBignum i) = TInteger i
-valueVariantToTerm (VFloat16 i) = THalf i
-valueVariantToTerm (VFloat32 i) = TFloat i
-valueVariantToTerm (VFloat64 i) = TDouble i
-valueVariantToTerm (VText t) = TString t
-valueVariantToTerm (VBytes b) = TBytes b
-valueVariantToTerm (VBool b) = TBool b
+  | -toInteger i >= toInteger (minBound :: Int) = pure $ TInt (-fromIntegral i)
+  | otherwise = pure $ TInteger (-fromIntegral i)
+valueVariantToTerm (VBignum i) = pure $ TInteger i
+valueVariantToTerm (VFloat16 i) = pure $ THalf i
+valueVariantToTerm (VFloat32 i) = pure $ TFloat i
+valueVariantToTerm (VFloat64 i) = pure $ TDouble i
+valueVariantToTerm (VText t) = twiddleString t
+valueVariantToTerm (VBytes b) = twiddleBytes b
+valueVariantToTerm (VBool b) = pure $ TBool b
