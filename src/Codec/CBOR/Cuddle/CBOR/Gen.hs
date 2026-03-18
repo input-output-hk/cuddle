@@ -349,7 +349,7 @@ genForCTree (CTree.Map nodes) = do
         -- >> valid, and thus it causes indeterminate decoding
         tsNodup = nubOrdOn fst ts
        in
-        pure . S $ TMap tsNodup
+        S <$> twiddleMap tsNodup
     Nothing -> error "Single terms in map context"
 genForCTree (CTree.Array nodes) = do
   items <- singleTermList . flattenWrappedList <$> traverse genForCTree nodes
