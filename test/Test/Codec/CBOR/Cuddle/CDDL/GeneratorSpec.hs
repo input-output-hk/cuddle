@@ -30,7 +30,7 @@ import Test.Codec.CBOR.Cuddle.CDDL.Examples.Huddle (
   sizeTextExample,
  )
 import Test.Codec.CBOR.Cuddle.CDDL.Validator (expectInvalid)
-import Test.Hspec (HasCallStack, Spec, describe, runIO, shouldBe, shouldSatisfy)
+import Test.Hspec (HasCallStack, Spec, describe, runIO, shouldSatisfy)
 import Test.Hspec.Core.Spec (SpecM)
 import Test.Hspec.QuickCheck (prop)
 import Test.QuickCheck (Gen, Property, Testable (..), counterexample)
@@ -90,8 +90,13 @@ spec = do
         pure $
           res `shouldSatisfy` \case
             TList [TInt 0, TInt i] -> i > 3 && i < 7
+            TListI [TInt 0, TInt i] -> i > 3 && i < 7
             _ -> False
       bytesExampleCddl <- tryResolveHuddle bytesExample
       prop "Bytes are generated correctly" $ do
         res <- generateCDDL $ mapIndex bytesExampleCddl
-        pure $ res `shouldBe` TBytes "\x01\x02\x03\xff"
+        pure $
+          res `shouldSatisfy` \case
+            TBytes "\x01\x02\x03\xff" -> True
+            TBytesI "\x01\x02\x03\xff" -> True
+            _ -> False

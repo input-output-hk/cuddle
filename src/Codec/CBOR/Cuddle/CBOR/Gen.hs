@@ -16,6 +16,7 @@
 -- | Generate example CBOR given a CDDL specification
 module Codec.CBOR.Cuddle.CBOR.Gen (
   generateFromName,
+  withTwiddle,
   GenPhase,
   GenSimple,
   XXCTree (..),
@@ -155,6 +156,9 @@ askCddl = CBORGen $ asks cddl
 
 withAntiGen :: (AntiGen a -> AntiGen b) -> CBORGen a -> CBORGen b
 withAntiGen f (CBORGen m) = CBORGen $ ReaderT $ \env -> f (runReaderT m env)
+
+withTwiddle :: Bool -> CBORGen a -> CBORGen a
+withTwiddle t = local (\x -> x {geTwiddle = t})
 
 --------------------------------------------------------------------------------
 -- Postlude
@@ -434,7 +438,12 @@ genForCTree (CTree.Enum tree) =
 genForCTree (CTree.Unwrap node) = genForCTree node
 genForCTree (CTree.Tag t node) = do
   tag <- liftAntiGen $ faultyNum t
-  enc <- genForCTree node
+  enc <- case tag of
+    n
+      | n == 2 || n == 3 ->
+          -- TODO remove this once `cborg` can decode indefinite bytes in bignums
+          withTwiddle False $ genForCTree node
+    _ -> genForCTree node
   case enc of
     S x -> pure $ S $ TTagged tag x
     _ -> error "Tag controller does not correspond to a single term"
