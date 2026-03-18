@@ -45,6 +45,7 @@ import Codec.CBOR.Term (Term (..))
 import Codec.CBOR.Term qualified as CBOR
 import Codec.CBOR.Write qualified as CBOR
 import Control.Monad ((<=<))
+import Control.Monad.Reader (ReaderT (..), asks, mapReaderT)
 import Data.ByteString (ByteString)
 import Data.ByteString.Lazy qualified as LBS
 import Data.Char (chr)
@@ -126,10 +127,34 @@ instance IndexMappable CTree GenPhase GenSimple where
 --------------------------------------------------------------------------------
 
 -- | Generator context, parametrised over the type of the random seed
-newtype GenEnv = GenEnv
+data GenEnv = GenEnv
   { cddl :: CTreeRoot GenPhase
+  , geTwiddle :: Bool
   }
   deriving (Generic)
+
+newtype CBORGen a = CBORGen (ReaderT GenEnv AntiGen a)
+  deriving (Functor, Applicative, Monad)
+
+instance MonadGen CBORGen where
+  liftGen g = CBORGen $ ReaderT $ \_ -> liftGen g
+  variant n (CBORGen m) = CBORGen $ mapReaderT (variant n) m
+  sized f = CBORGen $ ReaderT $ \env -> sized $ \n ->
+    let CBORGen m = f n in runReaderT m env
+  resize n (CBORGen m) = CBORGen $ mapReaderT (resize n) m
+  choose rng = CBORGen $ ReaderT $ \_ -> choose rng
+
+liftAntiGen :: AntiGen a -> CBORGen a
+liftAntiGen m = CBORGen $ ReaderT $ \_ -> m
+
+runCBORGen :: GenEnv -> CBORGen a -> AntiGen a
+runCBORGen env (CBORGen m) = runReaderT m env
+
+askCddl :: CBORGen (CTreeRoot GenPhase)
+askCddl = CBORGen $ asks cddl
+
+withAntiGen :: (AntiGen a -> AntiGen b) -> CBORGen a -> CBORGen b
+withAntiGen f (CBORGen m) = CBORGen $ ReaderT $ \env -> f (runReaderT m env)
 
 --------------------------------------------------------------------------------
 -- Postlude
@@ -290,12 +315,11 @@ genBetween rng = do
     sizeBounds = (0, fromIntegral size)
   antiChoose rng sizeBounds
 
-genForCTree ::
-  HasCallStack => CTreeRoot GenPhase -> CTree GenPhase -> AntiGen WrappedTerm
-genForCTree _ (CTree.Literal v) = S <$> valueToTerm v
-genForCTree _ (CTree.Postlude pt) = S <$> genPostlude pt
-genForCTree cddl (CTree.Map nodes) = do
-  items <- pairTermList . flattenWrappedList <$> traverse (genForCTree cddl) nodes
+genForCTree :: HasCallStack => CTree GenPhase -> CBORGen WrappedTerm
+genForCTree (CTree.Literal v) = S <$> valueToTerm v
+genForCTree (CTree.Postlude pt) = liftAntiGen $ S <$> genPostlude pt
+genForCTree (CTree.Map nodes) = do
+  items <- pairTermList . flattenWrappedList <$> traverse genForCTree nodes
   case items of
     Just ts ->
       let
@@ -307,18 +331,18 @@ genForCTree cddl (CTree.Map nodes) = do
        in
         pure . S $ TMap tsNodup
     Nothing -> error "Single terms in map context"
-genForCTree cddl (CTree.Array nodes) = do
-  items <- singleTermList . flattenWrappedList <$> traverse (genForCTree cddl) nodes
+genForCTree (CTree.Array nodes) = do
+  items <- singleTermList . flattenWrappedList <$> traverse genForCTree nodes
   case items of
     Just ts -> S <$> twiddleList ts
     Nothing -> error "Something weird happened which shouldn't be possible"
-genForCTree cddl (CTree.Choice (NE.toList -> nodes)) = do
+genForCTree (CTree.Choice (NE.toList -> nodes)) = do
   ix <- choose (0, length nodes - 1)
-  genForCTree cddl $ nodes !! ix
-genForCTree cddl (CTree.Group nodes) = G <$> traverse (genForCTree cddl) nodes
-genForCTree cddl (CTree.KV key value _cut) = do
-  kg <- genForCTree cddl key
-  vg <- genForCTree cddl value
+  genForCTree $ nodes !! ix
+genForCTree (CTree.Group nodes) = G <$> traverse genForCTree nodes
+genForCTree (CTree.KV key value _cut) = do
+  kg <- genForCTree key
+  vg <- genForCTree value
   case (kg, vg) of
     (S k, S v) -> pure $ P k v
     _ ->
@@ -327,19 +351,19 @@ genForCTree cddl (CTree.KV key value _cut) = do
           <> showSimple key
           <> " => "
           <> showSimple value
-genForCTree cddl (CTree.Occur item occurs) =
-  applyOccurenceIndicator occurs (genForCTree cddl item)
-genForCTree cddl (CTree.Range from to bounds) = do
-  term1 <- dropNegativeGen $ genForCTree cddl from
-  term2 <- dropNegativeGen $ genForCTree cddl to
+genForCTree (CTree.Occur item occurs) =
+  applyOccurenceIndicator occurs (genForCTree item)
+genForCTree (CTree.Range from to bounds) = do
+  term1 <- withAntiGen dropNegativeGen $ genForCTree from
+  term2 <- withAntiGen dropNegativeGen $ genForCTree to
   case (term1, term2) of
     (S (TInt a), S (TInt b))
-      | a <= b -> genBetween (range bounds a b) <&> S . TInt
+      | a <= b -> liftAntiGen $ genBetween (range bounds a b) <&> S . TInt
     (S (TInt a), S (TInteger b))
       | fromIntegral a <= b ->
-          genBetween (range bounds (fromIntegral a) b) <&> S . TInteger
+          liftAntiGen $ genBetween (range bounds (fromIntegral a) b) <&> S . TInteger
     (S (TInteger a), S (TInteger b))
-      | a <= b -> genBetween (range bounds a b) <&> S . TInteger
+      | a <= b -> liftAntiGen $ genBetween (range bounds a b) <&> S . TInteger
     (S (THalf a), S (THalf b))
       | a <= b -> choose (range bounds a b) <&> S . THalf
     (S (TFloat a), S (TFloat b))
@@ -347,9 +371,9 @@ genForCTree cddl (CTree.Range from to bounds) = do
     (S (TDouble a), S (TDouble b))
       | a <= b -> choose (range bounds a b) <&> S . TDouble
     (a, b) -> error $ "invalid range (a = " <> show a <> ", b = " <> show b <> ")"
-genForCTree cddl (CTree.Control op target controller) = do
+genForCTree (CTree.Control op target controller) = do
   resolvedController <- case controller of
-    CTreeE (GenRef n) -> dropNegativeGen $ resolveRef cddl n
+    CTreeE (GenRef n) -> withAntiGen dropNegativeGen $ resolveRef n
     x -> pure x
   case (op, resolvedController) of
     (CtlOp.Le, CTree.Literal (Value (VUInt n) _)) -> case target of
@@ -361,16 +385,16 @@ genForCTree cddl (CTree.Control op target controller) = do
       _ -> error "Cannot apply lt operator to target"
     (CtlOp.Lt, _) -> error $ "Invalid controller for .lt operator: " <> showSimple controller
     (CtlOp.Size, CTree.Literal (Value (VUInt s) _)) -> do
-      s' <- pure s |! sized (\sz -> choose (0, fromIntegral sz) `suchThat` (/= s))
-      genSized s' target
-    (CtlOp.Size, CTree.Range {CTree.from, CTree.to}) -> do
+      s' <- liftAntiGen $ pure s |! sized (\sz -> choose (0, fromIntegral sz) `suchThat` (/= s))
+      liftAntiGen $ genSized s' target
+    (CtlOp.Size, CTree.Range {CTree.from, CTree.to}) ->
       case (from, to) of
         (CTree.Literal (Value (VUInt f) _), CTree.Literal (Value (VUInt t) _)) -> do
-          s <- sized $ \sz ->
+          s <- liftAntiGen $ sized $ \sz ->
             antiChoose
               (fromIntegral f, fromIntegral t)
               (0, max (succ t) $ fromIntegral sz)
-          genSized s target
+          liftAntiGen $ genSized s target
         _ ->
           error $
             "Invalid controller for .size operator: "
@@ -380,37 +404,40 @@ genForCTree cddl (CTree.Control op target controller) = do
         "Invalid controller for .size operator: "
           <> showSimple controller
     (CtlOp.Cbor, _) -> do
-      enc <- genForCTree cddl controller
+      enc <- genForCTree controller
       case enc of
         S x -> fmap S . twiddleBytes $ CBOR.toStrictByteString (CBOR.encodeTerm x)
         _ -> error "Controller does not correspond to a single term"
     (c, _) -> error $ "Controller not yet implemented: " <> show c
-genForCTree cddl (CTree.Enum tree) = do
+genForCTree (CTree.Enum tree) =
   case tree of
     CTree.Group trees -> do
       ix <- choose (0, length trees - 1)
-      genForCTree cddl $ trees !! ix
+      genForCTree $ trees !! ix
     _ -> error "Attempt to form an enum from something other than a group"
-genForCTree cddl (CTree.Unwrap node) = genForCTree cddl node
-genForCTree cddl (CTree.Tag t node) = do
-  tag <- faultyNum t
-  enc <- genForCTree cddl node
+genForCTree (CTree.Unwrap node) = genForCTree node
+genForCTree (CTree.Tag t node) = do
+  tag <- liftAntiGen $ faultyNum t
+  enc <- genForCTree node
   case enc of
     S x -> pure $ S $ TTagged tag x
     _ -> error "Tag controller does not correspond to a single term"
-genForCTree cddl (CTree.CTreeE (GenRef n)) = genForNode cddl n
-genForCTree cddl (CTree.CTreeE (GenGenerator (CBORGenerator gen) _)) = gen cddl
+genForCTree (CTree.CTreeE (GenRef n)) = genForNode n
+genForCTree (CTree.CTreeE (GenGenerator (CBORGenerator gen) _)) = do
+  root <- askCddl
+  liftAntiGen $ gen root
 
-genForNode :: HasCallStack => CTreeRoot GenPhase -> Name -> AntiGen WrappedTerm
-genForNode cddl = genForCTree cddl <=< resolveRef cddl
+genForNode :: HasCallStack => Name -> CBORGen WrappedTerm
+genForNode = genForCTree <=< resolveRef
 
 -- | Take a reference and resolve it to the relevant Tree, following multiple
 -- links if necessary.
-resolveRef :: MonadGen m => CTreeRoot GenPhase -> Name -> m (CTree GenPhase)
-resolveRef (CTreeRoot cddl) n = do
+resolveRef :: Name -> CBORGen (CTree GenPhase)
+resolveRef n = do
+  CTreeRoot root <- askCddl
   -- Since we follow a reference, we decrease the 'size' of the Gen monad.
   scale (\x -> max 0 $ x - 1) $
-    case Map.lookup n cddl of
+    case Map.lookup n root of
       Nothing -> error $ "Unbound reference: " <> show n
       Just val -> pure val
 
@@ -423,11 +450,12 @@ resolveRef (CTreeRoot cddl) n = do
 -- single CBOR term (e.g. if the name resolves to a group, which cannot be
 -- generated outside a context).
 generateFromName :: HasCallStack => CTreeRoot GenPhase -> Name -> AntiGen Term
-generateFromName root@(CTreeRoot cddl) n = do
-  case Map.lookup n cddl of
+generateFromName root@(CTreeRoot cddlMap) n = do
+  let env = GenEnv {cddl = root, geTwiddle = True}
+  case Map.lookup n cddlMap of
     Nothing -> error $ "Unbound reference: " <> show n
     Just val ->
-      genForCTree root val >>= \case
+      runCBORGen env (genForCTree val) >>= \case
         S x -> pure x
         _ ->
           error $
@@ -451,8 +479,8 @@ listOfScaled1 g = sized $ \sz -> do
 -- | Apply an occurence indicator to a group entry
 applyOccurenceIndicator ::
   OccurrenceIndicator ->
-  AntiGen WrappedTerm ->
-  AntiGen WrappedTerm
+  CBORGen WrappedTerm ->
+  CBORGen WrappedTerm
 applyOccurenceIndicator OIOptional oldGen =
   sizeBiasedBool >>= \case
     False -> pure $ G mempty
@@ -460,13 +488,13 @@ applyOccurenceIndicator OIOptional oldGen =
 applyOccurenceIndicator OIZeroOrMore oldGen =
   G <$> listOfScaled oldGen
 applyOccurenceIndicator OIOneOrMore oldGen =
-  G <$> listOfScaled1 oldGen
+  withAntiGen (\g -> G <$> listOfScaled1 g) oldGen
 applyOccurenceIndicator (OIBounded mlb mub) oldGen =
   sized $ \sz -> do
     let
       lb = fromMaybe 0 mlb
       ub = fromMaybe (lb + fromIntegral sz) mub
-    i <- fromIntegral <$> genBetween (lb, ub)
+    i <- fromIntegral <$> liftAntiGen (genBetween (lb, ub))
     G <$> vectorOf i (scale (`div` (i + 1)) oldGen)
 
 valueToTerm :: MonadGen m => Value -> m Term
