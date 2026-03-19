@@ -91,8 +91,7 @@ module Codec.CBOR.Cuddle.Huddle (
   callToDef,
 
   -- * Generators
-  withGenerator,
-  withAntiGen,
+  withCBORGen,
 
   -- * Validators
   withValidator,
@@ -111,15 +110,13 @@ where
 import Codec.CBOR.Cuddle.CDDL (CDDL, GenericParameter (..), HasName (..), Name (..), XRule)
 import Codec.CBOR.Cuddle.CDDL qualified as C
 import Codec.CBOR.Cuddle.CDDL.CBORGenerator (
-  CBORGenerator (..),
+  CBORGen (..),
   CBORValidator (..),
   CustomValidatorResult,
-  GenPhase,
   HasGenerator (..),
   HasValidator (..),
   WrappedTerm,
  )
-import Codec.CBOR.Cuddle.CDDL.CTree (CTreeRoot)
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
 import Codec.CBOR.Cuddle.Comments (Comment (..), HasComment (..))
 import Codec.CBOR.Cuddle.Comments qualified as C
@@ -145,9 +142,6 @@ import GHC.Exts (IsList (Item, fromList, toList))
 import GHC.Generics (Generic)
 import Optics.Core (lens, view, (%), (%~), (&))
 import Optics.Core qualified as L
-import Test.AntiGen (AntiGen)
-import Test.QuickCheck (Gen)
-import Test.QuickCheck.GenT (MonadGen (liftGen))
 import Prelude hiding ((/))
 
 type data HuddleStage
@@ -160,7 +154,7 @@ newtype instance C.XCddl HuddleStage = HuddleXCddl [C.Comment]
 
 data instance C.XRule HuddleStage = HuddleXRule
   { hxrComment :: C.Comment
-  , hxrGenerator :: Maybe CBORGenerator
+  , hxrGenerator :: Maybe (CBORGen WrappedTerm)
   , hxrValidator :: Maybe CBORValidator
   }
   deriving (Generic)
@@ -1374,16 +1368,10 @@ toCDDL' HuddleConfig {..} hdl =
           C.GenericParameters $
             fmap (\(GRef t) -> GenericParameter (C.Name t) $ HuddleXTerm mempty) (args gr)
 
--- | Use a custom `QuickCheck` generator to generate the term. Will override
--- the generator passed via `withAntiGen`
-withGenerator :: HasGenerator a => (CTreeRoot GenPhase -> Gen WrappedTerm) -> a -> a
-withGenerator f = L.set generatorL (Just . CBORGenerator $ liftGen . f)
-
--- | Use a custom `AntiGen` generator to generate the term. Will override
--- the custom generator passed via `withGenerator`. The advantage of using
--- `AntiGen` generator is that it can also be used to generate negative examples.
-withAntiGen :: HasGenerator a => (CTreeRoot GenPhase -> AntiGen WrappedTerm) -> a -> a
-withAntiGen f = L.set generatorL (Just $ CBORGenerator f)
+-- | Use a custom `CBORGen` generator to generate the term. Will override
+-- the custom generator passed via `withGenerator`.
+withCBORGen :: HasGenerator a => CBORGen WrappedTerm -> a -> a
+withCBORGen gen = L.set generatorL (Just gen)
 
 withValidator :: HasValidator a => (Term -> CustomValidatorResult) -> a -> a
 withValidator p = L.set validatorL . Just $ CBORValidator p

@@ -16,7 +16,6 @@
 -- | Generate example CBOR given a CDDL specification
 module Codec.CBOR.Cuddle.CBOR.Gen (
   generateFromName,
-  withTwiddle,
   GenPhase,
   GenSimple,
   XXCTree (..),
@@ -32,10 +31,16 @@ import Codec.CBOR.Cuddle.CDDL (
   ValueVariant (..),
  )
 import Codec.CBOR.Cuddle.CDDL.CBORGenerator (
-  CBORGenerator (..),
+  CBORGen (..),
+  GenEnv (..),
   GenPhase,
   WrappedTerm (..),
   XXCTree (..),
+  liftAntiGen,
+  lookupCddl,
+  runCBORGen,
+  withAntiGen,
+  withTwiddle,
  )
 import Codec.CBOR.Cuddle.CDDL.CTree (CTree (..), CTreeRoot (..), PTerm (..), foldCTree)
 import Codec.CBOR.Cuddle.CDDL.CTree qualified as CTree
@@ -46,7 +51,7 @@ import Codec.CBOR.Term (Term (..))
 import Codec.CBOR.Term qualified as CBOR
 import Codec.CBOR.Write qualified as CBOR
 import Control.Monad ((<=<))
-import Control.Monad.Reader (MonadReader (..), ReaderT (..), asks, mapReaderT)
+import Control.Monad.Reader (asks)
 import Data.ByteString (ByteString)
 import Data.ByteString.Lazy qualified as LBS
 import Data.Char (chr)
@@ -63,7 +68,6 @@ import Data.Text.Lazy qualified as TL
 import Data.Text.Lazy.Builder (toLazyText)
 import Data.Text.Lazy.Builder qualified as LB
 import Data.Word (Word64, Word8)
-import GHC.Generics (Generic)
 import GHC.Stack (HasCallStack)
 import Numeric.Half (Half (..), fromHalf)
 import System.Random.Stateful (Random, StatefulGen (..), runStateGen_, uniformByteStringM)
@@ -126,39 +130,6 @@ instance IndexMappable CTree GenPhase GenSimple where
 --------------------------------------------------------------------------------
 -- Generator infrastructure
 --------------------------------------------------------------------------------
-
--- | Generator context, parametrised over the type of the random seed
-data GenEnv = GenEnv
-  { cddl :: CTreeRoot GenPhase
-  , geTwiddle :: Bool
-  }
-  deriving (Generic)
-
-newtype CBORGen a = CBORGen (ReaderT GenEnv AntiGen a)
-  deriving (Functor, Applicative, Monad, MonadReader GenEnv)
-
-instance MonadGen CBORGen where
-  liftGen g = CBORGen $ ReaderT $ \_ -> liftGen g
-  variant n (CBORGen m) = CBORGen $ mapReaderT (variant n) m
-  sized f = CBORGen $ ReaderT $ \env -> sized $ \n ->
-    let CBORGen m = f n in runReaderT m env
-  resize n (CBORGen m) = CBORGen $ mapReaderT (resize n) m
-  choose rng = CBORGen $ ReaderT $ \_ -> choose rng
-
-liftAntiGen :: AntiGen a -> CBORGen a
-liftAntiGen m = CBORGen $ ReaderT $ \_ -> m
-
-runCBORGen :: GenEnv -> CBORGen a -> AntiGen a
-runCBORGen env (CBORGen m) = runReaderT m env
-
-askCddl :: CBORGen (CTreeRoot GenPhase)
-askCddl = CBORGen $ asks cddl
-
-withAntiGen :: (AntiGen a -> AntiGen b) -> CBORGen a -> CBORGen b
-withAntiGen f (CBORGen m) = CBORGen $ ReaderT $ \env -> f (runReaderT m env)
-
-withTwiddle :: Bool -> CBORGen a -> CBORGen a
-withTwiddle t = local (\x -> x {geTwiddle = t})
 
 --------------------------------------------------------------------------------
 -- Postlude
@@ -327,13 +298,13 @@ range :: Enum a => RangeBound -> a -> a -> (a, a)
 range ClOpen x y = (x, pred y)
 range Closed x y = (x, y)
 
-genBetween :: (Integral a, Random a) => (a, a) -> AntiGen a
+genBetween :: (Integral a, Random a) => (a, a) -> CBORGen a
 genBetween rng = do
   size <- liftGen getSize
   let
     sizeBounds :: Integral a => (a, a)
     sizeBounds = (0, fromIntegral size)
-  antiChoose rng sizeBounds
+  liftAntiGen $ antiChoose rng sizeBounds
 
 genForCTree :: HasCallStack => CTree GenPhase -> CBORGen WrappedTerm
 genForCTree (CTree.Literal v) = S <$> valueToTerm v
@@ -378,12 +349,12 @@ genForCTree (CTree.Range from to bounds) = do
   term2 <- withAntiGen dropNegativeGen $ genForCTree to
   case (term1, term2) of
     (S (TInt a), S (TInt b))
-      | a <= b -> liftAntiGen $ genBetween (range bounds a b) <&> S . TInt
+      | a <= b -> genBetween (range bounds a b) <&> S . TInt
     (S (TInt a), S (TInteger b))
       | fromIntegral a <= b ->
-          liftAntiGen $ genBetween (range bounds (fromIntegral a) b) <&> S . TInteger
+          genBetween (range bounds (fromIntegral a) b) <&> S . TInteger
     (S (TInteger a), S (TInteger b))
-      | a <= b -> liftAntiGen $ genBetween (range bounds a b) <&> S . TInteger
+      | a <= b -> genBetween (range bounds a b) <&> S . TInteger
     (S (THalf a), S (THalf b))
       | a <= b -> choose (range bounds a b) <&> S . THalf
     (S (TFloat a), S (TFloat b))
@@ -448,9 +419,7 @@ genForCTree (CTree.Tag t node) = do
     S x -> pure $ S $ TTagged tag x
     _ -> error "Tag controller does not correspond to a single term"
 genForCTree (CTree.CTreeE (GenRef n)) = genForNode n
-genForCTree (CTree.CTreeE (GenGenerator (CBORGenerator gen) _)) = do
-  root <- askCddl
-  liftAntiGen $ gen root
+genForCTree (CTree.CTreeE (GenGenerator gen _)) = gen
 
 genForNode :: HasCallStack => Name -> CBORGen WrappedTerm
 genForNode = genForCTree <=< resolveRef
@@ -459,10 +428,10 @@ genForNode = genForCTree <=< resolveRef
 -- links if necessary.
 resolveRef :: Name -> CBORGen (CTree GenPhase)
 resolveRef n = do
-  CTreeRoot root <- askCddl
+  mRule <- lookupCddl n
   -- Since we follow a reference, we decrease the 'size' of the Gen monad.
   scale (\x -> max 0 $ x - 1) $
-    case Map.lookup n root of
+    case mRule of
       Nothing -> error $ "Unbound reference: " <> show n
       Just val -> pure val
 
@@ -476,7 +445,7 @@ resolveRef n = do
 -- generated outside a context).
 generateFromName :: HasCallStack => CTreeRoot GenPhase -> Name -> AntiGen Term
 generateFromName root@(CTreeRoot cddlMap) n = do
-  let env = GenEnv {cddl = root, geTwiddle = True}
+  let env = GenEnv {geRoot = root, geTwiddle = True}
   case Map.lookup n cddlMap of
     Nothing -> error $ "Unbound reference: " <> show n
     Just val ->
@@ -519,7 +488,7 @@ applyOccurenceIndicator (OIBounded mlb mub) oldGen =
     let
       lb = fromMaybe 0 mlb
       ub = fromMaybe (lb + fromIntegral sz) mub
-    i <- fromIntegral <$> liftAntiGen (genBetween (lb, ub))
+    i <- fromIntegral <$> genBetween (lb, ub)
     G <$> vectorOf i (scale (`div` (i + 1)) oldGen)
 
 valueToTerm :: Value -> CBORGen Term

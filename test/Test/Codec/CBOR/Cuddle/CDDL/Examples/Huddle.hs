@@ -35,8 +35,7 @@ import Codec.CBOR.Cuddle.Huddle (
   idx,
   mp,
   opt,
-  sized,
-  withGenerator,
+  withCBORGen,
   (...),
   (=:=),
   (==>),
@@ -44,7 +43,7 @@ import Codec.CBOR.Cuddle.Huddle (
 import Codec.CBOR.Cuddle.Huddle qualified as H
 import Codec.CBOR.Term qualified as C
 import Data.Word (Word64)
-import Test.QuickCheck.Gen (choose)
+import Test.QuickCheck.GenT (MonadGen (..))
 
 huddleRangeArray :: Huddle
 huddleRangeArray =
@@ -99,7 +98,7 @@ simpleRule :: Name -> Rule
 simpleRule n = n =:= arr [1, 2, 3]
 
 customGenRule :: Name -> Rule
-customGenRule = withGenerator (\_ -> S . C.TInt <$> choose (4, 6)) . simpleRule
+customGenRule = withCBORGen (S . C.TInt <$> choose (4, 6)) . simpleRule
 
 customGenExample :: Huddle
 customGenExample =
@@ -125,22 +124,22 @@ opCertExample =
     [ HIRule $
         "root"
           =:= arr
-            [ a (VBytes `sized` (32 :: Word64))
+            [ a (VBytes `H.sized` (32 :: Word64))
             , a VUInt
             , a VUInt
-            , a (VBytes `sized` (64 :: Word64))
+            , a (VBytes `H.sized` (64 :: Word64))
             ]
     ]
 
 sizeTextExample :: Huddle
 sizeTextExample =
   collectFrom
-    [HIRule $ "root" =:= VText `sized` (0 :: Word64, 32 :: Word64)]
+    [HIRule $ "root" =:= VText `H.sized` (0 :: Word64, 32 :: Word64)]
 
 sizeBytesExample :: Huddle
 sizeBytesExample =
   collectFrom
-    [HIRule $ "root" =:= VBytes `sized` (0 :: Word64, 32 :: Word64)]
+    [HIRule $ "root" =:= VBytes `H.sized` (0 :: Word64, 32 :: Word64)]
 
 rangeListExample :: Huddle
 rangeListExample =
