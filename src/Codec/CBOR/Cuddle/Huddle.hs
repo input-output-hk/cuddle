@@ -91,6 +91,8 @@ module Codec.CBOR.Cuddle.Huddle (
   callToDef,
 
   -- * Generators
+  withAntiGen,
+  withGenerator,
   withCBORGen,
 
   -- * Validators
@@ -113,15 +115,19 @@ import Codec.CBOR.Cuddle.CDDL.CBORGenerator (
   CBORGen (..),
   CBORValidator (..),
   CustomValidatorResult,
+  GenEnv (..),
+  GenPhase,
   HasGenerator (..),
   HasValidator (..),
   WrappedTerm,
  )
+import Codec.CBOR.Cuddle.CDDL.CTree (CTreeRoot)
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
 import Codec.CBOR.Cuddle.Comments (Comment (..), HasComment (..))
 import Codec.CBOR.Cuddle.Comments qualified as C
 import Codec.CBOR.Term (Term)
 import Control.Monad (when)
+import Control.Monad.Reader (ReaderT (..))
 import Control.Monad.State (MonadState (get), State, execState, modify)
 import Data.ByteString (ByteString)
 import Data.ByteString.Base16 qualified as Base16
@@ -142,6 +148,9 @@ import GHC.Exts (IsList (Item, fromList, toList))
 import GHC.Generics (Generic)
 import Optics.Core (lens, view, (%), (%~), (&))
 import Optics.Core qualified as L
+import Test.AntiGen (AntiGen)
+import Test.QuickCheck.Gen (Gen)
+import Test.QuickCheck.GenT (MonadGen (liftGen))
 import Prelude hiding ((/))
 
 type data HuddleStage
@@ -1367,6 +1376,19 @@ toCDDL' HuddleConfig {..} hdl =
         gps =
           C.GenericParameters $
             fmap (\(GRef t) -> GenericParameter (C.Name t) $ HuddleXTerm mempty) (args gr)
+
+-- | Use a custom `QuickCheck` generator to generate the term. Will override
+-- the generator passed via `withAntiGen`
+withGenerator :: HasGenerator a => (CTreeRoot GenPhase -> Gen WrappedTerm) -> a -> a
+withGenerator f = L.set generatorL (Just . CBORGen . ReaderT $ \GenEnv {geRoot} -> liftGen $ f geRoot)
+{-# DEPRECATED withGenerator "Use withCBORGen instead" #-}
+
+-- | Use a custom `AntiGen` generator to generate the term. Will override
+-- the custom generator passed via `withGenerator`. The advantage of using
+-- `AntiGen` generator is that it can also be used to generate negative examples.
+withAntiGen :: HasGenerator a => (CTreeRoot GenPhase -> AntiGen WrappedTerm) -> a -> a
+withAntiGen f = L.set generatorL (Just . CBORGen . ReaderT $ \GenEnv {geRoot} -> f geRoot)
+{-# DEPRECATED withAntiGen "Use withCBORGen instead" #-}
 
 -- | Use a custom `CBORGen` generator to generate the term. Will override
 -- the custom generator passed via `withGenerator`.
