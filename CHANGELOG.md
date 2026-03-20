@@ -4,6 +4,7 @@
 
 * Add `withTwiddle`
 * `generateFromName` now enables twiddling by default (`geTwiddle = True`), which can change the shape of generated terms (e.g. `TBytes` vs `TBytesI`, `TList` vs `TListI`)
+* Replace `CBORGenerator` with `CBORGen`
 
 ## 1.2.0.0
 
