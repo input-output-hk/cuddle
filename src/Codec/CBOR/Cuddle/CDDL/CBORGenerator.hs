@@ -31,7 +31,6 @@ import Test.QuickCheck.GenT (MonadGen (..))
 
 type data GenPhase
 
--- | Generator context, parametrised over the type of the random seed
 data GenEnv = GenEnv
   { geRoot :: CTreeRoot GenPhase
   , geTwiddle :: Bool
