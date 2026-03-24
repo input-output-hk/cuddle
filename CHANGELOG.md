@@ -2,6 +2,8 @@
 
 ## 1.3.0.0
 
+* Fix `uint`, `nint`, and `int` generators to cover the full CBOR range
+* Enforce CBOR spec bounds in the validator for `uint`, `nint`, and `int`
 * Add `withTwiddle`
 * `generateFromName` now enables twiddling by default (`geTwiddle = True`), which can change the shape of generated terms (e.g. `TBytes` vs `TBytesI`, `TList` vs `TListI`)
 * Replace `CBORGenerator` with `CBORGen`
