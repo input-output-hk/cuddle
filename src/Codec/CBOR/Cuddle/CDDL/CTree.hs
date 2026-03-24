@@ -145,3 +145,11 @@ instance Arbitrary PTerm where
   arbitrary = genericArbitraryU
 
 instance Hashable PTerm
+
+-- | Maximum value for CBOR uint (major type 0): 2^64 - 1
+uintMax :: Integer
+uintMax = 2 ^ (64 :: Int) - 1
+
+-- | Minimum value for CBOR nint (major type 1): -2^64
+nintMin :: Integer
+nintMin = -(2 ^ (64 :: Int))

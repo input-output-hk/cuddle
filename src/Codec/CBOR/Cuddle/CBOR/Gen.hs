@@ -42,7 +42,14 @@ import Codec.CBOR.Cuddle.CDDL.CBORGenerator (
   withAntiGen,
   withTwiddle,
  )
-import Codec.CBOR.Cuddle.CDDL.CTree (CTree (..), CTreeRoot (..), PTerm (..), foldCTree)
+import Codec.CBOR.Cuddle.CDDL.CTree (
+  CTree (..),
+  CTreeRoot (..),
+  PTerm (..),
+  foldCTree,
+  nintMin,
+  uintMax,
+ )
 import Codec.CBOR.Cuddle.CDDL.CTree qualified as CTree
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
 import Codec.CBOR.Cuddle.CDDL.Resolve (XXCTree (..))
