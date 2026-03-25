@@ -31,7 +31,7 @@ import Test.Codec.CBOR.Cuddle.CDDL.Examples.Huddle (
   sizeTextExample,
  )
 import Test.Codec.CBOR.Cuddle.CDDL.Validator (expectInvalid, genAndValidateRule)
-import Test.Hspec (HasCallStack, Spec, describe, runIO, shouldBe, shouldSatisfy, xdescribe)
+import Test.Hspec (HasCallStack, Spec, describe, runIO, shouldSatisfy, xdescribe)
 import Test.Hspec.Core.Spec (SpecM)
 import Test.Hspec.QuickCheck (prop)
 import Test.QuickCheck (Gen, Property, Testable (..), counterexample)

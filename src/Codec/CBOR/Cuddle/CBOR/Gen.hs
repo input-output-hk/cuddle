@@ -179,15 +179,6 @@ twiddleMap t = do
     then ($ t) <$> elements [TMap, TMapI]
     else pure $ TMap t
 
-
--- | Generate faulty Half values: values outside Half range (±65504)
-genFaultyHalf :: MonadGen m => m Float
-genFaultyHalf =
-  oneof
-    [ choose (65505, 1e38) -- Above half max
-    , choose (-1e38, -65505) -- Below half min
-    ]
-
 genTerm :: CBORGen Term
 genTerm =
   oneof
@@ -244,8 +235,8 @@ genText :: MonadGen m => m Text
 genText = sized $ \sz -> genNBytesText =<< choose (0, sz)
 
 -- | Primitive types defined by the CDDL specification, with their generators
-genPostlude :: PTerm -> AntiGen Term
-genPostlude pt = genPTerm =<< faultyPTerm pt
+genPostlude :: PTerm -> CBORGen Term
+genPostlude pt = genPTerm =<< liftAntiGen (faultyPTerm pt)
   where
     genExcluding ls =
       elements (filter (`notElem` ls) [minBound .. maxBound])
@@ -266,8 +257,8 @@ genPostlude pt = genPTerm =<< faultyPTerm pt
     genBelowNInt = choose (2 * minNInt, minNInt - 1)
     genPTerm = \case
       PTBool -> TBool <$> arbitrary
-      PTUInt -> TInteger <$> (genUInt |! oneof [genNInt, genBelowNInt, genAboveUInt])
-      PTNInt -> TInteger <$> (genNInt |! oneof [genUInt, genBelowNInt, genAboveUInt])
+      PTUInt -> TInteger <$> liftAntiGen (genUInt |! oneof [genNInt, genBelowNInt, genAboveUInt])
+      PTNInt -> TInteger <$> liftAntiGen (genNInt |! oneof [genUInt, genBelowNInt, genAboveUInt])
       PTInt -> TInteger <$> choose (minNInt, maxUInt)
       PTHalf -> THalf <$> genHalf
       PTFloat -> TFloat <$> arbitrary
@@ -329,12 +320,12 @@ range ClOpen x y = (x, pred y)
 range Closed x y = (x, y)
 
 genBetween :: (Integral a, Random a) => (a, a) -> CBORGen a
-genBetween rng = withAnnotation "genBetween" $ do
+genBetween rng = liftAntiGen . withAnnotation "genBetween" $ do
   size <- liftGen getSize
   let
     sizeBounds :: Integral a => (a, a)
     sizeBounds = (0, fromIntegral size)
-  liftAntiGen $ antiChoose rng sizeBounds
+  antiChoose rng sizeBounds
 
 genForCTree :: HasCallStack => CTree GenPhase -> CBORGen WrappedTerm
 genForCTree (CTree.Literal v) = S <$> valueToTerm v
