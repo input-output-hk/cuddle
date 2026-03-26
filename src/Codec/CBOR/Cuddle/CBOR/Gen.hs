@@ -242,6 +242,7 @@ genPostlude pt = genPTerm =<< liftAntiGen (faultyPTerm pt)
       elements (filter (`notElem` ls) [minBound .. maxBound])
     nonPInteger p =
       pure p |! genExcluding [PTUInt, PTNInt, PTInt, PTAny]
+    -- \| Introduces a decision point that can change the type of the CBOR term that is generated
     faultyPTerm t = reweigh 0.1 . withAnnotation (renderStrict . layoutCompact $ pretty t) $
       case t of
         PTAny -> pure PTAny
@@ -255,8 +256,11 @@ genPostlude pt = genPTerm =<< liftAntiGen (faultyPTerm pt)
     genNInt = choose (minNInt, -1)
     genAboveUInt = choose (maxUInt + 1, 2 * maxUInt)
     genBelowNInt = choose (2 * minNInt, minNInt - 1)
+    -- \| Given a CDDL postlude type, generates a value of that type
     genPTerm = \case
       PTBool -> TBool <$> arbitrary
+      -- For integers, introduce decision points that sometimes generate
+      -- out-of-bounds values
       PTUInt -> TInteger <$> liftAntiGen (genUInt |! oneof [genNInt, genBelowNInt, genAboveUInt])
       PTNInt -> TInteger <$> liftAntiGen (genNInt |! oneof [genUInt, genBelowNInt, genAboveUInt])
       PTInt -> TInteger <$> choose (minNInt, maxUInt)
