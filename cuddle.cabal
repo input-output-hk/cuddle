@@ -63,7 +63,7 @@ library
 
   build-depends:
     QuickCheck >=2.14.3 && <2.18,
-    antigen >=0.3.1 && <0.4,
+    antigen ^>=0.4,
     base >=4.18 && <5,
     base16-bytestring >=1.0.2,
     boxes >=0.1.5,
@@ -74,6 +74,7 @@ library
     data-default-class >=0.2,
     foldable1-classes-compat >=0.1.1,
     generic-optics >=2.2.1,
+    generic-random,
     half,
     hashable >=1.4,
     megaparsec >=9.5,

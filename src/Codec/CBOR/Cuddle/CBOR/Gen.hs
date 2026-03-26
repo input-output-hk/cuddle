@@ -70,14 +70,16 @@ import Data.Text.Lazy.Builder qualified as LB
 import Data.Word (Word64, Word8)
 import GHC.Stack (HasCallStack)
 import Numeric.Half (Half (..), fromHalf)
+import Prettyprinter (Pretty (..), layoutCompact)
+import Prettyprinter.Render.Text (renderStrict)
 import System.Random.Stateful (Random, StatefulGen (..), runStateGen_, uniformByteStringM)
 import Test.AntiGen (
   AntiGen,
   antiChoose,
-  antiNonNegative,
-  antiNonPositive,
   faultyNum,
+  reweigh,
   runAntiGen,
+  withAnnotation,
   (|!),
  )
 import Test.QuickCheck (
@@ -145,7 +147,7 @@ simple =
 genHalf :: MonadGen m => m Float
 genHalf = do
   half <- Half <$> arbitrary
-  if isInfinite half || isDenormalized half || isNaN half
+  if isDenormalized half
     then genHalf
     else pure $ fromHalf half
 
@@ -234,19 +236,42 @@ genText = sized $ \sz -> genNBytesText =<< choose (0, sz)
 
 -- | Primitive types defined by the CDDL specification, with their generators
 genPostlude :: PTerm -> CBORGen Term
-genPostlude pt = case pt of
-  PTBool -> TBool <$> arbitrary
-  PTUInt -> TInteger <$> liftAntiGen antiNonNegative
-  PTNInt -> TInteger <$> liftAntiGen antiNonPositive
-  PTInt -> TInteger . fromIntegral <$> choose (minBound :: Int, maxBound)
-  PTHalf -> THalf <$> choose (-65504, 65504)
-  PTFloat -> TFloat <$> arbitrary
-  PTDouble -> TDouble <$> arbitrary
-  PTBytes -> twiddleBytes =<< genBytes
-  PTText -> twiddleString =<< genText
-  PTAny -> genTerm
-  PTNil -> pure TNull
-  PTUndefined -> pure $ TSimple 23
+genPostlude pt = genPTerm =<< liftAntiGen (faultyPTerm pt)
+  where
+    genExcluding ls =
+      elements (filter (`notElem` ls) [minBound .. maxBound])
+    nonPInteger p =
+      pure p |! genExcluding [PTUInt, PTNInt, PTInt, PTAny]
+    -- \| Introduces a decision point that can change the type of the CBOR term that is generated
+    faultyPTerm t = reweigh 0.1 . withAnnotation (renderStrict . layoutCompact $ pretty t) $
+      case t of
+        PTAny -> pure PTAny
+        p@PTUInt -> nonPInteger p
+        p@PTNInt -> nonPInteger p
+        p@PTInt -> nonPInteger p
+        p -> pure p |! genExcluding [PTAny, p]
+    maxUInt = 2 ^ (64 :: Integer) - 1
+    minNInt = -(2 ^ (64 :: Integer))
+    genUInt = choose (0, maxUInt)
+    genNInt = choose (minNInt, -1)
+    genAboveUInt = choose (maxUInt + 1, 2 * maxUInt)
+    genBelowNInt = choose (2 * minNInt, minNInt - 1)
+    -- \| Given a CDDL postlude type, generates a value of that type
+    genPTerm = \case
+      PTBool -> TBool <$> arbitrary
+      -- For integers, introduce decision points that sometimes generate
+      -- out-of-bounds values
+      PTUInt -> TInteger <$> liftAntiGen (genUInt |! oneof [genNInt, genBelowNInt, genAboveUInt])
+      PTNInt -> TInteger <$> liftAntiGen (genNInt |! oneof [genUInt, genBelowNInt, genAboveUInt])
+      PTInt -> TInteger <$> choose (minNInt, maxUInt)
+      PTHalf -> THalf <$> genHalf
+      PTFloat -> TFloat <$> arbitrary
+      PTDouble -> TDouble <$> arbitrary
+      PTBytes -> twiddleBytes =<< genBytes
+      PTText -> twiddleString =<< genText
+      PTAny -> genTerm
+      PTNil -> pure TNull
+      PTUndefined -> pure $ TSimple 23
 
 --------------------------------------------------------------------------------
 -- Kinds of terms
@@ -299,127 +324,128 @@ range ClOpen x y = (x, pred y)
 range Closed x y = (x, y)
 
 genBetween :: (Integral a, Random a) => (a, a) -> CBORGen a
-genBetween rng = do
+genBetween rng = liftAntiGen . withAnnotation "genBetween" $ do
   size <- liftGen getSize
   let
     sizeBounds :: Integral a => (a, a)
     sizeBounds = (0, fromIntegral size)
-  liftAntiGen $ antiChoose rng sizeBounds
+  antiChoose rng sizeBounds
 
 genForCTree :: HasCallStack => CTree GenPhase -> CBORGen WrappedTerm
-genForCTree (CTree.Literal v) = S <$> valueToTerm v
-genForCTree (CTree.Postlude pt) = S <$> genPostlude pt
-genForCTree (CTree.Map nodes) = do
-  items <- pairTermList . flattenWrappedList <$> traverse genForCTree nodes
-  case items of
-    Just ts ->
-      let
-        -- De-duplicate keys in the map.
-        -- Per RFC7049:
-        -- >> A map that has duplicate keys may be well-formed, but it is not
-        -- >> valid, and thus it causes indeterminate decoding
-        tsNodup = nubOrdOn fst ts
-       in
-        S <$> twiddleMap tsNodup
-    Nothing -> error "Single terms in map context"
-genForCTree (CTree.Array nodes) = do
-  items <- singleTermList . flattenWrappedList <$> traverse genForCTree nodes
-  case items of
-    Just ts -> S <$> twiddleList ts
-    Nothing -> error "Something weird happened which shouldn't be possible"
-genForCTree (CTree.Choice (NE.toList -> nodes)) = do
-  ix <- choose (0, length nodes - 1)
-  genForCTree $ nodes !! ix
-genForCTree (CTree.Group nodes) = G <$> traverse genForCTree nodes
-genForCTree (CTree.KV key value _cut) = do
-  kg <- genForCTree key
-  vg <- genForCTree value
-  case (kg, vg) of
-    (S k, S v) -> pure $ P k v
-    _ ->
-      error $
-        "Non single-term generated outside of group context: "
-          <> showSimple key
-          <> " => "
-          <> showSimple value
-genForCTree (CTree.Occur item occurs) =
-  applyOccurenceIndicator occurs (genForCTree item)
-genForCTree (CTree.Range from to bounds) = do
-  term1 <- withAntiGen dropNegativeGen $ genForCTree from
-  term2 <- withAntiGen dropNegativeGen $ genForCTree to
-  case (term1, term2) of
-    (S (TInt a), S (TInt b))
-      | a <= b -> genBetween (range bounds a b) <&> S . TInt
-    (S (TInt a), S (TInteger b))
-      | fromIntegral a <= b ->
-          genBetween (range bounds (fromIntegral a) b) <&> S . TInteger
-    (S (TInteger a), S (TInteger b))
-      | a <= b -> genBetween (range bounds a b) <&> S . TInteger
-    (S (THalf a), S (THalf b))
-      | a <= b -> choose (range bounds a b) <&> S . THalf
-    (S (TFloat a), S (TFloat b))
-      | a <= b -> choose (range bounds a b) <&> S . TFloat
-    (S (TDouble a), S (TDouble b))
-      | a <= b -> choose (range bounds a b) <&> S . TDouble
-    (a, b) -> error $ "invalid range (a = " <> show a <> ", b = " <> show b <> ")"
-genForCTree (CTree.Control op target controller) = do
-  resolvedController <- case controller of
-    CTreeE (GenRef n) -> withAntiGen dropNegativeGen $ resolveRef n
-    x -> pure x
-  case (op, resolvedController) of
-    (CtlOp.Le, CTree.Literal (Value (VUInt n) _)) -> case target of
-      CTree.Postlude PTUInt -> S . TInteger <$> choose (0, fromIntegral n)
-      _ -> error "Cannot apply le operator to target"
-    (CtlOp.Le, _) -> error $ "Invalid controller for .le operator: " <> showSimple controller
-    (CtlOp.Lt, CTree.Literal (Value (VUInt n) _)) -> case target of
-      CTree.Postlude PTUInt -> S . TInteger <$> choose (0, fromIntegral n - 1)
-      _ -> error "Cannot apply lt operator to target"
-    (CtlOp.Lt, _) -> error $ "Invalid controller for .lt operator: " <> showSimple controller
-    (CtlOp.Size, CTree.Literal (Value (VUInt s) _)) -> do
-      s' <- liftAntiGen $ pure s |! sized (\sz -> choose (0, fromIntegral sz) `suchThat` (/= s))
-      genSized s' target
-    (CtlOp.Size, CTree.Range {CTree.from, CTree.to}) ->
-      case (from, to) of
-        (CTree.Literal (Value (VUInt f) _), CTree.Literal (Value (VUInt t) _)) -> do
-          s <- liftAntiGen $ sized $ \sz ->
-            antiChoose
-              (fromIntegral f, fromIntegral t)
-              (0, max (succ t) $ fromIntegral sz)
-          genSized s target
-        _ ->
-          error $
-            "Invalid controller for .size operator: "
-              <> showSimple controller
-    (CtlOp.Size, _) ->
-      error $
-        "Invalid controller for .size operator: "
-          <> showSimple controller
-    (CtlOp.Cbor, _) -> do
-      enc <- genForCTree controller
-      case enc of
-        S x -> fmap S . twiddleBytes $ CBOR.toStrictByteString (CBOR.encodeTerm x)
-        _ -> error "Controller does not correspond to a single term"
-    (c, _) -> error $ "Controller not yet implemented: " <> show c
-genForCTree (CTree.Enum tree) =
-  case tree of
-    CTree.Group trees -> do
-      ix <- choose (0, length trees - 1)
-      genForCTree $ trees !! ix
-    _ -> error "Attempt to form an enum from something other than a group"
-genForCTree (CTree.Unwrap node) = genForCTree node
-genForCTree (CTree.Tag t node) = do
-  tag <- liftAntiGen $ faultyNum t
-  enc <- case tag of
-    n
-      | n == 2 || n == 3 ->
-          -- TODO remove this once `cborg` can decode indefinite bytes in bignums
-          withTwiddle False $ genForCTree node
-    _ -> genForCTree node
-  case enc of
-    S x -> pure $ S $ TTagged tag x
-    _ -> error "Tag controller does not correspond to a single term"
-genForCTree (CTree.CTreeE (GenRef n)) = genForNode n
-genForCTree (CTree.CTreeE (GenGenerator gen _)) = gen
+genForCTree = \case
+  CTree.Literal v -> S <$> valueToTerm v
+  CTree.Postlude pt -> S <$> genPostlude pt
+  CTree.Map nodes -> do
+    items <- pairTermList . flattenWrappedList <$> traverse genForCTree nodes
+    case items of
+      Just ts ->
+        let
+          -- De-duplicate keys in the map.
+          -- Per RFC7049:
+          -- >> A map that has duplicate keys may be well-formed, but it is not
+          -- >> valid, and thus it causes indeterminate decoding
+          tsNodup = nubOrdOn fst ts
+         in
+          S <$> twiddleMap tsNodup
+      Nothing -> error "Single terms in map context"
+  CTree.Array nodes -> do
+    items <- singleTermList . flattenWrappedList <$> traverse genForCTree nodes
+    case items of
+      Just ts -> S <$> twiddleList ts
+      Nothing -> error "Something weird happened which shouldn't be possible"
+  CTree.Choice (NE.toList -> nodes) -> do
+    ix <- choose (0, length nodes - 1)
+    genForCTree $ nodes !! ix
+  CTree.Group nodes -> G <$> traverse genForCTree nodes
+  CTree.KV key value _cut -> do
+    kg <- genForCTree key
+    vg <- genForCTree value
+    case (kg, vg) of
+      (S k, S v) -> pure $ P k v
+      _ ->
+        error $
+          "Non single-term generated outside of group context: "
+            <> showSimple key
+            <> " => "
+            <> showSimple value
+  CTree.Occur item occurs ->
+    applyOccurenceIndicator occurs (genForCTree item)
+  CTree.Range from to bounds -> do
+    term1 <- withAntiGen dropNegativeGen $ genForCTree from
+    term2 <- withAntiGen dropNegativeGen $ genForCTree to
+    case (term1, term2) of
+      (S (TInt a), S (TInt b))
+        | a <= b -> genBetween (range bounds a b) <&> S . TInt
+      (S (TInt a), S (TInteger b))
+        | fromIntegral a <= b ->
+            genBetween (range bounds (fromIntegral a) b) <&> S . TInteger
+      (S (TInteger a), S (TInteger b))
+        | a <= b -> genBetween (range bounds a b) <&> S . TInteger
+      (S (THalf a), S (THalf b))
+        | a <= b -> choose (range bounds a b) <&> S . THalf
+      (S (TFloat a), S (TFloat b))
+        | a <= b -> choose (range bounds a b) <&> S . TFloat
+      (S (TDouble a), S (TDouble b))
+        | a <= b -> choose (range bounds a b) <&> S . TDouble
+      (a, b) -> error $ "invalid range (a = " <> show a <> ", b = " <> show b <> ")"
+  CTree.Control op target controller -> do
+    resolvedController <- case controller of
+      CTreeE (GenRef n) -> withAntiGen dropNegativeGen $ resolveRef n
+      x -> pure x
+    case (op, resolvedController) of
+      (CtlOp.Le, CTree.Literal (Value (VUInt n) _)) -> case target of
+        CTree.Postlude PTUInt -> S . TInteger <$> choose (0, fromIntegral n)
+        _ -> error "Cannot apply le operator to target"
+      (CtlOp.Le, _) -> error $ "Invalid controller for .le operator: " <> showSimple controller
+      (CtlOp.Lt, CTree.Literal (Value (VUInt n) _)) -> case target of
+        CTree.Postlude PTUInt -> S . TInteger <$> choose (0, fromIntegral n - 1)
+        _ -> error "Cannot apply lt operator to target"
+      (CtlOp.Lt, _) -> error $ "Invalid controller for .lt operator: " <> showSimple controller
+      (CtlOp.Size, CTree.Literal (Value (VUInt s) _)) -> do
+        s' <- liftAntiGen $ pure s |! sized (\sz -> choose (0, fromIntegral sz) `suchThat` (/= s))
+        genSized s' target
+      (CtlOp.Size, CTree.Range {CTree.from, CTree.to}) ->
+        case (from, to) of
+          (CTree.Literal (Value (VUInt f) _), CTree.Literal (Value (VUInt t) _)) -> do
+            s <- liftAntiGen $ sized $ \sz ->
+              antiChoose
+                (fromIntegral f, fromIntegral t)
+                (0, max (succ t) $ fromIntegral sz)
+            genSized s target
+          _ ->
+            error $
+              "Invalid controller for .size operator: "
+                <> showSimple controller
+      (CtlOp.Size, _) ->
+        error $
+          "Invalid controller for .size operator: "
+            <> showSimple controller
+      (CtlOp.Cbor, _) -> do
+        enc <- genForCTree controller
+        case enc of
+          S x -> fmap S . twiddleBytes $ CBOR.toStrictByteString (CBOR.encodeTerm x)
+          _ -> error "Controller does not correspond to a single term"
+      (c, _) -> error $ "Controller not yet implemented: " <> show c
+  CTree.Enum tree ->
+    case tree of
+      CTree.Group trees -> do
+        ix <- choose (0, length trees - 1)
+        genForCTree $ trees !! ix
+      _ -> error "Attempt to form an enum from something other than a group"
+  CTree.Unwrap node -> genForCTree node
+  CTree.Tag t node -> do
+    tag <- liftAntiGen $ faultyNum t
+    enc <- case tag of
+      n
+        | n == 2 || n == 3 ->
+            -- TODO remove this once `cborg` can decode indefinite bytes in bignums
+            withTwiddle False $ genForCTree node
+      _ -> genForCTree node
+    case enc of
+      S x -> pure $ S $ TTagged tag x
+      _ -> error "Tag controller does not correspond to a single term"
+  CTree.CTreeE (GenRef n) -> genForNode n
+  CTree.CTreeE (GenGenerator gen _) -> gen
 
 genForNode :: HasCallStack => Name -> CBORGen WrappedTerm
 genForNode = genForCTree <=< resolveRef

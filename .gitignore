@@ -1,5 +1,6 @@
 .direnv
 
+cabal.project.local
 .devenv
 dist-newstyle
 .vscode

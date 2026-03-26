@@ -6,6 +6,8 @@ module Test.Codec.CBOR.Cuddle.CDDL.Validator (
   spec,
   expectValid,
   expectInvalid,
+  genAndValidateCddl,
+  genAndValidateRule,
 ) where
 
 import Codec.CBOR.Cuddle.CBOR.Gen (generateFromName)
@@ -24,7 +26,7 @@ import Codec.CBOR.Cuddle.CDDL.CBORGenerator (CustomValidatorResult (..))
 import Codec.CBOR.Cuddle.CDDL.CTree (CTreeRoot (..))
 import Codec.CBOR.Cuddle.CDDL.CTree qualified as CTree
 import Codec.CBOR.Cuddle.CDDL.Postlude (appendPostlude)
-import Codec.CBOR.Cuddle.CDDL.Resolve (fullResolveCDDL)
+import Codec.CBOR.Cuddle.CDDL.Resolve (MonoReferenced, fullResolveCDDL)
 import Codec.CBOR.Cuddle.Huddle (
   Huddle,
   HuddleItem (..),
@@ -90,6 +92,31 @@ import Test.QuickCheck (
  )
 import Text.Megaparsec (runParser)
 
+-- | Test that a specific rule in a resolved CDDL generates valid values
+genAndValidateRule :: String -> Name -> CTreeRoot MonoReferenced -> Spec
+genAndValidateRule description name resolvedCddl =
+  prop description $ do
+    cborTerm <- runAntiGen $ generateFromName (mapIndex resolvedCddl) name
+    let
+      generatedCbor = toStrictByteString $ encodeTerm cborTerm
+      res = validateCBOR generatedCbor name (mapIndex resolvedCddl)
+      extraInfo =
+        unlines
+          [ "CBOR term:"
+          , prettyHexEnc $ encodeTerm cborTerm
+          ]
+    pure . counterexample extraInfo $ expectValid res
+
+-- | Test that all rules in a resolved CDDL generate valid values
+genAndValidateCddl :: String -> CTreeRoot MonoReferenced -> Spec
+genAndValidateCddl description resolvedCddl@(CTreeRoot m) = do
+  let
+    isRule CTree.Group {} = False
+    isRule _ = True
+  describe description $ do
+    forM_ (Map.keys $ Map.filter isRule m) $ \name@(Name n) ->
+      genAndValidateRule (T.unpack n) name resolvedCddl
+
 genAndValidateFromFile :: FilePath -> Spec
 genAndValidateFromFile path = do
   contents <- runIO $ T.readFile =<< getDataFileName path
@@ -97,24 +124,10 @@ genAndValidateFromFile path = do
     cddl = fromRight (error "Failed to parse CDDL") $ runParser pCDDL path contents
     resolverError x =
       error $ "Failed to resolve the CDDL from file " <> show path <> ":\n" <> show x
-    resolvedCddl@(CTreeRoot m) =
+    resolvedCddl =
       either resolverError id . fullResolveCDDL . appendPostlude $
         mapCDDLDropExt cddl
-    isRule CTree.Group {} = False
-    isRule _ = True
-  describe path $ do
-    forM_ (Map.keys $ Map.filter isRule m) $ \name@(Name n) ->
-      prop (T.unpack n) $ do
-        cborTerm <- runAntiGen $ generateFromName (mapIndex resolvedCddl) name
-        let
-          generatedCbor = toStrictByteString $ encodeTerm cborTerm
-          res = validateCBOR generatedCbor name (mapIndex resolvedCddl)
-          extraInfo =
-            unlines
-              [ "CBOR term:"
-              , prettyHexEnc $ encodeTerm cborTerm
-              ]
-        pure . counterexample extraInfo $ expectValid res
+  genAndValidateCddl path resolvedCddl
 
 genInfiniteUniqueList :: Ord a => Gen a -> Gen [a]
 genInfiniteUniqueList = fmap nubOrd . infiniteListOf

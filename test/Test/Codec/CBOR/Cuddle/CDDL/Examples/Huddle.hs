@@ -167,7 +167,7 @@ optionalMapExample =
     [ HIRule $
         "root"
           =:= mp
-            [ 10 <+ asKey ((0 :: Integer) ... (10 :: Integer)) ==> VBool
+            [ 10 <+ asKey ((1 :: Integer) ... (10 :: Integer)) ==> VBool
             ]
     ]
 

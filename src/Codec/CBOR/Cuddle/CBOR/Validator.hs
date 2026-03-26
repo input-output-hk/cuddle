@@ -148,9 +148,10 @@ validateInteger cddl i rule =
     Postlude PTInt -> terminal rule
     -- a = uint
     Postlude PTUInt
-      | i >= 0 -> terminal rule
+      | i >= 0 && i <= 2 ^ (64 :: Integer) - 1 -> terminal rule
     -- a = nint
-    Postlude PTNInt | i <= 0 -> terminal rule
+    Postlude PTNInt
+      | i >= -(2 ^ (64 :: Integer)) && i <= -1 -> terminal rule
     -- a = x
     Literal (Value (VUInt i') _) | i == fromIntegral i' -> terminal rule
     -- a = -x
