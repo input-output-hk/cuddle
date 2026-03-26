@@ -771,7 +771,7 @@ validateList cddl terms rule =
                 [ (mapIndex r, trc)
                 | r <- skipped
                 , Evidenced SInvalid trc <- [validateTerm cddl x (unwrapOccur r)]
-                , measureProgress trc > 0
+                , measureProgress trc > mempty
                 ]
               bestAttempt = case attempts of
                 [] -> Nothing
@@ -862,7 +862,7 @@ validateMap cddl terms rule =
           , KV k v _ <- [unwrapOccur r]
           , Evidenced SValid kTrc <- [validateTerm cddl (fst kv) k]
           , Evidenced SInvalid vTrc <- [validateTerm cddl (snd kv) v]
-          , measureProgress (MapValidationInvalidValue (mapIndex r) kTrc vTrc) > 0
+          , measureProgress (MapValidationInvalidValue (mapIndex r) kTrc vTrc) > mempty
           ]
         bestAttempt = case attempts of
           [] -> Nothing

@@ -27,6 +27,7 @@ import System.FilePath ((</>))
 import Test.Codec.CBOR.Cuddle.CDDL.Examples.Huddle (
   cborControlExample,
   choicesExample,
+  deeplyNestedRefExample,
   huddleRangeArray,
   listSkippedRuleExample,
   listSkippedRuleNestedExample,
@@ -175,3 +176,10 @@ spec = describe "golden" $ do
       mapNestedValueExample
       "root"
       mapNestedValueTerm
+    -- Deeply nested refs competing against a rule that makes actual term
+    -- progress. The stacked refs should NOT win over real term progress.
+    validatorPrettyGolden
+      "deeplyNestedRefVsRealProgress"
+      deeplyNestedRefExample
+      "root"
+      (TList [TInt 1, TList [TInt 1, TString "hello"]])

@@ -22,6 +22,7 @@ module Codec.CBOR.Cuddle.CBOR.Validator.Trace (
   IsValidationTrace (..),
   ControlInfo (..),
   TraceOptions (..),
+  Progress (..),
   defaultTraceOptions,
   showSimple,
   isValid,
@@ -188,13 +189,8 @@ data ListValidationTrace (v :: Validity) where
     NonEmpty Term ->
     Maybe (CTree ValidatorStageSimple, ValidationTrace IsInvalid) ->
     ListValidationTrace IsInvalid
-<<<<<<< HEAD
   ListValidationUnappliedRule ::
     CTree ValidatorStageSimple ->
-=======
-  ListValidationUnappliedRules ::
-    NonEmpty (CTree ValidatorStageSimple) ->
->>>>>>> d212208 (Improve list leftover elements validation trace)
     ListValidationTrace IsInvalid
   ListValidationConsume ::
     CTree ValidatorStageSimple ->
@@ -264,9 +260,24 @@ instance IsValidationTrace t => Semigroup (Evidenced t) where
       GT -> x
       _ -> y
 
+data Progress = Progress {termProgress :: !Int, refProgress :: !Int}
+  deriving (Eq, Ord)
+
+instance Semigroup Progress where
+  Progress t1 r1 <> Progress t2 r2 = Progress (t1 + t2) (r1 + r2)
+
+instance Monoid Progress where
+  mempty = Progress 0 0
+
+increaseTermProgress :: Progress -> Progress
+increaseTermProgress p = p <> Progress 1 0
+
+increaseRefProgress :: Progress -> Progress
+increaseRefProgress p = p <> Progress 0 1
+
 class IsValidationTrace (t :: Validity -> Type) where
   traceValidity :: t v -> SValidity v
-  measureProgress :: t v -> Int
+  measureProgress :: t v -> Progress
 
 instance IsValidationTrace ValidationTrace where
   traceValidity = \case
@@ -283,17 +294,17 @@ instance IsValidationTrace ValidationTrace where
     TagTrace _ x -> traceValidity x
 
   measureProgress = \case
-    TerminalRule {} -> 1
-    CustomSuccess -> 1
-    ChoiceBranch {} -> 1
-    UnapplicableRule {} -> 0
-    CustomFailure {} -> 0
-    UnsatisfiedControl {} -> 0
-    InvalidTag {} -> 0
-    ReferenceRule _ x -> succ $ measureProgress x
+    TerminalRule {} -> Progress 1 0
+    CustomSuccess -> Progress 1 0
+    ChoiceBranch _ x -> measureProgress x
+    UnapplicableRule {} -> mempty
+    CustomFailure {} -> mempty
+    UnsatisfiedControl {} -> mempty
+    InvalidTag {} -> mempty
+    ReferenceRule _ x -> increaseRefProgress $ measureProgress x
     ListTrace x -> measureProgress x
     MapTrace x -> measureProgress x
-    TagTrace _ x -> succ $ measureProgress x
+    TagTrace _ x -> increaseTermProgress $ measureProgress x
 
 instance IsValidationTrace ListValidationTrace where
   traceValidity = \case
@@ -306,14 +317,14 @@ instance IsValidationTrace ListValidationTrace where
     ListValidationConsumeGroup _ _ x -> traceValidity x
 
   measureProgress = \case
-    ListValidationDone -> 10
-    ListValidationConsume _ _ x -> succ $ measureProgress x
-    ListValidationLeftoverTerms _ Nothing -> 0
+    ListValidationDone -> Progress 1 0
+    ListValidationConsume _ _ x -> increaseTermProgress $ measureProgress x
+    ListValidationLeftoverTerms _ Nothing -> mempty
     ListValidationLeftoverTerms _ (Just (_, trc)) -> measureProgress trc
-    ListValidationMissingRequired _ _ -> 0
-    ListValidationUnappliedRule _ -> 0
-    ListValidationConsumeGroup _ g x -> measureProgress g + measureProgress x
-    ListValidationBadGroup _ x -> measureProgress x
+    ListValidationMissingRequired _ _ -> mempty
+    ListValidationUnappliedRule _ -> mempty
+    ListValidationConsumeGroup rs g x -> Progress 0 (length rs) <> measureProgress g <> measureProgress x
+    ListValidationBadGroup rs x -> Progress 0 (length rs) <> measureProgress x
 
 instance IsValidationTrace MapValidationTrace where
   traceValidity = \case
@@ -324,12 +335,14 @@ instance IsValidationTrace MapValidationTrace where
     MapValidationConsume _ _ _ x -> traceValidity x
 
   measureProgress = \case
-    MapValidationDone -> 10
-    MapValidationLeftoverKVs _ Nothing -> 0
+    MapValidationDone -> Progress 1 0
+    MapValidationLeftoverKVs _ Nothing -> mempty
     MapValidationLeftoverKVs _ (Just (_, trc)) -> measureProgress trc
-    MapValidationUnappliedRules _ -> 0
-    MapValidationConsume _ _ _ x -> 3 + measureProgress x
-    MapValidationInvalidValue {} -> 2
+    MapValidationUnappliedRules _ -> mempty
+    MapValidationConsume _ kTrc vTrc x ->
+      measureProgress kTrc <> measureProgress vTrc <> measureProgress x
+    MapValidationInvalidValue _ kTrc vTrc ->
+      measureProgress kTrc <> measureProgress vTrc
 
 evidence :: (Show (t v), IsValidationTrace t) => t v -> Evidenced t
 evidence x = Evidenced (traceValidity x) x
