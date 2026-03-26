@@ -60,6 +60,7 @@ import Data.List (sortOn)
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
+import Data.Ord (Down (..))
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Internal.Encoding.Utf8 (utf8Length)
@@ -413,9 +414,9 @@ genMap nodes = do
                         Nothing -> genNodes i m ns
               res
           node -> error $ "Unexpected node: " <> showSimple node
-  mItems <- genNodes 0 Map.empty $ sortOn (negate . elemsNeeded) nodes
+  mItems <- genNodes 0 Map.empty $ sortOn (Down . elemsNeeded) nodes
   case mItems of
-    Just items -> pure . S . TMap $ Map.toList items
+    Just items -> S <$> twiddleMap (Map.toList items)
     Nothing -> error "Failed to generate unique keys for map after max retries"
 
 -- | Generate an array from a list of nodes
@@ -513,7 +514,7 @@ genControl op target controller = do
     (CtlOp.Cbor, _) -> do
       enc <- genForCTree controller
       case enc of
-        S x -> pure . S . TBytes . CBOR.toStrictByteString $ CBOR.encodeTerm x
+        S x -> S <$> twiddleBytes (CBOR.toStrictByteString $ CBOR.encodeTerm x)
         _ -> error "Controller does not correspond to a single term"
     (c, _) -> error $ "Controller not yet implemented: " <> show c
 
