@@ -427,7 +427,7 @@ genArray nodes = do
         (\(i, node) -> withAntiGen (withAnnotation (T.pack $ show i)) $ genForCTree node)
         ([0 :: Int ..] `zip` nodes)
   case items of
-    Just ts -> pure . S $ TList ts
+    Just ts -> S <$> twiddleList ts
     Nothing -> error "Something weird happened which shouldn't be possible"
 
 -- | Generate a key-value pair
