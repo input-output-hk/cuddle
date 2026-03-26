@@ -363,24 +363,25 @@ genMap nodes = do
       let
         unS (S x) = x
         unS x = error $ "Expected single, got " <> show x
-      k <- unS <$> scale (`div` 2) (genForCTree kNode)
+      k <- unS <$> scale (`div` 2) (withAntiGen (withAnnotation "key") $ genForCTree kNode)
       if Map.notMember k m
         then do
-          v <- unS <$> scale (`div` 2) (genForCTree vNode)
+          v <- unS <$> scale (`div` 2) (withAntiGen (withAnnotation "value") $ genForCTree vNode)
           pure . Just $ (k, v)
         else tryGenKV (nTries - 1) m kNode vNode
 
-    genNodes :: Map.Map Term Term -> [CTree GenPhase] -> CBORGen (Maybe (Map.Map Term Term))
-    genNodes m [] = pure $ Just m
-    genNodes !m (n : ns) =
+    genNodes :: Int -> Map.Map Term Term -> [CTree GenPhase] -> CBORGen (Maybe (Map.Map Term Term))
+    genNodes _ m [] = pure $ Just m
+    genNodes !i !m (n : ns) =
       let
-        cont x y = scale (\s -> s - 1) $ genNodes x y
+        ann = withAntiGen (withAnnotation (T.pack $ show i))
+        cont x y = scale (\s -> s - 1) $ genNodes (i + 1) x y
         optGenKV kNode vNode = sized $ \sz ->
-          frequency [(100, pure Nothing), (max 0 sz, tryGenKV 10 m kNode vNode)]
+          frequency [(100, pure Nothing), (max 0 sz, ann $ tryGenKV 10 m kNode vNode)]
        in
         case n of
           KV kNode vNode _ -> do
-            mKV <- tryGenKV 100 m kNode vNode
+            mKV <- ann $ tryGenKV 100 m kNode vNode
             case mKV of
               Just (k, v) -> cont (Map.insert k v m) ns
               Nothing -> pure Nothing
@@ -395,7 +396,7 @@ genMap nodes = do
               case mt of
                 Just (k, v) -> cont (Map.insert k v m) (n : ns)
                 Nothing -> cont m ns
-            OIOneOrMore -> genNodes m (kv : Occur kv OIZeroOrMore : ns)
+            OIOneOrMore -> genNodes i m (kv : Occur kv OIZeroOrMore : ns)
             OIBounded mlb mub -> do
               let
                 clampedPred 0 = 0
@@ -403,16 +404,16 @@ genMap nodes = do
                 newLow = clampedPred <$> mlb
                 newHigh = clampedPred <$> mub
                 res
-                  | maybe False (> 0) mlb = genNodes m (kv : Occur kv (OIBounded newLow newHigh) : ns)
-                  | maybe False (< 1) mub = genNodes m ns
+                  | maybe False (> 0) mlb = genNodes i m (kv : Occur kv (OIBounded newLow newHigh) : ns)
+                  | maybe False (< 1) mub = genNodes i m ns
                   | otherwise = do
                       mt <- optGenKV kNode vNode
                       case mt of
                         Just (k, v) -> cont (Map.insert k v m) (Occur kv (OIBounded newLow newHigh) : ns)
-                        Nothing -> genNodes m ns
+                        Nothing -> genNodes i m ns
               res
           node -> error $ "Unexpected node: " <> showSimple node
-  mItems <- genNodes Map.empty $ sortOn (negate . elemsNeeded) nodes
+  mItems <- genNodes 0 Map.empty $ sortOn (negate . elemsNeeded) nodes
   case mItems of
     Just items -> pure . S . TMap $ Map.toList items
     Nothing -> error "Failed to generate unique keys for map after max retries"
