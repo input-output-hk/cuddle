@@ -40,7 +40,6 @@ import Codec.CBOR.Cuddle.CDDL.CBORGenerator (
   lookupCddl,
   runCBORGen,
   withAntiGen,
-  withTwiddle,
  )
 import Codec.CBOR.Cuddle.CDDL.CTree (CTree (..), CTreeRoot (..), PTerm (..), foldCTree)
 import Codec.CBOR.Cuddle.CDDL.CTree qualified as CTree
@@ -50,9 +49,8 @@ import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
 import Codec.CBOR.Term (Term (..))
 import Codec.CBOR.Term qualified as CBOR
 import Codec.CBOR.Write qualified as CBOR
+import Control.Monad ((<=<))
 import Control.Monad.Reader (asks)
-import Control.Applicative (Alternative (..))
-import Control.Monad (foldM, (<=<))
 import Data.ByteString (ByteString)
 import Data.ByteString.Lazy qualified as LBS
 import Data.Char (chr)
@@ -324,34 +322,35 @@ genBetween rng = liftAntiGen . withAnnotation "genBetween" $ do
     sizeBounds = (0, fromIntegral size)
   antiChoose rng sizeBounds
 
+annotate :: Text -> CBORGen b -> CBORGen b
+annotate ann = withAntiGen $ withAnnotation ann
+
 genForCTree :: HasCallStack => CTree GenPhase -> CBORGen WrappedTerm
-genForCTree ::
-  HasCallStack => CTreeRoot GenPhase -> CTree GenPhase -> AntiGen WrappedTerm
 genForCTree = \case
-  CTree.Literal v -> withAnnotation "literal" $ pure . S $ valueToTerm v
-  CTree.Postlude pt -> withAnnotation "postlude" $ S <$> genPostlude pt
-  CTree.Map nodes -> withAnnotation "map" $ genMap cddl nodes
-  CTree.Array nodes -> withAnnotation "array" $ genArray cddl nodes
-  CTree.Choice (NE.toList -> nodes) -> withAnnotation "choice" $ do
+  CTree.Literal v -> annotate "literal" $ S <$> valueToTerm v
+  CTree.Postlude pt -> annotate "postlude" $ S <$> genPostlude pt
+  CTree.Map nodes -> annotate "map" $ genMap nodes
+  CTree.Array nodes -> annotate "array" $ genArray nodes
+  CTree.Choice (NE.toList -> nodes) -> annotate "choice" $ do
     ix <- choose (0, length nodes - 1)
-    genForCTree cddl $ nodes !! ix
-  CTree.Group nodes -> withAnnotation "group" $ G <$> traverse (genForCTree cddl) nodes
-  CTree.KV key value _cut -> withAnnotation "kv" $ genKV cddl key value
+    genForCTree $ nodes !! ix
+  CTree.Group nodes -> annotate "group" $ G <$> traverse genForCTree nodes
+  CTree.KV key value _cut -> annotate "kv" $ genKV key value
   CTree.Occur item occurs ->
-    withAnnotation "occur" $
-      applyOccurenceIndicator occurs (genForCTree cddl item)
-  CTree.Range from to bounds -> withAnnotation "range" $ genRange cddl from to bounds
-  CTree.Control op target controller -> withAnnotation "control" $ genControl cddl op target controller
-  CTree.Enum tree -> withAnnotation "enum" $ genEnum cddl tree
-  CTree.Unwrap node -> withAnnotation "unwrap" $ genForCTree cddl node
-  CTree.Tag t node -> withAnnotation "tag" $ genTag cddl t node
-  CTree.CTreeE (GenRef n) -> withAnnotation (unName n) $ genForNode cddl n
-  CTree.CTreeE (GenGenerator (CBORGenerator gen) _) -> withAnnotation "custom_generator" $ gen cddl
+    annotate "occur" $
+      applyOccurenceIndicator occurs (genForCTree item)
+  CTree.Range from to bounds -> annotate "range" $ genRange from to bounds
+  CTree.Control op target controller -> annotate "control" $ genControl op target controller
+  CTree.Enum tree -> annotate "enum" $ genEnum tree
+  CTree.Unwrap node -> annotate "unwrap" $ genForCTree node
+  CTree.Tag t node -> annotate "tag" $ genTag t node
+  CTree.CTreeE (GenRef n) -> annotate (unName n) $ genForNode n
+  CTree.CTreeE (GenGenerator gen _) -> annotate "custom_generator" gen
 
 -- | Generate a map from a list of nodes
 genMap ::
-  HasCallStack => CTreeRoot GenPhase -> [CTree GenPhase] -> AntiGen WrappedTerm
-genMap cddl nodes = do
+  HasCallStack => [CTree GenPhase] -> CBORGen WrappedTerm
+genMap nodes = do
   let
     elemsNeeded KV {} = 1
     elemsNeeded (Occur _ OIOneOrMore) = 1
@@ -363,14 +362,14 @@ genMap cddl nodes = do
       let
         unS (S x) = x
         unS x = error $ "Expected single, got " <> show x
-      k <- unS <$> scale (`div` 2) (genForCTree cddl kNode)
+      k <- unS <$> scale (`div` 2) (genForCTree kNode)
       if Map.notMember k m
         then do
-          v <- unS <$> scale (`div` 2) (genForCTree cddl vNode)
+          v <- unS <$> scale (`div` 2) (genForCTree vNode)
           pure . Just $ (k, v)
         else tryGenKV (nTries - 1) m kNode vNode
 
-    genNodes :: Map.Map Term Term -> [CTree GenPhase] -> AntiGen (Maybe (Map.Map Term Term))
+    genNodes :: Map.Map Term Term -> [CTree GenPhase] -> CBORGen (Maybe (Map.Map Term Term))
     genNodes m [] = pure $ Just m
     genNodes !m (n : ns) =
       let
@@ -418,24 +417,22 @@ genMap cddl nodes = do
     Nothing -> error "Failed to generate unique keys for map after max retries"
 
 -- | Generate an array from a list of nodes
-genArray ::
-  HasCallStack => CTreeRoot GenPhase -> [CTree GenPhase] -> AntiGen WrappedTerm
-genArray cddl nodes = do
+genArray :: HasCallStack => [CTree GenPhase] -> CBORGen WrappedTerm
+genArray nodes = do
   items <-
     singleTermList . flattenWrappedList
       <$> traverse
-        (\(i, node) -> withAnnotation (T.pack $ show i) $ genForCTree cddl node)
+        (\(i, node) -> withAntiGen (withAnnotation (T.pack $ show i)) $ genForCTree node)
         ([0 :: Int ..] `zip` nodes)
   case items of
     Just ts -> pure . S $ TList ts
     Nothing -> error "Something weird happened which shouldn't be possible"
 
 -- | Generate a key-value pair
-genKV ::
-  HasCallStack => CTreeRoot GenPhase -> CTree GenPhase -> CTree GenPhase -> AntiGen WrappedTerm
-genKV cddl key value = do
-  kg <- withAnnotation "key" $ genForCTree cddl key
-  vg <- withAnnotation "value" $ genForCTree cddl value
+genKV :: HasCallStack => CTree GenPhase -> CTree GenPhase -> CBORGen WrappedTerm
+genKV key value = do
+  kg <- withAntiGen (withAnnotation "key") $ genForCTree key
+  vg <- withAntiGen (withAnnotation "value") $ genForCTree value
   case (kg, vg) of
     (S k, S v) -> pure $ P k v
     _ ->
@@ -448,14 +445,13 @@ genKV cddl key value = do
 -- | Generate a value from a range
 genRange ::
   HasCallStack =>
-  CTreeRoot GenPhase ->
   CTree GenPhase ->
   CTree GenPhase ->
   RangeBound ->
-  AntiGen WrappedTerm
-genRange cddl from to bounds = do
-  term1 <- dropNegativeGen $ genForCTree cddl from
-  term2 <- dropNegativeGen $ genForCTree cddl to
+  CBORGen WrappedTerm
+genRange from to bounds = do
+  term1 <- withAntiGen dropNegativeGen $ genForCTree from
+  term2 <- withAntiGen dropNegativeGen $ genForCTree to
   case (term1, term2) of
     (S (TInt a), S (TInt b))
       | a <= b -> genBetween (range bounds a b) <&> S . TInt
@@ -475,14 +471,13 @@ genRange cddl from to bounds = do
 -- | Generate a value with a control operator applied
 genControl ::
   HasCallStack =>
-  CTreeRoot GenPhase ->
   CtlOp.CtlOp ->
   CTree GenPhase ->
   CTree GenPhase ->
-  AntiGen WrappedTerm
-genControl cddl op target controller = do
+  CBORGen WrappedTerm
+genControl op target controller = do
   resolvedController <- case controller of
-    CTreeE (GenRef n) -> dropNegativeGen $ resolveRef cddl n
+    CTreeE (GenRef n) -> withAntiGen dropNegativeGen $ resolveRef n
     x -> pure x
   case (op, resolvedController) of
     (CtlOp.Le, CTree.Literal (Value (VUInt n) _)) -> case target of
@@ -494,15 +489,16 @@ genControl cddl op target controller = do
       _ -> error "Cannot apply lt operator to target"
     (CtlOp.Lt, _) -> error $ "Invalid controller for .lt operator: " <> showSimple controller
     (CtlOp.Size, CTree.Literal (Value (VUInt s) _)) -> do
-      s' <- pure s |! sized (\sz -> choose (0, fromIntegral sz) `suchThat` (/= s))
+      s' <- liftAntiGen $ pure s |! sized (\sz -> choose (0, fromIntegral sz) `suchThat` (/= s))
       genSized s' target
     (CtlOp.Size, CTree.Range {CTree.from, CTree.to}) -> do
       case (from, to) of
         (CTree.Literal (Value (VUInt f) _), CTree.Literal (Value (VUInt t) _)) -> do
           s <- sized $ \sz ->
-            antiChoose
-              (fromIntegral f, fromIntegral t)
-              (0, max (succ t) $ fromIntegral sz)
+            liftAntiGen $
+              antiChoose
+                (fromIntegral f, fromIntegral t)
+                (0, max (succ t) $ fromIntegral sz)
           genSized s target
         _ ->
           error $
@@ -513,7 +509,7 @@ genControl cddl op target controller = do
         "Invalid controller for .size operator: "
           <> showSimple controller
     (CtlOp.Cbor, _) -> do
-      enc <- genForCTree cddl controller
+      enc <- genForCTree controller
       case enc of
         S x -> pure . S . TBytes . CBOR.toStrictByteString $ CBOR.encodeTerm x
         _ -> error "Controller does not correspond to a single term"
@@ -521,25 +517,25 @@ genControl cddl op target controller = do
 
 -- | Generate a value from an enum
 genEnum ::
-  HasCallStack => CTreeRoot GenPhase -> CTree GenPhase -> AntiGen WrappedTerm
-genEnum cddl tree = case tree of
+  HasCallStack => CTree GenPhase -> CBORGen WrappedTerm
+genEnum tree = case tree of
   CTree.Group trees -> do
     ix <- choose (0, length trees - 1)
-    genForCTree cddl $ trees !! ix
+    genForCTree $ trees !! ix
   _ -> error "Attempt to form an enum from something other than a group"
 
 -- | Generate a tagged value
 genTag ::
-  HasCallStack => CTreeRoot GenPhase -> Word64 -> CTree GenPhase -> AntiGen WrappedTerm
-genTag cddl t node = do
-  tag <- faultyNum t
-  enc <- genForCTree cddl node
+  HasCallStack => Word64 -> CTree GenPhase -> CBORGen WrappedTerm
+genTag t node = do
+  tag <- liftAntiGen $ faultyNum t
+  enc <- genForCTree node
   case enc of
     S x -> pure $ S $ TTagged tag x
     _ -> error "Tag controller does not correspond to a single term"
 
-genForNode :: HasCallStack => CTreeRoot GenPhase -> Name -> AntiGen WrappedTerm
-genForNode cddl = genForCTree cddl <=< resolveRef cddl
+genForNode :: HasCallStack => Name -> CBORGen WrappedTerm
+genForNode = genForCTree <=< resolveRef
 
 -- | Take a reference and resolve it to the relevant Tree, following multiple
 -- links if necessary.

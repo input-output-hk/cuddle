@@ -8,12 +8,6 @@ test-show-details: streaming
 program-options
   ghc-options: -Werror
 
-source-repository-package
-  type: git
-  location: https://github.com/input-output-hk/antigen.git
-  --sha256: sha256-Dw09suLtdpIqz90fklyFv9Q1xf32yBXeWdBse0FUi8w=
-  tag: 8e47836c5f77ee602320ed40fce09b36e47a5daa
-
 -- cabal-allow-newer
 if impl (ghc >= 9.14)
   allow-newer:
