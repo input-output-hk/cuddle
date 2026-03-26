@@ -40,6 +40,7 @@ import Codec.CBOR.Cuddle.CDDL.CBORGenerator (
   lookupCddl,
   runCBORGen,
   withAntiGen,
+  withTwiddle,
  )
 import Codec.CBOR.Cuddle.CDDL.CTree (CTree (..), CTreeRoot (..), PTerm (..), foldCTree)
 import Codec.CBOR.Cuddle.CDDL.CTree qualified as CTree
@@ -529,7 +530,12 @@ genTag ::
   HasCallStack => Word64 -> CTree GenPhase -> CBORGen WrappedTerm
 genTag t node = do
   tag <- liftAntiGen $ faultyNum t
-  enc <- genForCTree node
+  enc <- case tag of
+    n
+      | n == 2 || n == 3 ->
+          -- TODO remove this once `cborg` can decode indefinite bytes in bignums
+          withTwiddle False $ genForCTree node
+    _ -> genForCTree node
   case enc of
     S x -> pure $ S $ TTagged tag x
     _ -> error "Tag controller does not correspond to a single term"
