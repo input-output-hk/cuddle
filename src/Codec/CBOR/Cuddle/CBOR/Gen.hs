@@ -375,7 +375,7 @@ genMap nodes = do
     genNodes !i !m (n : ns) =
       let
         ann = withAntiGen (withAnnotation (T.pack $ show i))
-        cont x y = scale (\s -> s - 1) $ genNodes (i + 1) x y
+        cont x y = scale (\s -> max 0 (s - 1)) $ genNodes (i + 1) x y
         optGenKV kNode vNode = sized $ \sz ->
           frequency [(100, pure Nothing), (max 0 sz, ann $ tryGenKV 10 m kNode vNode)]
        in
