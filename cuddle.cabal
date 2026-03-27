@@ -158,11 +158,9 @@ test-suite cuddle-test
     Test.Codec.CBOR.Cuddle.CDDL.Examples
     Test.Codec.CBOR.Cuddle.CDDL.Examples.Huddle
     Test.Codec.CBOR.Cuddle.CDDL.Gen
-    Test.Codec.CBOR.Cuddle.CDDL.Generator.Golden
     Test.Codec.CBOR.Cuddle.CDDL.GeneratorSpec
     Test.Codec.CBOR.Cuddle.CDDL.Parser
     Test.Codec.CBOR.Cuddle.CDDL.Pretty
-    Test.Codec.CBOR.Cuddle.CDDL.Utils
     Test.Codec.CBOR.Cuddle.CDDL.Validator
     Test.Codec.CBOR.Cuddle.CDDL.Validator.Golden
     Test.Codec.CBOR.Cuddle.Huddle

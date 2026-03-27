@@ -2,7 +2,6 @@ module Main (main) where
 
 import System.IO (BufferMode (..), hSetBuffering, hSetEncoding, stdout, utf8)
 import Test.Codec.CBOR.Cuddle.CDDL.Examples qualified as Examples
-import Test.Codec.CBOR.Cuddle.CDDL.Generator.Golden qualified as GeneratorGolden
 import Test.Codec.CBOR.Cuddle.CDDL.GeneratorSpec qualified as Generator
 import Test.Codec.CBOR.Cuddle.CDDL.Parser (parserSpec)
 import Test.Codec.CBOR.Cuddle.CDDL.Validator qualified as Validator
@@ -25,9 +24,7 @@ main = do
     describe "Parser" parserSpec
     describe "Huddle" huddleSpec
     describe "Examples" Examples.spec
-    describe "Generator" $ do
-      describe "Properties" Generator.spec
-      describe "Golden" GeneratorGolden.spec
+    describe "Generator" Generator.spec
     describe "Validator" $ do
       describe "Properties" Validator.spec
       describe "Golden" ValidatorGolden.spec

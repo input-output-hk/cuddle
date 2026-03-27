@@ -1,3 +1,0 @@
-Zapped 1 decision points
-Annotations:
-  - array.uint
