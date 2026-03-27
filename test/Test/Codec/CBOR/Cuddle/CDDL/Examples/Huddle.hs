@@ -18,12 +18,10 @@ module Test.Codec.CBOR.Cuddle.CDDL.Examples.Huddle (
   optionalMapExample,
   choicesExample,
   cborControlExample,
-  refExample,
-  customGenZapExample,
 ) where
 
 import Codec.CBOR.Cuddle.CDDL (Name)
-import Codec.CBOR.Cuddle.CDDL.CBORGenerator (WrappedTerm (..), liftAntiGen)
+import Codec.CBOR.Cuddle.CDDL.CBORGenerator (WrappedTerm (..))
 import Codec.CBOR.Cuddle.Huddle (
   CanQuantify (..),
   Huddle,
@@ -45,7 +43,6 @@ import Codec.CBOR.Cuddle.Huddle (
 import Codec.CBOR.Cuddle.Huddle qualified as H
 import Codec.CBOR.Term qualified as C
 import Data.Word (Word64)
-import Test.AntiGen ((#!), (|!))
 import Test.QuickCheck.GenT (MonadGen (..))
 
 huddleRangeArray :: Huddle
@@ -191,18 +188,4 @@ cborControlExample =
         "root"
           =:= VBytes
           `H.cbor` simpleRule "simpleRule"
-    ]
-
-refExample :: Huddle
-refExample =
-  collectFrom
-    [ HIRule $ "root" =:= arr [a ("myRule" =:= VUInt)]
-    ]
-
-customGenZapExample :: Huddle
-customGenZapExample =
-  collectFrom
-    [ HIRule $
-        withCBORGen (S . C.TInt <$> liftAntiGen (choose (4, 6) |! choose (100, 200) #! "myCustomGen")) $
-          "root" =:= VUInt
     ]
