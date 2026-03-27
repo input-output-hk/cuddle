@@ -78,6 +78,7 @@ import Test.AntiGen (
   antiNonPositive,
   faultyNum,
   runAntiGen,
+  withAnnotation,
   (|!),
  )
 import Test.QuickCheck (
@@ -306,10 +307,34 @@ genBetween rng = do
     sizeBounds = (0, fromIntegral size)
   liftAntiGen $ antiChoose rng sizeBounds
 
+annotate :: Text -> CBORGen b -> CBORGen b
+annotate ann = withAntiGen $ withAnnotation ann
+
 genForCTree :: HasCallStack => CTree GenPhase -> CBORGen WrappedTerm
-genForCTree (CTree.Literal v) = S <$> valueToTerm v
-genForCTree (CTree.Postlude pt) = S <$> genPostlude pt
-genForCTree (CTree.Map nodes) = do
+genForCTree = \case
+  CTree.Literal v -> annotate "literal" $ S <$> valueToTerm v
+  CTree.Postlude pt -> annotate "postlude" $ S <$> genPostlude pt
+  CTree.Map nodes -> annotate "map" $ genMap nodes
+  CTree.Array nodes -> annotate "array" $ genArray nodes
+  CTree.Choice (NE.toList -> nodes) -> annotate "choice" $ do
+    ix <- choose (0, length nodes - 1)
+    genForCTree $ nodes !! ix
+  CTree.Group nodes -> annotate "group" $ G <$> traverse genForCTree nodes
+  CTree.KV key value _cut -> annotate "kv" $ genKV key value
+  CTree.Occur item occurs ->
+    annotate "occur" $
+      applyOccurenceIndicator occurs (genForCTree item)
+  CTree.Range from to bounds -> annotate "range" $ genRange from to bounds
+  CTree.Control op target controller -> annotate "control" $ genControl op target controller
+  CTree.Enum tree -> annotate "enum" $ genEnum tree
+  CTree.Unwrap node -> annotate "unwrap" $ genForCTree node
+  CTree.Tag t node -> annotate "tag" $ genTag t node
+  CTree.CTreeE (GenRef n) -> annotate (unName n) $ genForNode n
+  CTree.CTreeE (GenGenerator gen _) -> annotate "custom_generator" gen
+
+-- | Generate a map from a list of nodes
+genMap :: HasCallStack => [CTree GenPhase] -> CBORGen WrappedTerm
+genMap nodes = do
   items <- pairTermList . flattenWrappedList <$> traverse genForCTree nodes
   case items of
     Just ts ->
@@ -322,16 +347,18 @@ genForCTree (CTree.Map nodes) = do
        in
         S <$> twiddleMap tsNodup
     Nothing -> error "Single terms in map context"
-genForCTree (CTree.Array nodes) = do
+
+-- | Generate an array from a list of nodes
+genArray :: HasCallStack => [CTree GenPhase] -> CBORGen WrappedTerm
+genArray nodes = do
   items <- singleTermList . flattenWrappedList <$> traverse genForCTree nodes
   case items of
     Just ts -> S <$> twiddleList ts
     Nothing -> error "Something weird happened which shouldn't be possible"
-genForCTree (CTree.Choice (NE.toList -> nodes)) = do
-  ix <- choose (0, length nodes - 1)
-  genForCTree $ nodes !! ix
-genForCTree (CTree.Group nodes) = G <$> traverse genForCTree nodes
-genForCTree (CTree.KV key value _cut) = do
+
+-- | Generate a key-value pair
+genKV :: HasCallStack => CTree GenPhase -> CTree GenPhase -> CBORGen WrappedTerm
+genKV key value = do
   kg <- genForCTree key
   vg <- genForCTree value
   case (kg, vg) of
@@ -342,9 +369,15 @@ genForCTree (CTree.KV key value _cut) = do
           <> showSimple key
           <> " => "
           <> showSimple value
-genForCTree (CTree.Occur item occurs) =
-  applyOccurenceIndicator occurs (genForCTree item)
-genForCTree (CTree.Range from to bounds) = do
+
+-- | Generate a value from a range
+genRange ::
+  HasCallStack =>
+  CTree GenPhase ->
+  CTree GenPhase ->
+  RangeBound ->
+  CBORGen WrappedTerm
+genRange from to bounds = do
   term1 <- withAntiGen dropNegativeGen $ genForCTree from
   term2 <- withAntiGen dropNegativeGen $ genForCTree to
   case (term1, term2) of
@@ -362,7 +395,15 @@ genForCTree (CTree.Range from to bounds) = do
     (S (TDouble a), S (TDouble b))
       | a <= b -> choose (range bounds a b) <&> S . TDouble
     (a, b) -> error $ "invalid range (a = " <> show a <> ", b = " <> show b <> ")"
-genForCTree (CTree.Control op target controller) = do
+
+-- | Generate a value with a control operator applied
+genControl ::
+  HasCallStack =>
+  CtlOp.CtlOp ->
+  CTree GenPhase ->
+  CTree GenPhase ->
+  CBORGen WrappedTerm
+genControl op target controller = do
   resolvedController <- case controller of
     CTreeE (GenRef n) -> withAntiGen dropNegativeGen $ resolveRef n
     x -> pure x
@@ -400,14 +441,18 @@ genForCTree (CTree.Control op target controller) = do
         S x -> fmap S . twiddleBytes $ CBOR.toStrictByteString (CBOR.encodeTerm x)
         _ -> error "Controller does not correspond to a single term"
     (c, _) -> error $ "Controller not yet implemented: " <> show c
-genForCTree (CTree.Enum tree) =
-  case tree of
-    CTree.Group trees -> do
-      ix <- choose (0, length trees - 1)
-      genForCTree $ trees !! ix
-    _ -> error "Attempt to form an enum from something other than a group"
-genForCTree (CTree.Unwrap node) = genForCTree node
-genForCTree (CTree.Tag t node) = do
+
+-- | Generate a value from an enum
+genEnum :: HasCallStack => CTree GenPhase -> CBORGen WrappedTerm
+genEnum tree = case tree of
+  CTree.Group trees -> do
+    ix <- choose (0, length trees - 1)
+    genForCTree $ trees !! ix
+  _ -> error "Attempt to form an enum from something other than a group"
+
+-- | Generate a tagged value
+genTag :: HasCallStack => Word64 -> CTree GenPhase -> CBORGen WrappedTerm
+genTag t node = do
   tag <- liftAntiGen $ faultyNum t
   enc <- case tag of
     n
@@ -418,8 +463,6 @@ genForCTree (CTree.Tag t node) = do
   case enc of
     S x -> pure $ S $ TTagged tag x
     _ -> error "Tag controller does not correspond to a single term"
-genForCTree (CTree.CTreeE (GenRef n)) = genForNode n
-genForCTree (CTree.CTreeE (GenGenerator gen _)) = gen
 
 genForNode :: HasCallStack => Name -> CBORGen WrappedTerm
 genForNode = genForCTree <=< resolveRef
