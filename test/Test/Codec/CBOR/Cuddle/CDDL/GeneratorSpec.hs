@@ -8,9 +8,9 @@ import Codec.CBOR.Cuddle.CBOR.Gen (GenPhase, generateFromName)
 import Codec.CBOR.Cuddle.CBOR.Validator (validateCBOR)
 import Codec.CBOR.Cuddle.CDDL (Name)
 import Codec.CBOR.Cuddle.CDDL.CTree (CTreeRoot (..))
-import Codec.CBOR.Cuddle.CDDL.Resolve (MonoReferenced, MonoSimple, fullResolveCDDL)
-import Codec.CBOR.Cuddle.Huddle (Huddle, toCDDL)
-import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..), mapCDDLDropExt)
+import Codec.CBOR.Cuddle.CDDL.Resolve (MonoReferenced, MonoSimple)
+import Codec.CBOR.Cuddle.Huddle (Huddle)
+import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
 import Codec.CBOR.Pretty (prettyHexEnc)
 import Codec.CBOR.Read (deserialiseFromBytes)
 import Codec.CBOR.Term (Term (..), decodeTerm, encodeTerm)
@@ -30,21 +30,15 @@ import Test.Codec.CBOR.Cuddle.CDDL.Examples.Huddle (
   sizeBytesExample,
   sizeTextExample,
  )
+import Test.Codec.CBOR.Cuddle.CDDL.Utils (tryResolveHuddle)
 import Test.Codec.CBOR.Cuddle.CDDL.Validator (expectInvalid, genAndValidateRule)
-import Test.Hspec (HasCallStack, Spec, describe, runIO, shouldSatisfy, xdescribe)
-import Test.Hspec.Core.Spec (SpecM)
+import Test.Hspec (Spec, describe, shouldSatisfy, xdescribe)
 import Test.Hspec.QuickCheck (prop)
 import Test.QuickCheck (Gen, Property, Testable (..), counterexample)
 import Text.Pretty.Simple (pShow)
 
 generateCDDL :: CTreeRoot GenPhase -> Gen Term
 generateCDDL cddl = runAntiGen $ generateFromName cddl "root"
-
-tryResolveHuddle :: HasCallStack => Huddle -> SpecM () (CTreeRoot MonoReferenced)
-tryResolveHuddle huddle = do
-  case fullResolveCDDL . mapCDDLDropExt $ toCDDL huddle of
-    Right x -> pure x
-    Left err -> runIO . fail $ "Failed to resolve CDDL:\n" <> show err
 
 expectZapInvalidates :: CTreeRoot MonoReferenced -> Name -> Property
 expectZapInvalidates cddl name = property $ do
