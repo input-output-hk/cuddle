@@ -1,3 +1,3 @@
 Zapped 1 decision points
 Annotations:
-  - array.occur.genBetween
+  - array

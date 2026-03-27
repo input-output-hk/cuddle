@@ -243,7 +243,7 @@ genPostlude pt = genPTerm =<< liftAntiGen (faultyPTerm pt)
     nonPInteger p =
       pure p |! genExcluding [PTUInt, PTNInt, PTInt, PTAny]
     -- \| Introduces a decision point that can change the type of the CBOR term that is generated
-    faultyPTerm t = reweigh 0.1 . withAnnotation (renderStrict . layoutCompact $ pretty t) $
+    faultyPTerm t = reweigh 0.1 $
       case t of
         PTAny -> pure PTAny
         p@PTUInt -> nonPInteger p
@@ -311,20 +311,19 @@ dropNegativeGen = liftGen . runAntiGen
 -- Generator functions
 --------------------------------------------------------------------------------
 
-genSized :: HasCallStack => Word64 -> CTree i -> CBORGen WrappedTerm
-genSized s target = do
-  case target of
-    CTree.Postlude PTText -> fmap S . twiddleString =<< genNBytesText (fromIntegral s)
-    CTree.Postlude PTBytes -> fmap S . twiddleBytes =<< genNBytes (fromIntegral s)
-    CTree.Postlude PTUInt -> S . TInteger <$> choose (0, 256 ^ s - 1)
-    _ -> error "Cannot apply size operator to target "
+genSized :: HasCallStack => Word64 -> CTree GenPhase -> CBORGen WrappedTerm
+genSized s target = annotateTerm target $ case target of
+  CTree.Postlude PTText -> fmap S . twiddleString =<< genNBytesText (fromIntegral s)
+  CTree.Postlude PTBytes -> fmap S . twiddleBytes =<< genNBytes (fromIntegral s)
+  CTree.Postlude PTUInt -> S . TInteger <$> choose (0, 256 ^ s - 1)
+  _ -> error "Cannot apply size operator to target "
 
 range :: Enum a => RangeBound -> a -> a -> (a, a)
 range ClOpen x y = (x, pred y)
 range Closed x y = (x, y)
 
 genBetween :: (Integral a, Random a) => (a, a) -> CBORGen a
-genBetween rng = liftAntiGen . withAnnotation "genBetween" $ do
+genBetween rng = liftAntiGen $ do
   size <- liftGen getSize
   let
     sizeBounds :: Integral a => (a, a)
@@ -334,27 +333,46 @@ genBetween rng = liftAntiGen . withAnnotation "genBetween" $ do
 annotate :: Text -> CBORGen b -> CBORGen b
 annotate ann = withAntiGen $ withAnnotation ann
 
+-- | Annotate a generator with the label derived from a CTree node.
+-- Control nodes are transparent — the annotation comes from the target inside.
+annotateTerm :: CTree GenPhase -> CBORGen a -> CBORGen a
+annotateTerm = \case
+  CTree.Literal _ -> annotate "literal"
+  CTree.Postlude pt -> annotate $ renderStrict . layoutCompact $ pretty pt
+  CTree.Map _ -> annotate "map"
+  CTree.Array _ -> annotate "array"
+  CTree.Choice _ -> id
+  CTree.Group _ -> annotate "group"
+  CTree.KV {} -> annotate "kv"
+  CTree.Occur {} -> id
+  CTree.Range {} -> annotate "range"
+  CTree.Control {} -> id
+  CTree.Enum _ -> annotate "enum"
+  CTree.Unwrap _ -> annotate "unwrap"
+  CTree.Tag {} -> annotate "tag"
+  CTree.CTreeE (GenRef n) -> annotate (unName n)
+  CTree.CTreeE (GenGenerator _ _) -> annotate "custom_generator"
+
 genForCTree :: HasCallStack => CTree GenPhase -> CBORGen WrappedTerm
-genForCTree = \case
-  CTree.Literal v -> annotate "literal" $ S <$> valueToTerm v
-  CTree.Postlude pt -> annotate "postlude" $ S <$> genPostlude pt
-  CTree.Map nodes -> annotate "map" $ genMap nodes
-  CTree.Array nodes -> annotate "array" $ genArray nodes
-  CTree.Choice (NE.toList -> nodes) -> annotate "choice" $ do
+genForCTree node = annotateTerm node $ case node of
+  CTree.Literal v -> S <$> valueToTerm v
+  CTree.Postlude pt -> S <$> genPostlude pt
+  CTree.Map nodes -> genMap nodes
+  CTree.Array nodes -> genArray nodes
+  CTree.Choice (NE.toList -> nodes) -> do
     ix <- choose (0, length nodes - 1)
     genForCTree $ nodes !! ix
-  CTree.Group nodes -> annotate "group" $ G <$> traverse genForCTree nodes
-  CTree.KV key value _cut -> annotate "kv" $ genKV key value
+  CTree.Group nodes -> G <$> traverse genForCTree nodes
+  CTree.KV key value _cut -> genKV key value
   CTree.Occur item occurs ->
-    annotate "occur" $
-      applyOccurenceIndicator occurs (genForCTree item)
-  CTree.Range from to bounds -> annotate "range" $ genRange from to bounds
-  CTree.Control op target controller -> annotate "control" $ genControl op target controller
-  CTree.Enum tree -> annotate "enum" $ genEnum tree
-  CTree.Unwrap node -> annotate "unwrap" $ genForCTree node
-  CTree.Tag t node -> annotate "tag" $ genTag t node
-  CTree.CTreeE (GenRef n) -> annotate (unName n) $ genForNode n
-  CTree.CTreeE (GenGenerator gen _) -> annotate "custom_generator" gen
+    applyOccurenceIndicator occurs (genForCTree item)
+  CTree.Range from to bounds -> genRange from to bounds
+  CTree.Control op target controller -> genControl op target controller
+  CTree.Enum tree -> genEnum tree
+  CTree.Unwrap n -> genForCTree n
+  CTree.Tag t n -> genTag t n
+  CTree.CTreeE (GenRef n) -> genForNode n
+  CTree.CTreeE (GenGenerator gen _) -> gen
 
 -- | Generate a map from a list of nodes
 genMap :: HasCallStack => [CTree GenPhase] -> CBORGen WrappedTerm
@@ -427,7 +445,7 @@ genControl ::
   CTree GenPhase ->
   CTree GenPhase ->
   CBORGen WrappedTerm
-genControl op target controller = do
+genControl op target controller = annotateTerm target $ do
   resolvedController <- case controller of
     CTreeE (GenRef n) -> withAntiGen dropNegativeGen $ resolveRef n
     x -> pure x

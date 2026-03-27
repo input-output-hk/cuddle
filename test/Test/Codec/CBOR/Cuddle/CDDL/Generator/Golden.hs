@@ -17,9 +17,11 @@ import Test.AntiGen (prettyZapResult, zapAntiGenResult)
 import Test.Codec.CBOR.Cuddle.CDDL.Examples.Huddle (
   cborControlExample,
   choicesExample,
+  customGenZapExample,
   opCertExample,
   rangeListExample,
   rangeMapExample,
+  refExample,
   sizeBytesExample,
   sizeTextExample,
  )
@@ -61,3 +63,5 @@ spec = describe "golden" $ do
     annotationGoldenHuddle "annotationSizeText" sizeTextExample "root" 42
     annotationGoldenHuddle "annotationRangeMap" rangeMapExample "root" 42
     annotationGoldenHuddle "annotationCborControl" cborControlExample "root" 42
+    annotationGoldenHuddle "annotationRef" refExample "root" 42
+    annotationGoldenHuddle "annotationCustomGenZap" customGenZapExample "root" 42
