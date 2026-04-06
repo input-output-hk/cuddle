@@ -789,7 +789,7 @@ validateList cddl terms rule =
     validate f skipped tss [] = (f skipped tss, tss)
     validate f skipped [] (r : rs)
       | isOptional r = validate f skipped [] rs
-      | otherwise = (evidence $ ListValidationUnappliedRules (mapIndex <$> r :| rs), [])
+      | otherwise = (evidence . ListValidationUnappliedRule $ mapIndex r, [])
     validate f skipped tss@(t : ts) (r : rs) =
       let
         consumeTerm ct g = case validateTerm cddl t ct of

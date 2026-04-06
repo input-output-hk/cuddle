@@ -188,8 +188,8 @@ data ListValidationTrace (v :: Validity) where
     NonEmpty Term ->
     Maybe (CTree ValidatorStageSimple, ValidationTrace IsInvalid) ->
     ListValidationTrace IsInvalid
-  ListValidationUnappliedRules ::
-    NonEmpty (CTree ValidatorStageSimple) ->
+  ListValidationUnappliedRule ::
+    CTree ValidatorStageSimple ->
     ListValidationTrace IsInvalid
   ListValidationConsume ::
     CTree ValidatorStageSimple ->
@@ -294,7 +294,7 @@ instance IsValidationTrace ListValidationTrace where
   traceValidity = \case
     ListValidationDone -> SValid
     ListValidationLeftoverTerms {} -> SInvalid
-    ListValidationUnappliedRules {} -> SInvalid
+    ListValidationUnappliedRule {} -> SInvalid
     ListValidationMissingRequired {} -> SInvalid
     ListValidationBadGroup _ _ -> SInvalid
     ListValidationConsume _ _ x -> traceValidity x
@@ -306,7 +306,7 @@ instance IsValidationTrace ListValidationTrace where
     ListValidationLeftoverTerms _ Nothing -> 0
     ListValidationLeftoverTerms _ (Just (_, trc)) -> measureProgress trc
     ListValidationMissingRequired _ _ -> 0
-    ListValidationUnappliedRules _ -> 0
+    ListValidationUnappliedRule _ -> 0
     ListValidationConsumeGroup _ g x -> measureProgress g + measureProgress x
     ListValidationBadGroup _ x -> measureProgress x
 
@@ -365,11 +365,11 @@ prettyListValidationResult opts@TraceOptions {..} = \case
         , annotate (color Green) $ pretty rule
         , nestContainer $ prettyValidationTrace opts trc
         ]
-  ListValidationUnappliedRules rs ->
+  ListValidationUnappliedRule r ->
     hang 2 $
       vsep
-        [ annotate (color Red) "not all required rules have been applied:"
-        , vsep (toList $ pretty <$> rs)
+        [ annotate (color Red) "required rule not satisfied:"
+        , pretty r
         ]
   ListValidationConsume _ t c
     | toFoldValid -> foldValid 1 c
