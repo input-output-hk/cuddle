@@ -42,7 +42,14 @@ import Codec.CBOR.Cuddle.CDDL.CBORGenerator (
   withAntiGen,
   withTwiddle,
  )
-import Codec.CBOR.Cuddle.CDDL.CTree (CTree (..), CTreeRoot (..), PTerm (..), foldCTree)
+import Codec.CBOR.Cuddle.CDDL.CTree (
+  CTree (..),
+  CTreeRoot (..),
+  PTerm (..),
+  foldCTree,
+  nintMin,
+  uintMax,
+ )
 import Codec.CBOR.Cuddle.CDDL.CTree qualified as CTree
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
 import Codec.CBOR.Cuddle.CDDL.Resolve (XXCTree (..))
@@ -250,12 +257,10 @@ genPostlude pt = genPTerm =<< liftAntiGen (faultyPTerm pt)
         p@PTNInt -> nonPInteger p
         p@PTInt -> nonPInteger p
         p -> pure p |! genExcluding [PTAny, p]
-    maxUInt = 2 ^ (64 :: Integer) - 1
-    minNInt = -(2 ^ (64 :: Integer))
-    genUInt = choose (0, maxUInt)
-    genNInt = choose (minNInt, -1)
-    genAboveUInt = choose (maxUInt + 1, 2 * maxUInt)
-    genBelowNInt = choose (2 * minNInt, minNInt - 1)
+    genUInt = choose (0, uintMax)
+    genNInt = choose (nintMin, -1)
+    genAboveUInt = choose (uintMax + 1, 2 * uintMax)
+    genBelowNInt = choose (2 * nintMin, nintMin - 1)
     -- \| Given a CDDL postlude type, generates a value of that type
     genPTerm = \case
       PTBool -> TBool <$> arbitrary
@@ -263,7 +268,7 @@ genPostlude pt = genPTerm =<< liftAntiGen (faultyPTerm pt)
       -- out-of-bounds values
       PTUInt -> TInteger <$> liftAntiGen (genUInt |! oneof [genNInt, genBelowNInt, genAboveUInt])
       PTNInt -> TInteger <$> liftAntiGen (genNInt |! oneof [genUInt, genBelowNInt, genAboveUInt])
-      PTInt -> TInteger <$> choose (minNInt, maxUInt)
+      PTInt -> TInteger <$> choose (nintMin, uintMax)
       PTHalf -> THalf <$> genHalf
       PTFloat -> TFloat <$> arbitrary
       PTDouble -> TDouble <$> arbitrary
