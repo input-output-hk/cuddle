@@ -57,7 +57,7 @@ import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
 import Codec.CBOR.Term (Term (..))
 import Codec.CBOR.Term qualified as CBOR
 import Codec.CBOR.Write qualified as CBOR
-import Control.Monad ((<=<))
+import Control.Monad (zipWithM, (<=<))
 import Control.Monad.Reader (asks)
 import Data.ByteString (ByteString)
 import Data.ByteString.Lazy qualified as LBS
@@ -383,17 +383,21 @@ genMap nodes = do
     elemsNeeded (Occur _ (OIBounded (Just lo) _)) = lo
     elemsNeeded _ = 0
 
-    tryGenKV (0 :: Int) _ _ _ = pure Nothing
-    tryGenKV nTries m kNode vNode = do
-      let
+    tryGenKV ::
+      Int -> Map.Map Term a -> CTree GenPhase -> CTree GenPhase -> CBORGen (Maybe (Term, Term))
+    tryGenKV nTries m kNode vNode = go nTries
+      where
         unS (S x) = x
         unS x = error $ "Expected single, got " <> show x
-      k <- unS <$> scale (`div` 2) (withAntiGen (withAnnotation "key") $ genForCTree kNode)
-      if Map.notMember k m
-        then do
-          v <- unS <$> scale (`div` 2) (withAntiGen (withAnnotation "value") $ genForCTree vNode)
-          pure . Just $ (k, v)
-        else tryGenKV (nTries - 1) m kNode vNode
+        go !n
+          | n > 0 = do
+              k <- unS <$> scale (`div` 2) (withAntiGen (withAnnotation "key") $ genForCTree kNode)
+              if Map.notMember k m
+                then do
+                  v <- unS <$> scale (`div` 2) (withAntiGen (withAnnotation "value") $ genForCTree vNode)
+                  pure $ Just (k, v)
+                else go (n - 1)
+          | otherwise = pure Nothing
 
     genNodes :: Int -> Map.Map Term Term -> [CTree GenPhase] -> CBORGen (Maybe (Map.Map Term Term))
     genNodes _ m [] = pure $ Just m
@@ -448,9 +452,10 @@ genArray :: HasCallStack => [CTree GenPhase] -> CBORGen WrappedTerm
 genArray nodes = do
   items <-
     singleTermList . flattenWrappedList
-      <$> traverse
-        (\(i, node) -> withAntiGen (withAnnotation (T.pack $ show i)) $ genForCTree node)
-        ([0 :: Int ..] `zip` nodes)
+      <$> zipWithM
+        (\i node -> withAntiGen (withAnnotation (T.pack $ show i)) $ genForCTree node)
+        [0 :: Int ..]
+        nodes
   case items of
     Just ts -> S <$> twiddleList ts
     Nothing -> error "Something weird happened which shouldn't be possible"
