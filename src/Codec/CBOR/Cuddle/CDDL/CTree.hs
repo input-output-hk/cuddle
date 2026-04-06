@@ -145,3 +145,11 @@ instance Arbitrary PTerm where
   arbitrary = genericArbitraryU
 
 instance Hashable PTerm
+
+-- Bounds
+
+uintMax :: Integer
+uintMax = 2 ^ (64 :: Int) - 1
+
+nintMin :: Integer
+nintMin = -(2 ^ (64 :: Int))

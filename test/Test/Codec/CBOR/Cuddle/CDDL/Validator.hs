@@ -71,6 +71,7 @@ import Test.Hspec (
   Spec,
   describe,
   expectationFailure,
+  it,
   runIO,
  )
 import Test.Hspec.QuickCheck
@@ -320,6 +321,29 @@ spec = describe "Validator" $ do
         prop "Fails to validate map with too many range elements"
           . forAll (genHuddleRangeMap (11, 20))
           $ expectInvalid . validateHuddle huddleRangeMap "a"
+
+    describe "Bignums" $ do
+      let
+        bignum = 2 ^ (64 :: Int) :: Integer
+        bignumCBOR = toStrictByteString . encodeTerm $ TInteger bignum
+        resolveCDDL cddlText =
+          let cddl = fromRight (error "Failed to parse CDDL") $ runParser pCDDL "" cddlText
+           in either (error . show) id . fullResolveCDDL . appendPostlude $ mapCDDLDropExt cddl
+      it "Validates a bignum >= 2^64 against biguint" $
+        expectValid $
+          validateCBOR bignumCBOR "a" (mapIndex $ resolveCDDL "a = biguint")
+      it "Validates a bignum >= 2^64 against bigint" $
+        expectValid $
+          validateCBOR bignumCBOR "a" (mapIndex $ resolveCDDL "a = bigint")
+      it "Validates a bignum >= 2^64 against integer" $
+        expectValid $
+          validateCBOR bignumCBOR "a" (mapIndex $ resolveCDDL "a = integer")
+      it "Rejects a bignum >= 2^64 against int" $
+        expectInvalid $
+          validateCBOR bignumCBOR "a" (mapIndex $ resolveCDDL "a = int")
+      it "Rejects a bignum >= 2^64 against uint" $
+        expectInvalid $
+          validateCBOR bignumCBOR "a" (mapIndex $ resolveCDDL "a = uint")
 
   describe "Custom validator" $ do
     describe "Positive" $ do
