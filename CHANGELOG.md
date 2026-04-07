@@ -3,6 +3,7 @@
 ## 1.3.0.0
 
 * Replace `Int` progress measure with lexicographic `Progress` type for more accurate trace comparison
+* Rewrite map generation to produce unique keys
 * Add `withTwiddle`
 * `generateFromName` now enables twiddling by default (`geTwiddle = True`), which can change the shape of generated terms (e.g. `TBytes` vs `TBytesI`, `TList` vs `TListI`)
 * Replace `CBORGenerator` with `CBORGen`

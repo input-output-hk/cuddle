@@ -57,16 +57,17 @@ import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
 import Codec.CBOR.Term (Term (..))
 import Codec.CBOR.Term qualified as CBOR
 import Codec.CBOR.Write qualified as CBOR
-import Control.Monad ((<=<))
+import Control.Monad (zipWithM, (<=<))
 import Control.Monad.Reader (asks)
 import Data.ByteString (ByteString)
 import Data.ByteString.Lazy qualified as LBS
 import Data.Char (chr)
-import Data.Containers.ListUtils (nubOrdOn)
 import Data.Functor ((<&>))
+import Data.List (sortOn)
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
+import Data.Ord (Down (..))
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Internal.Encoding.Utf8 (utf8Length)
@@ -95,7 +96,7 @@ import Test.QuickCheck (
  )
 import Test.QuickCheck qualified as QC
 import Test.QuickCheck.Gen (Gen (..), getSize)
-import Test.QuickCheck.GenT (MonadGen (..), elements, listOf, oneof, suchThat, vectorOf)
+import Test.QuickCheck.GenT (MonadGen (..), elements, frequency, listOf, oneof, suchThat, vectorOf)
 
 -- TODO remove this once QuickCheck gets QC
 data QC = QC
@@ -298,13 +299,6 @@ singleTermList (S x : xs) = (x :) <$> singleTermList xs
 singleTermList (P _ y : xs) = (y :) <$> singleTermList xs
 singleTermList _ = Nothing
 
--- | Convert a list of wrapped terms to a list of pairs of terms, or fail if any
--- 'SingleTerm's are present.
-pairTermList :: [WrappedTerm] -> Maybe [(Term, Term)]
-pairTermList [] = Just []
-pairTermList (P x y : xs) = ((x, y) :) <$> pairTermList xs
-pairTermList _ = Nothing
-
 showSimple :: CTree GenPhase -> String
 showSimple = show . mapIndex @_ @_ @GenSimple
 
@@ -380,25 +374,88 @@ genForCTree node = annotateTerm node $ case node of
   CTree.CTreeE (GenGenerator gen _) -> gen
 
 -- | Generate a map from a list of nodes
-genMap :: HasCallStack => [CTree GenPhase] -> CBORGen WrappedTerm
+genMap ::
+  HasCallStack => [CTree GenPhase] -> CBORGen WrappedTerm
 genMap nodes = do
-  items <- pairTermList . flattenWrappedList <$> traverse genForCTree nodes
-  case items of
-    Just ts ->
+  let
+    elemsNeeded KV {} = 1
+    elemsNeeded (Occur _ OIOneOrMore) = 1
+    elemsNeeded (Occur _ (OIBounded (Just lo) _)) = lo
+    elemsNeeded _ = 0
+
+    tryGenKV ::
+      Int -> Map.Map Term a -> CTree GenPhase -> CTree GenPhase -> CBORGen (Maybe (Term, Term))
+    tryGenKV nTries m kNode vNode = go nTries
+      where
+        unS (S x) = x
+        unS x = error $ "Expected single, got " <> show x
+        go !n
+          | n > 0 = do
+              k <- unS <$> scale (`div` 2) (withAntiGen (withAnnotation "key") $ genForCTree kNode)
+              if Map.notMember k m
+                then do
+                  v <- unS <$> scale (`div` 2) (withAntiGen (withAnnotation "value") $ genForCTree vNode)
+                  pure $ Just (k, v)
+                else go (n - 1)
+          | otherwise = pure Nothing
+
+    genNodes :: Int -> Map.Map Term Term -> [CTree GenPhase] -> CBORGen (Maybe (Map.Map Term Term))
+    genNodes _ m [] = pure $ Just m
+    genNodes !i !m (n : ns) =
       let
-        -- De-duplicate keys in the map.
-        -- Per RFC7049:
-        -- >> A map that has duplicate keys may be well-formed, but it is not
-        -- >> valid, and thus it causes indeterminate decoding
-        tsNodup = nubOrdOn fst ts
+        ann = withAntiGen (withAnnotation (T.pack $ show i))
+        cont x y = scale (\s -> max 0 (s - 1)) $ genNodes (i + 1) x y
+        optGenKV kNode vNode = sized $ \sz ->
+          frequency [(100, pure Nothing), (max 0 sz, ann $ tryGenKV 10 m kNode vNode)]
        in
-        S <$> twiddleMap tsNodup
-    Nothing -> error "Single terms in map context"
+        case n of
+          KV kNode vNode _ -> do
+            mKV <- ann $ tryGenKV 100 m kNode vNode
+            case mKV of
+              Just (k, v) -> cont (Map.insert k v m) ns
+              Nothing -> pure Nothing
+          Occur kv@(KV kNode vNode _) oi -> case oi of
+            OIOptional -> do
+              mt <- optGenKV kNode vNode
+              case mt of
+                Just (k, v) -> cont (Map.insert k v m) ns
+                Nothing -> cont m ns
+            OIZeroOrMore -> do
+              mt <- optGenKV kNode vNode
+              case mt of
+                Just (k, v) -> cont (Map.insert k v m) (n : ns)
+                Nothing -> cont m ns
+            OIOneOrMore -> genNodes i m (kv : Occur kv OIZeroOrMore : ns)
+            OIBounded mlb mub -> do
+              let
+                clampedPred 0 = 0
+                clampedPred x = x - 1
+                newLow = clampedPred <$> mlb
+                newHigh = clampedPred <$> mub
+                res
+                  | maybe False (> 0) mlb = genNodes i m (kv : Occur kv (OIBounded newLow newHigh) : ns)
+                  | maybe False (< 1) mub = genNodes i m ns
+                  | otherwise = do
+                      mt <- optGenKV kNode vNode
+                      case mt of
+                        Just (k, v) -> cont (Map.insert k v m) (Occur kv (OIBounded newLow newHigh) : ns)
+                        Nothing -> genNodes i m ns
+              res
+          node -> error $ "Unexpected node: " <> showSimple node
+  mItems <- genNodes 0 Map.empty $ sortOn (Down . elemsNeeded) nodes
+  case mItems of
+    Just items -> S <$> twiddleMap (Map.toList items)
+    Nothing -> error "Failed to generate unique keys for map after max retries"
 
 -- | Generate an array from a list of nodes
 genArray :: HasCallStack => [CTree GenPhase] -> CBORGen WrappedTerm
 genArray nodes = do
-  items <- singleTermList . flattenWrappedList <$> traverse genForCTree nodes
+  items <-
+    singleTermList . flattenWrappedList
+      <$> zipWithM
+        (\i node -> withAntiGen (withAnnotation (T.pack $ show i)) $ genForCTree node)
+        [0 :: Int ..]
+        nodes
   case items of
     Just ts -> S <$> twiddleList ts
     Nothing -> error "Something weird happened which shouldn't be possible"
@@ -406,8 +463,8 @@ genArray nodes = do
 -- | Generate a key-value pair
 genKV :: HasCallStack => CTree GenPhase -> CTree GenPhase -> CBORGen WrappedTerm
 genKV key value = do
-  kg <- genForCTree key
-  vg <- genForCTree value
+  kg <- withAntiGen (withAnnotation "key") $ genForCTree key
+  vg <- withAntiGen (withAnnotation "value") $ genForCTree value
   case (kg, vg) of
     (S k, S v) -> pure $ P k v
     _ ->

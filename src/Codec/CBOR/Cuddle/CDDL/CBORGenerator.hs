@@ -76,7 +76,7 @@ data WrappedTerm
     P Term Term
   | -- | Group term
     G [WrappedTerm]
-  deriving (Eq, Show)
+  deriving (Eq, Ord, Show)
 
 class HasGenerator a where
   generatorL :: Lens' a (Maybe (CBORGen WrappedTerm))
