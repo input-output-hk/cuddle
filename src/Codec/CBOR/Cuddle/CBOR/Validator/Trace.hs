@@ -19,11 +19,11 @@ module Codec.CBOR.Cuddle.CBOR.Validator.Trace (
   ListValidationTrace (..),
   MapValidationTrace (..),
   Evidenced (..),
+  IsValidationTrace (..),
   ControlInfo (..),
   TraceOptions (..),
   defaultTraceOptions,
   showSimple,
-  traceValidity,
   isValid,
   prettyValidationTrace,
   showValidationTrace,
@@ -184,16 +184,22 @@ deriving instance Show (ValidationTrace v)
 
 data ListValidationTrace (v :: Validity) where
   ListValidationDone :: ListValidationTrace IsValid
-  ListValidationLeftoverTerms :: NonEmpty Term -> ListValidationTrace IsInvalid
-  ListValidationUnappliedRules ::
-    NonEmpty (CTree ValidatorStageSimple) -> ListValidationTrace IsInvalid
+  ListValidationLeftoverTerms ::
+    NonEmpty Term ->
+    Maybe (CTree ValidatorStageSimple, ValidationTrace IsInvalid) ->
+    ListValidationTrace IsInvalid
+  ListValidationUnappliedRule ::
+    CTree ValidatorStageSimple ->
+    ListValidationTrace IsInvalid
   ListValidationConsume ::
     CTree ValidatorStageSimple ->
     ValidationTrace IsValid ->
     ListValidationTrace v ->
     ListValidationTrace v
   ListValidationMissingRequired ::
-    CTree ValidatorStageSimple -> ValidationTrace IsInvalid -> ListValidationTrace IsInvalid
+    CTree ValidatorStageSimple ->
+    ValidationTrace IsInvalid ->
+    ListValidationTrace IsInvalid
   ListValidationConsumeGroup ::
     [Name] ->
     ListValidationTrace IsValid ->
@@ -208,7 +214,10 @@ deriving instance Show (ListValidationTrace v)
 
 data MapValidationTrace (v :: Validity) where
   MapValidationDone :: MapValidationTrace IsValid
-  MapValidationLeftoverKVs :: [(Term, Term)] -> MapValidationTrace IsInvalid
+  MapValidationLeftoverKVs ::
+    (Term, Term) ->
+    Maybe (CTree ValidatorStageSimple, MapValidationTrace IsInvalid) ->
+    MapValidationTrace IsInvalid
   MapValidationUnappliedRules :: NonEmpty (CTree ValidatorStageSimple) -> MapValidationTrace IsInvalid
   MapValidationInvalidValue ::
     CTree ValidatorStageSimple ->
@@ -285,7 +294,7 @@ instance IsValidationTrace ListValidationTrace where
   traceValidity = \case
     ListValidationDone -> SValid
     ListValidationLeftoverTerms {} -> SInvalid
-    ListValidationUnappliedRules {} -> SInvalid
+    ListValidationUnappliedRule {} -> SInvalid
     ListValidationMissingRequired {} -> SInvalid
     ListValidationBadGroup _ _ -> SInvalid
     ListValidationConsume _ _ x -> traceValidity x
@@ -294,23 +303,25 @@ instance IsValidationTrace ListValidationTrace where
   measureProgress = \case
     ListValidationDone -> 10
     ListValidationConsume _ _ x -> succ $ measureProgress x
-    ListValidationLeftoverTerms _ -> 0
+    ListValidationLeftoverTerms _ Nothing -> 0
+    ListValidationLeftoverTerms _ (Just (_, trc)) -> measureProgress trc
     ListValidationMissingRequired _ _ -> 0
-    ListValidationUnappliedRules _ -> 0
+    ListValidationUnappliedRule _ -> 0
     ListValidationConsumeGroup _ g x -> measureProgress g + measureProgress x
     ListValidationBadGroup _ x -> measureProgress x
 
 instance IsValidationTrace MapValidationTrace where
   traceValidity = \case
     MapValidationDone -> SValid
-    MapValidationLeftoverKVs _ -> SInvalid
+    MapValidationLeftoverKVs _ _ -> SInvalid
     MapValidationUnappliedRules _ -> SInvalid
     MapValidationInvalidValue {} -> SInvalid
     MapValidationConsume _ _ _ x -> traceValidity x
 
   measureProgress = \case
     MapValidationDone -> 10
-    MapValidationLeftoverKVs _ -> 0
+    MapValidationLeftoverKVs _ Nothing -> 0
+    MapValidationLeftoverKVs _ (Just (_, trc)) -> measureProgress trc
     MapValidationUnappliedRules _ -> 0
     MapValidationConsume _ _ _ x -> 3 + measureProgress x
     MapValidationInvalidValue {} -> 2
@@ -345,8 +356,21 @@ defaultTraceOptions = TraceOptions {toFoldValid = False}
 prettyListValidationResult :: TraceOptions -> ListValidationTrace v -> Doc AnsiStyle
 prettyListValidationResult opts@TraceOptions {..} = \case
   ListValidationDone -> mempty
-  ListValidationLeftoverTerms _ -> annotate (color Red) "leftover elements after all rules have been applied"
-  ListValidationUnappliedRules _ -> annotate (color Red) "not all required rules have been applied"
+  ListValidationLeftoverTerms _ Nothing ->
+    annotate (color Red) "leftover elements not matched by any rule"
+  ListValidationLeftoverTerms _ (Just (rule, trc)) ->
+    hang 2 $
+      vsep
+        [ annotate (color Red) "leftover elements, closest matching rule:"
+        , annotate (color Green) $ pretty rule
+        , nestContainer $ prettyValidationTrace opts trc
+        ]
+  ListValidationUnappliedRule r ->
+    hang 2 $
+      vsep
+        [ annotate (color Red) "required rule not satisfied:"
+        , pretty r
+        ]
   ListValidationConsume _ t c
     | toFoldValid -> foldValid 1 c
     | otherwise -> vsep $ continue c [prettyValidationTrace opts t]
@@ -383,7 +407,15 @@ prettyListValidationResult opts@TraceOptions {..} = \case
 prettyMapValidationResult :: TraceOptions -> MapValidationTrace v -> Doc AnsiStyle
 prettyMapValidationResult opts@TraceOptions {..} = \case
   MapValidationDone -> mempty
-  MapValidationLeftoverKVs _ -> annotate (color Red) "no more rules left to apply"
+  MapValidationLeftoverKVs _ Nothing ->
+    annotate (color Red) "leftover key-value pairs not matched by any rule"
+  MapValidationLeftoverKVs _ (Just (rule, trc)) ->
+    hang 2 $
+      vsep
+        [ annotate (color Red) "leftover key-value pairs, closest matching rule:"
+        , annotate (color Green) $ pretty rule
+        , nestContainer $ prettyMapValidationResult opts trc
+        ]
   MapValidationUnappliedRules rs ->
     hang 2 $
       vsep

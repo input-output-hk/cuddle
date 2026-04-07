@@ -1,0 +1,12 @@
+map
+└ [0;91mleftover key-value pairs, closest matching rule:[0m
+    [0;92m? 1 ==> bar[0m
+    └ key:
+      └ app: [0;92m1[0m
+      value: [0;91m(fail)[0m
+      └ ref: [0;94mbar[0m
+        └ array
+          └ app: [0;92mint[0m
+            [0;91mfailed to apply required rule:[0m
+            └ [0;91mfailed to apply: 
+                text[0m

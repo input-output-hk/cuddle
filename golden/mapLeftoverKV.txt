@@ -1,0 +1,8 @@
+map
+└ [0;91mleftover key-value pairs, closest matching rule:[0m
+    [0;92m? 2 ==> int[0m
+    └ key:
+      └ app: [0;92m2[0m
+      value: [0;91m(fail)[0m
+      └ [0;91mfailed to apply: 
+          int[0m

@@ -11,6 +11,7 @@ module Codec.CBOR.Cuddle.CBOR.Validator (
 import Codec.CBOR.Cuddle.CBOR.Validator.Trace (
   ControlInfo (..),
   Evidenced (..),
+  IsValidationTrace (..),
   ListValidationTrace (..),
   MapValidationTrace (..),
   SValidity (..),
@@ -34,8 +35,9 @@ import Data.Bifunctor (Bifunctor (..))
 import Data.Bits hiding (And)
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as BSL
-import Data.Function ((&))
+import Data.Function (on, (&))
 import Data.IntSet qualified as IS
+import Data.List (maximumBy)
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as Map
@@ -758,29 +760,43 @@ validateList cddl terms (CTreeE (VRuleRef n)) =
 validateList cddl terms rule =
   case rule of
     Postlude PTAny -> terminal rule
-    Array rules -> mapTrace ListTrace . fst $ validate finalize terms rules
+    Array rules -> mapTrace ListTrace . fst $ validate finalize [] terms rules
       where
-        finalize [] = evidence ListValidationDone
-        finalize (x : xs) = evidence . ListValidationLeftoverTerms $ x :| xs
+        finalize _ [] = evidence ListValidationDone
+        finalize skipped (x : xs) =
+          let leftovers = x :| xs
+              unwrapOccur (Occur ct _) = ct
+              unwrapOccur ct = ct
+              attempts =
+                [ (mapIndex r, trc)
+                | r <- skipped
+                , Evidenced SInvalid trc <- [validateTerm cddl x (unwrapOccur r)]
+                , measureProgress trc > 0
+                ]
+              bestAttempt = case attempts of
+                [] -> Nothing
+                _ -> Just $ maximumBy (compare `on` (measureProgress . snd)) attempts
+           in evidence $ ListValidationLeftoverTerms leftovers bestAttempt
     Choice opts -> validateChoice (validateList cddl terms) opts
     _ -> unapplicable rule
   where
     validate ::
-      ([Term] -> Evidenced ListValidationTrace) ->
+      ([CTree ValidatorStage] -> [Term] -> Evidenced ListValidationTrace) ->
+      [CTree ValidatorStage] ->
       [Term] ->
       [CTree ValidatorStage] ->
       (Evidenced ListValidationTrace, [Term])
-    validate f tss [] = (f tss, tss)
-    validate f [] (r : rs)
-      | isOptional r = validate f [] rs
-      | otherwise = (evidence $ ListValidationUnappliedRules (mapIndex <$> r :| rs), [])
-    validate f tss@(t : ts) (r : rs) =
+    validate f skipped tss [] = (f skipped tss, tss)
+    validate f skipped [] (r : rs)
+      | isOptional r = validate f skipped [] rs
+      | otherwise = (evidence . ListValidationUnappliedRule $ mapIndex r, [])
+    validate f skipped tss@(t : ts) (r : rs) =
       let
         consumeTerm ct g = case validateTerm cddl t ct of
           Evidenced SValid trc -> first (mapTrace $ ListValidationConsume (mapIndex r) trc) $ g ts
           Evidenced SInvalid trc -> (evidence $ ListValidationMissingRequired (mapIndex ct) trc, tss)
 
-        consumeGroup ns gp g = case validate (const $ evidence ListValidationDone) tss gp of
+        consumeGroup ns gp g = case validate (\_ _ -> evidence ListValidationDone) [] tss gp of
           (Evidenced SValid trc, leftover) -> first (mapTrace $ ListValidationConsumeGroup (reverse ns) trc) $ g leftover
           (Evidenced SInvalid trc, leftover) -> (evidence $ ListValidationBadGroup (reverse ns) trc, leftover)
 
@@ -794,9 +810,9 @@ validateList cddl terms rule =
         consume (Group gp) g = consumeGroup [] gp g
         consume (KV _ v _) g = consume v g
         consume ct g = consumeTerm ct g
-        continue l = validate f l rs
-        skipRule = validate f tss rs
-        rewriteRule newRule l = validate f l (newRule : rs)
+        continue l = validate f skipped l rs
+        skipRule = validate f (r : skipped) tss rs
+        rewriteRule newRule l = validate f skipped l (newRule : rs)
         validateRule =
           \case
             Occur ct oi -> case oi of
@@ -835,8 +851,24 @@ validateMap cddl terms rule =
   where
     validate ::
       [CTree ValidatorStage] -> [(Term, Term)] -> [CTree ValidatorStage] -> Evidenced MapValidationTrace
-    validate [] [] [] = evidence MapValidationDone
-    validate _ kvs [] = evidence $ MapValidationLeftoverKVs kvs
+    validate _ [] [] = evidence MapValidationDone
+    validate exhausted (kv : _) [] =
+      let
+        unwrapOccur (Occur ct _) = ct
+        unwrapOccur ct = ct
+        attempts =
+          [ (mapIndex r, MapValidationInvalidValue (mapIndex r) kTrc vTrc)
+          | r <- exhausted
+          , KV k v _ <- [unwrapOccur r]
+          , Evidenced SValid kTrc <- [validateTerm cddl (fst kv) k]
+          , Evidenced SInvalid vTrc <- [validateTerm cddl (snd kv) v]
+          , measureProgress (MapValidationInvalidValue (mapIndex r) kTrc vTrc) > 0
+          ]
+        bestAttempt = case attempts of
+          [] -> Nothing
+          _ -> Just $ maximumBy (compare `on` (measureProgress . snd)) attempts
+       in
+        evidence $ MapValidationLeftoverKVs kv bestAttempt
     validate [] [] rs =
       case NE.nonEmpty $ filter (not . isOptional) rs of
         Nothing -> evidence MapValidationDone

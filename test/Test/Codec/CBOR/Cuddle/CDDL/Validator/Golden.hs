@@ -28,10 +28,20 @@ import Test.Codec.CBOR.Cuddle.CDDL.Examples.Huddle (
   cborControlExample,
   choicesExample,
   huddleRangeArray,
+  listSkippedRuleExample,
+  listSkippedRuleNestedExample,
+  listTooShortExample,
+  listZeroOrMoreExample,
+  mapLeftoverKVExample,
+  mapNestedValueExample,
+  mapNoMatchingKeyExample,
   refTermExample,
  )
 import Test.Hspec (Spec, describe, it)
 import Test.Hspec.Golden (Golden (..))
+
+listTooShortTerm :: Term
+listTooShortTerm = TList [TInt 42]
 
 huddleRangeArrayTermTwoStrings :: Term
 huddleRangeArrayTermTwoStrings =
@@ -61,6 +71,24 @@ choiceAlmostSecond =
     , TBool True
     , TInt 1
     ]
+
+listSkippedRuleTerm :: Term
+listSkippedRuleTerm = TList [TInt 1, TInt 2]
+
+listSkippedRuleNestedTerm :: Term
+listSkippedRuleNestedTerm = TList [TInt 1, TList [TInt 2, TInt 3]]
+
+mapLeftoverKVTerm :: Term
+mapLeftoverKVTerm = TMap [(TInt 2, TString "hello")]
+
+mapNoMatchingKeyTerm :: Term
+mapNoMatchingKeyTerm = TMap [(TInt 99, TString "hello")]
+
+listZeroOrMoreTerm :: Term
+listZeroOrMoreTerm = TList [TInt 1, TInt 2, TString "hello", TBool True]
+
+mapNestedValueTerm :: Term
+mapNestedValueTerm = TMap [(TInt 1, TList [TInt 2, TInt 3])]
 
 cborControlBad :: Term
 cborControlBad = TBytes . toStrictByteString $ encodeTerm (TList [TInt 1, TInt 2, TInt 4])
@@ -112,3 +140,38 @@ spec = describe "golden" $ do
       cborControlExample
       "root"
       cborControlBad
+    validatorPrettyGolden
+      "listTooShort"
+      listTooShortExample
+      "root"
+      listTooShortTerm
+    validatorPrettyGolden
+      "listSkippedRule"
+      listSkippedRuleExample
+      "root"
+      listSkippedRuleTerm
+    validatorPrettyGolden
+      "listSkippedRuleNested"
+      listSkippedRuleNestedExample
+      "root"
+      listSkippedRuleNestedTerm
+    validatorPrettyGolden
+      "mapLeftoverKV"
+      mapLeftoverKVExample
+      "root"
+      mapLeftoverKVTerm
+    validatorPrettyGolden
+      "mapNoMatchingKey"
+      mapNoMatchingKeyExample
+      "root"
+      mapNoMatchingKeyTerm
+    validatorPrettyGolden
+      "listZeroOrMore"
+      listZeroOrMoreExample
+      "root"
+      listZeroOrMoreTerm
+    validatorPrettyGolden
+      "mapNestedValue"
+      mapNestedValueExample
+      "root"
+      mapNestedValueTerm

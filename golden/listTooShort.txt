@@ -1,0 +1,4 @@
+array
+└ app: [0;92mint[0m
+  [0;91mrequired rule not satisfied:[0m
+    text

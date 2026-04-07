@@ -18,6 +18,13 @@ module Test.Codec.CBOR.Cuddle.CDDL.Examples.Huddle (
   optionalMapExample,
   choicesExample,
   cborControlExample,
+  listTooShortExample,
+  listSkippedRuleExample,
+  listSkippedRuleNestedExample,
+  mapLeftoverKVExample,
+  mapNoMatchingKeyExample,
+  listZeroOrMoreExample,
+  mapNestedValueExample,
 ) where
 
 import Codec.CBOR.Cuddle.CDDL (Name)
@@ -189,3 +196,93 @@ cborControlExample =
           =:= VBytes
           `H.cbor` simpleRule "simpleRule"
     ]
+
+listTooShortExample :: Huddle
+listTooShortExample =
+  collectFrom
+    [ HIRule $
+        "root"
+          =:= arr
+            [ a VInt
+            , a VText
+            , a VBool
+            ]
+    ]
+
+listSkippedRuleExample :: Huddle
+listSkippedRuleExample =
+  let bar = "bar" =:= VText
+   in collectFrom
+        [ HIRule $
+            "root"
+              =:= arr
+                [ a VInt
+                , opt $ a bar
+                ]
+        , HIRule bar
+        ]
+
+listSkippedRuleNestedExample :: Huddle
+listSkippedRuleNestedExample =
+  let baz = "baz" =:= arr [a VInt, a VText]
+      qux = "qux" =:= VText
+      quux = "quux" =:= VInt
+   in collectFrom
+        [ HIRule $
+            "root"
+              =:= arr
+                [ a VInt
+                , opt $ a qux
+                , opt $ a baz
+                , opt $ a quux
+                ]
+        , HIRule baz
+        , HIRule qux
+        , HIRule quux
+        ]
+
+mapLeftoverKVExample :: Huddle
+mapLeftoverKVExample =
+  collectFrom
+    [ HIRule $
+        "root"
+          =:= mp
+            [ opt $ idx 1 ==> VText
+            , opt $ idx 2 ==> VInt
+            , opt $ idx 3 ==> VBool
+            ]
+    ]
+
+mapNoMatchingKeyExample :: Huddle
+mapNoMatchingKeyExample =
+  collectFrom
+    [ HIRule $
+        "root"
+          =:= mp
+            [ opt $ idx 1 ==> VText
+            , opt $ idx 2 ==> VInt
+            ]
+    ]
+
+listZeroOrMoreExample :: Huddle
+listZeroOrMoreExample =
+  collectFrom
+    [ HIRule $
+        "root"
+          =:= arr
+            [ 0 <+ a VInt
+            , a VText
+            ]
+    ]
+
+mapNestedValueExample :: Huddle
+mapNestedValueExample =
+  let bar = "bar" =:= arr [a VInt, a VText]
+   in collectFrom
+        [ HIRule $
+            "root"
+              =:= mp
+                [ opt $ idx 1 ==> bar
+                ]
+        , HIRule bar
+        ]
