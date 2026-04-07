@@ -25,6 +25,7 @@ module Test.Codec.CBOR.Cuddle.CDDL.Examples.Huddle (
   mapNoMatchingKeyExample,
   listZeroOrMoreExample,
   mapNestedValueExample,
+  deeplyNestedRefExample,
 ) where
 
 import Codec.CBOR.Cuddle.CDDL (Name)
@@ -286,3 +287,21 @@ mapNestedValueExample =
                 ]
         , HIRule bar
         ]
+
+-- | A rule with deeply nested references competing against a rule that makes
+-- actual term progress. Used to test that stacked references don't incorrectly
+-- beat rules with real progress.
+deeplyNestedRefExample :: Huddle
+deeplyNestedRefExample =
+  collectFrom
+    [ HIRule $ "root" =:= arr [a VInt, opt $ a aRef, opt $ a listRule]
+    , HIRule aRef
+    , HIRule barRef
+    , HIRule bazRef
+    , HIRule listRule
+    ]
+  where
+    bazRef = "baz" =:= VText
+    barRef = "bar" =:= bazRef
+    aRef = "a_ref" =:= barRef
+    listRule = "list_rule" =:= arr [a VInt, a VInt]
