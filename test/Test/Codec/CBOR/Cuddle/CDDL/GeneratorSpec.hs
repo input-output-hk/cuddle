@@ -7,6 +7,7 @@ module Test.Codec.CBOR.Cuddle.CDDL.GeneratorSpec (spec) where
 import Codec.CBOR.Cuddle.CBOR.Gen (GenPhase, generateFromName)
 import Codec.CBOR.Cuddle.CBOR.Validator (validateCBOR)
 import Codec.CBOR.Cuddle.CDDL (Name)
+import Codec.CBOR.Cuddle.CDDL.CBORGenerator (GenEnv (..), runCBORGen)
 import Codec.CBOR.Cuddle.CDDL.CTree (CTreeRoot (..))
 import Codec.CBOR.Cuddle.CDDL.Resolve (MonoReferenced, MonoSimple, fullResolveCDDL)
 import Codec.CBOR.Cuddle.Huddle (Huddle, toCDDL)
@@ -38,7 +39,13 @@ import Test.QuickCheck (Gen, Property, Testable (..), counterexample)
 import Text.Pretty.Simple (pShow)
 
 generateCDDL :: CTreeRoot GenPhase -> Gen Term
-generateCDDL cddl = runAntiGen $ generateFromName cddl "root"
+generateCDDL cddl = runAntiGen . runCBORGen env $ generateFromName "root"
+  where
+    env =
+      GenEnv
+        { geRoot = cddl
+        , geTwiddle = True
+        }
 
 tryResolveHuddle :: HasCallStack => Huddle -> SpecM () (CTreeRoot MonoReferenced)
 tryResolveHuddle huddle = do
@@ -48,7 +55,13 @@ tryResolveHuddle huddle = do
 
 expectZapInvalidates :: CTreeRoot MonoReferenced -> Name -> Property
 expectZapInvalidates cddl name = property $ do
-  res@ZapResult {zrValue} <- zapAntiGenResult 1 $ generateFromName (mapIndex cddl) name
+  let
+    env =
+      GenEnv
+        { geRoot = mapIndex cddl
+        , geTwiddle = True
+        }
+  res@ZapResult {zrValue} <- zapAntiGenResult 1 . runCBORGen env $ generateFromName name
   let
     bs = toStrictByteString $ encodeTerm zrValue
     validationRes = validateCBOR bs name $ mapIndex cddl

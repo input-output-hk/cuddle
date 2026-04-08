@@ -15,6 +15,7 @@ import Codec.CBOR.Cuddle.CBOR.Validator.Trace (
   prettyValidationTrace,
  )
 import Codec.CBOR.Cuddle.CDDL (CDDL, Name (..), fromRules, sortCDDL)
+import Codec.CBOR.Cuddle.CDDL.CBORGenerator (GenEnv (..), runCBORGen)
 import Codec.CBOR.Cuddle.CDDL.CTree (CTreeRoot)
 import Codec.CBOR.Cuddle.CDDL.Postlude (appendPostlude)
 import Codec.CBOR.Cuddle.CDDL.Resolve (
@@ -113,6 +114,7 @@ data GenOpts = GenOpts
   , goSeed :: Maybe Int
   , goSize :: Int
   , goNegative :: Bool
+  , goTwiddle :: Bool
   , itemName :: T.Text
   }
 
@@ -154,6 +156,11 @@ pGenOpts =
       ( long "negative"
           <> short 'n'
           <> help "Generate a negative example"
+      )
+    <*> option
+      (not <$> auto)
+      ( long "no-twiddle"
+          <> help "Do not generate indefinite encodings"
       )
     <*> argument
       str
@@ -370,7 +377,12 @@ run = \case
           zapN
             | goNegative = 1
             | otherwise = 0
-          term = runGen seed goSize . zapAntiGen zapN $ generateFromName (mapIndex mt) (Name itemName)
+          env =
+            GenEnv
+              { geRoot = mapIndex mt
+              , geTwiddle = goTwiddle
+              }
+          term = runGen seed goSize . zapAntiGen zapN . runCBORGen env $ generateFromName (Name itemName)
           formatted = formatTerm term outputFormat
         case outputTo of
           Just outputPath -> BS.writeFile outputPath formatted

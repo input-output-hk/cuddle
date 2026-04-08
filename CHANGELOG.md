@@ -1,8 +1,9 @@
 # Changelog for `cuddle`
 
-## 1.3.0.1
+## 1.4.0.0
 
-*
+* Changed `generateFromName` to return a `CBORGen` instead of `AntiGen`
+* Add `no-twiddle` option
 
 ## 1.3.0.0
 

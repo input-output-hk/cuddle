@@ -22,7 +22,7 @@ import Codec.CBOR.Cuddle.CBOR.Validator.Trace (
   prettyValidationTrace,
  )
 import Codec.CBOR.Cuddle.CDDL (Name (..))
-import Codec.CBOR.Cuddle.CDDL.CBORGenerator (CustomValidatorResult (..))
+import Codec.CBOR.Cuddle.CDDL.CBORGenerator (CustomValidatorResult (..), GenEnv (..), runCBORGen)
 import Codec.CBOR.Cuddle.CDDL.CTree (CTreeRoot (..))
 import Codec.CBOR.Cuddle.CDDL.CTree qualified as CTree
 import Codec.CBOR.Cuddle.CDDL.Postlude (appendPostlude)
@@ -97,7 +97,13 @@ import Text.Megaparsec (runParser)
 genAndValidateRule :: String -> Name -> CTreeRoot MonoReferenced -> Spec
 genAndValidateRule description name resolvedCddl =
   prop description $ do
-    cborTerm <- runAntiGen $ generateFromName (mapIndex resolvedCddl) name
+    let
+      genEnv =
+        GenEnv
+          { geRoot = mapIndex resolvedCddl
+          , geTwiddle = True
+          }
+    cborTerm <- runAntiGen . runCBORGen genEnv $ generateFromName name
     let
       generatedCbor = toStrictByteString $ encodeTerm cborTerm
       res = validateCBOR generatedCbor name (mapIndex resolvedCddl)
