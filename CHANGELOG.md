@@ -1,5 +1,9 @@
 # Changelog for `cuddle`
 
+## 1.3.0.1
+
+*
+
 ## 1.3.0.0
 
 * Replace `Int` progress measure with lexicographic `Progress` type for more accurate trace comparison
