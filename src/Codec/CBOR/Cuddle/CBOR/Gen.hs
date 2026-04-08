@@ -38,13 +38,11 @@ import Codec.CBOR.Cuddle.CDDL.CBORGenerator (
   XXCTree (..),
   liftAntiGen,
   lookupCddl,
-  runCBORGen,
   withAntiGen,
   withTwiddle,
  )
 import Codec.CBOR.Cuddle.CDDL.CTree (
   CTree (..),
-  CTreeRoot (..),
   PTerm (..),
   foldCTree,
   nintMin,
@@ -590,13 +588,13 @@ resolveRef n = do
 -- This will throw an error if the generated item does not correspond to a
 -- single CBOR term (e.g. if the name resolves to a group, which cannot be
 -- generated outside a context).
-generateFromName :: HasCallStack => CTreeRoot GenPhase -> Name -> AntiGen Term
-generateFromName root@(CTreeRoot cddlMap) n = do
-  let env = GenEnv {geRoot = root, geTwiddle = True}
-  case Map.lookup n cddlMap of
+generateFromName :: HasCallStack => Name -> CBORGen Term
+generateFromName n = do
+  mRule <- lookupCddl n
+  case mRule of
     Nothing -> error $ "Unbound reference: " <> show n
     Just val ->
-      runCBORGen env (genForCTree val) >>= \case
+      genForCTree val >>= \case
         S x -> pure x
         _ ->
           error $
