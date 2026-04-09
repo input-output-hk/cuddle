@@ -79,10 +79,8 @@ validateTerm ::
 validateTerm cddl term rule
   | CTreeE (VRuleRef n) <- rule =
       dereferenceAndValidate cddl n (validateTerm cddl term)
-  | CTreeE (VValidator (CBORValidator validator) _) <- rule =
-      case validator term of
-        CustomValidatorSuccess -> evidence CustomSuccess
-        CustomValidatorFailure err -> evidence $ CustomFailure err
+  | CTreeE (VValidator v _) <- rule =
+      runCustomValidator term v
   | otherwise =
       case term of
         TInt i -> validateInteger cddl (fromIntegral i) rule
