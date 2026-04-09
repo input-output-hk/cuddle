@@ -22,7 +22,6 @@ import Codec.CBOR.Cuddle.CBOR.Validator.Trace (
   isValid,
   mapTrace,
   showSimple,
-  showValidationTrace,
  )
 import Codec.CBOR.Cuddle.CDDL hiding (CDDL, Group, Rule)
 import Codec.CBOR.Cuddle.CDDL.CBORGenerator (CBORValidator (..), CustomValidatorResult (..))
@@ -102,7 +101,7 @@ validateTerm cddl term rule
         TDouble d -> validateDouble cddl d rule
 
 terminal :: CTree ValidatorStage -> Evidenced ValidationTrace
-terminal = evidence . TerminalRule Nothing . mapIndex
+terminal = evidence . TerminalRule . mapIndex
 
 -- | Run a custom validator on a term. This is used by type-specific validators
 -- when they encounter a 'VValidator' node after dereferencing a rule reference.
@@ -970,13 +969,11 @@ ctrlDispatch v And tgt ctrl _ = ctrlAnd v tgt ctrl
 ctrlDispatch v Within tgt ctrl _ = ctrlAnd v tgt ctrl
 ctrlDispatch v op tgt ctrl vctrl =
   case v tgt of
-    Evidenced SValid (TerminalRule _ res)
+    Evidenced SValid trc
       | vctrl op ctrl ->
-          evidence $ TerminalRule (Just (ControlInfo op (mapIndex ctrl))) res
+          evidence $ ControlTrace (ControlInfo op (mapIndex ctrl)) trc
       | otherwise ->
           evidence $ UnsatisfiedControl op (mapIndex ctrl)
-    Evidenced SValid trc ->
-      error $ "Unexpected trace:\n\t" <> showValidationTrace trc
     err -> err
 
 --------------------------------------------------------------------------------
