@@ -56,7 +56,6 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.IO qualified as T
 import Data.Text.Lazy qualified as LT
-import Data.Word (Word64)
 import Paths_cuddle (getDataFileName)
 import Prettyprinter (defaultLayoutOptions, layoutPretty)
 import Prettyprinter.Render.Terminal (renderStrict)
@@ -379,7 +378,7 @@ spec = describe "Validator" $ do
       prop "Validates with custom validator in a choice within a group" $ do
         bs <- BS.pack <$> listOf1 arbitrary
         let
-          ruleA = withValidator bytesValidator $ "a" =:= VBytes `H.sized` (1 :: Word64, 1024 :: Word64)
+          ruleA = withValidator bytesValidator $ "a" =:= VText
           huddle =
             collectFrom
               [ HIRule ruleA
