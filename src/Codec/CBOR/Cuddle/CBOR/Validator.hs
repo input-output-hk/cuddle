@@ -106,6 +106,14 @@ validateTerm cddl term rule
 terminal :: CTree ValidatorStage -> Evidenced ValidationTrace
 terminal = evidence . TerminalRule Nothing . mapIndex
 
+-- | Run a custom validator on a term. This is used by type-specific validators
+-- when they encounter a 'VValidator' node after dereferencing a rule reference.
+runCustomValidator :: Term -> CBORValidator -> Evidenced ValidationTrace
+runCustomValidator term (CBORValidator validator) =
+  case validator term of
+    CustomValidatorSuccess -> evidence CustomSuccess
+    CustomValidatorFailure err -> evidence $ CustomFailure err
+
 unapplicable :: CTree ValidatorStage -> Evidenced ValidationTrace
 unapplicable = evidence . UnapplicableRule . mapIndex
 
@@ -132,6 +140,7 @@ validateInteger ::
 validateInteger cddl i rule =
   case rule of
     CTreeE (VRuleRef n) -> dereferenceAndValidate cddl n $ validateInteger cddl i
+    CTreeE (VValidator v _) -> runCustomValidator (TInteger i) v
     -- echo "C24101" | xxd -r -p - example.cbor
     -- echo "foo = int" > a.cddl
     -- cddl a.cddl validate example.cbor
@@ -301,6 +310,7 @@ validateHalf ::
   CTree ValidatorStage ->
   Evidenced ValidationTrace
 validateHalf cddl f (CTreeE (VRuleRef n)) = dereferenceAndValidate cddl n $ validateHalf cddl f
+validateHalf _ f (CTreeE (VValidator v _)) = runCustomValidator (THalf f) v
 validateHalf cddl f rule =
   case rule of
     -- a = any
@@ -351,6 +361,7 @@ validateFloat ::
   Evidenced ValidationTrace
 validateFloat cddl f (CTreeE (VRuleRef n)) =
   dereferenceAndValidate cddl n $ validateFloat cddl f
+validateFloat _ f (CTreeE (VValidator v _)) = runCustomValidator (TFloat f) v
 validateFloat cddl f rule =
   case rule of
     -- a = any
@@ -412,6 +423,7 @@ validateDouble ::
   Evidenced ValidationTrace
 validateDouble cddl f (CTreeE (VRuleRef n)) =
   dereferenceAndValidate cddl n $ validateDouble cddl f
+validateDouble _ f (CTreeE (VValidator v _)) = runCustomValidator (TDouble f) v
 validateDouble cddl f rule =
   case rule of
     -- a = any
@@ -481,6 +493,7 @@ validateBool ::
   Evidenced ValidationTrace
 validateBool cddl b (CTreeE (VRuleRef n)) =
   dereferenceAndValidate cddl n $ validateBool cddl b
+validateBool _ b (CTreeE (VValidator v _)) = runCustomValidator (TBool b) v
 validateBool cddl b rule =
   case rule of
     -- a = any
@@ -526,6 +539,7 @@ validateSimple ::
   Evidenced ValidationTrace
 validateSimple cddl i (CTreeE (VRuleRef n)) =
   dereferenceAndValidate cddl n $ validateSimple cddl i
+validateSimple _ i (CTreeE (VValidator v _)) = runCustomValidator (TSimple i) v
 validateSimple cddl 23 rule =
   case rule of
     -- a = any
@@ -544,6 +558,7 @@ validateSimple _ n _ = error $ "Found simple different to 23! please report this
 validateNull :: CTreeRoot ValidatorStage -> CTree ValidatorStage -> Evidenced ValidationTrace
 validateNull cddl (CTreeE (VRuleRef n)) =
   dereferenceAndValidate cddl n $ validateNull cddl
+validateNull _ (CTreeE (VValidator v _)) = runCustomValidator TNull v
 validateNull cddl rule =
   case rule of
     -- a = any
@@ -561,6 +576,7 @@ validateBytes ::
   CTreeRoot ValidatorStage -> BS.ByteString -> CTree ValidatorStage -> Evidenced ValidationTrace
 validateBytes cddl bs (CTreeE (VRuleRef n)) =
   dereferenceAndValidate cddl n $ validateBytes cddl bs
+validateBytes _ bs (CTreeE (VValidator v _)) = runCustomValidator (TBytes bs) v
 validateBytes cddl bs rule =
   case rule of
     -- a = any
@@ -646,6 +662,7 @@ validateText ::
   Evidenced ValidationTrace
 validateText cddl txt (CTreeE (VRuleRef n)) =
   dereferenceAndValidate cddl n $ validateText cddl txt
+validateText _ txt (CTreeE (VValidator v _)) = runCustomValidator (TString txt) v
 validateText cddl txt rule =
   case rule of
     -- a = any
@@ -704,6 +721,7 @@ validateTagged ::
   CTreeRoot ValidatorStage -> Word64 -> Term -> CTree ValidatorStage -> Evidenced ValidationTrace
 validateTagged cddl tag term (CTreeE (VRuleRef n)) =
   dereferenceAndValidate cddl n $ validateTagged cddl tag term
+validateTagged _ tag term (CTreeE (VValidator v _)) = runCustomValidator (TTagged tag term) v
 validateTagged cddl tag term rule =
   case rule of
     Postlude PTAny -> terminal rule
@@ -757,6 +775,7 @@ validateList ::
   Evidenced ValidationTrace
 validateList cddl terms (CTreeE (VRuleRef n)) =
   dereferenceAndValidate cddl n $ validateList cddl terms
+validateList _ terms (CTreeE (VValidator v _)) = runCustomValidator (TList terms) v
 validateList cddl terms rule =
   case rule of
     Postlude PTAny -> terminal rule
@@ -842,6 +861,7 @@ validateMap ::
   Evidenced ValidationTrace
 validateMap cddl terms (CTreeE (VRuleRef n)) =
   dereferenceAndValidate cddl n $ validateMap cddl terms
+validateMap _ terms (CTreeE (VValidator v _)) = runCustomValidator (TMap terms) v
 validateMap cddl terms rule =
   case rule of
     Postlude PTAny -> terminal rule
