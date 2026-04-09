@@ -39,6 +39,7 @@ import Codec.CBOR.Cuddle.Huddle (
   withValidator,
   (=:=),
  )
+import Codec.CBOR.Cuddle.Huddle qualified as H
 import Codec.CBOR.Cuddle.IndexMappable (mapCDDLDropExt, mapIndex)
 import Codec.CBOR.Cuddle.Parser (pCDDL)
 import Codec.CBOR.Pretty (prettyHexEnc)
@@ -373,6 +374,17 @@ spec = describe "Validator" $ do
               [ HIRule ruleA
               , HIRule $ "b" =:= arr [a ruleA]
               ]
+        pure . expectValid $ validateHuddle huddle "b" arrTerm
+      prop "Validates with custom validator in a choice within a group" $ do
+        bs <- BS.pack <$> listOf1 arbitrary
+        let
+          ruleA = withValidator bytesValidator $ "a" =:= VText
+          huddle =
+            collectFrom
+              [ HIRule ruleA
+              , HIRule $ "b" =:= arr [0, a (ruleA H./ VNil)]
+              ]
+        arrTerm <- genArrayTerm [TInt 0, TBytes bs]
         pure . expectValid $ validateHuddle huddle "b" arrTerm
     describe "Negative" $ do
       prop "Fails if term is valid against the Huddle, but not the custom validator" $ do

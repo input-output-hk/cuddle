@@ -170,7 +170,8 @@ instance Pretty ControlInfo where
 
 data ValidationTrace (v :: Validity) where
   UnapplicableRule :: CTree ValidatorStageSimple -> ValidationTrace IsInvalid
-  TerminalRule :: Maybe ControlInfo -> CTree ValidatorStageSimple -> ValidationTrace IsValid
+  TerminalRule :: CTree ValidatorStageSimple -> ValidationTrace IsValid
+  ControlTrace :: ControlInfo -> ValidationTrace IsValid -> ValidationTrace IsValid
   ReferenceRule :: Name -> ValidationTrace v -> ValidationTrace v
   CustomFailure :: Text -> ValidationTrace IsInvalid
   CustomSuccess :: ValidationTrace IsValid
@@ -283,6 +284,7 @@ instance IsValidationTrace ValidationTrace where
   traceValidity = \case
     CustomSuccess {} -> SValid
     TerminalRule {} -> SValid
+    ControlTrace {} -> SValid
     ChoiceBranch {} -> SValid
     UnapplicableRule {} -> SInvalid
     CustomFailure {} -> SInvalid
@@ -296,6 +298,7 @@ instance IsValidationTrace ValidationTrace where
   measureProgress = \case
     TerminalRule {} -> Progress 1 0
     CustomSuccess -> Progress 1 0
+    ControlTrace _ x -> measureProgress x
     ChoiceBranch _ x -> measureProgress x
     UnapplicableRule {} -> mempty
     CustomFailure {} -> mempty
@@ -473,15 +476,12 @@ prettyMapValidationResult opts@TraceOptions {..} = \case
 prettyValidationTrace :: TraceOptions -> ValidationTrace v -> Doc AnsiStyle
 prettyValidationTrace opts = \case
   UnapplicableRule x -> annotate (color Red) $ vsep ["failed to apply: ", indent 2 $ pretty x]
-  TerminalRule mCi x -> case mCi of
-    Just ci ->
-      vsep
-        [ appMsg
-        , nestContainer $ "ctrl:" <+> annotate (color Yellow) ("." <> pretty ci)
-        ]
-    Nothing -> appMsg
-    where
-      appMsg = "app: " <> annotate (color Green) (pretty x)
+  TerminalRule x -> "app: " <> annotate (color Green) (pretty x)
+  ControlTrace ci x ->
+    vsep
+      [ prettyValidationTrace opts x
+      , nestContainer $ "ctrl:" <+> annotate (color Yellow) ("." <> pretty ci)
+      ]
   ChoiceBranch i c ->
     vsep
       [ "choice (idx: " <> pretty i <> ")"

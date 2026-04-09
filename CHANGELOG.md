@@ -1,5 +1,10 @@
 # Changelog for `cuddle`
 
+## 1.5.0.0
+
+* Fix custom validators not running when reached via type-specific validators
+* Replace `TerminalRule (Maybe ControlInfo)` with `TerminalRule` and a new `ControlTrace` constructor
+
 ## 1.4.0.0
 
 * Changed `generateFromName` to return a `CBORGen` instead of `AntiGen`
