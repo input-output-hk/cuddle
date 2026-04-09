@@ -4,6 +4,7 @@
 
 * Fix custom validators not running when reached via type-specific validators
 * Replace `TerminalRule (Maybe ControlInfo)` with `TerminalRule` and a new `ControlTrace` constructor
+* Fix `InvalidTag` trace showing the bad tag as the expected value
 
 ## 1.4.0.0
 
