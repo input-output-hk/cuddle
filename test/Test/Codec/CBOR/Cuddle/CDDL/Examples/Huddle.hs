@@ -26,6 +26,7 @@ module Test.Codec.CBOR.Cuddle.CDDL.Examples.Huddle (
   listZeroOrMoreExample,
   mapNestedValueExample,
   deeplyNestedRefExample,
+  taggedUintExample,
 ) where
 
 import Codec.CBOR.Cuddle.CDDL (Name)
@@ -43,6 +44,7 @@ import Codec.CBOR.Cuddle.Huddle (
   idx,
   mp,
   opt,
+  tag,
   withCBORGen,
   (...),
   (=:=),
@@ -305,3 +307,9 @@ deeplyNestedRefExample =
     barRef = "bar" =:= bazRef
     aRef = "a_ref" =:= barRef
     listRule = "list_rule" =:= arr [a VInt, a VInt]
+
+taggedUintExample :: Huddle
+taggedUintExample =
+  collectFrom
+    [ HIRule $ "root" =:= tag 42 VBytes
+    ]

@@ -82,6 +82,7 @@ import System.Random.Stateful (Random, StatefulGen (..), runStateGen_, uniformBy
 import Test.AntiGen (
   AntiGen,
   antiChoose,
+  faultyBool,
   faultyNum,
   reweigh,
   runAntiGen,
@@ -558,16 +559,20 @@ genEnum tree = case tree of
 -- | Generate a tagged value
 genTag :: HasCallStack => Word64 -> CTree GenPhase -> CBORGen WrappedTerm
 genTag t node = do
-  tag <- liftAntiGen $ faultyNum t
-  enc <- case tag of
-    n
-      | n == 2 || n == 3 ->
-          -- TODO remove this once `cborg` can decode indefinite bytes in bignums
-          withTwiddle False $ genForCTree node
-    _ -> genForCTree node
-  case enc of
-    S x -> pure $ S $ TTagged tag x
-    _ -> error "Tag controller does not correspond to a single term"
+  omitTag <- liftAntiGen $ faultyBool False
+  if omitTag
+    then genForCTree node
+    else do
+      tag <- liftAntiGen $ faultyNum t
+      enc <- case tag of
+        n
+          | n == 2 || n == 3 ->
+              -- TODO remove this once `cborg` can decode indefinite bytes in bignums
+              withTwiddle False $ genForCTree node
+        _ -> genForCTree node
+      case enc of
+        S x -> pure $ S $ TTagged tag x
+        _ -> error "Tag controller does not correspond to a single term"
 
 genForNode :: HasCallStack => Name -> CBORGen WrappedTerm
 genForNode = genForCTree <=< resolveRef
