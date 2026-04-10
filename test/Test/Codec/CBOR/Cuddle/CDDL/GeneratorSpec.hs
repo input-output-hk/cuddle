@@ -30,12 +30,13 @@ import Test.Codec.CBOR.Cuddle.CDDL.Examples.Huddle (
   refTermExample,
   sizeBytesExample,
   sizeTextExample,
+  taggedUintExample,
  )
 import Test.Codec.CBOR.Cuddle.CDDL.Validator (expectInvalid, genAndValidateRule)
 import Test.Hspec (HasCallStack, Spec, describe, runIO, shouldSatisfy, xdescribe)
 import Test.Hspec.Core.Spec (SpecM)
 import Test.Hspec.QuickCheck (prop)
-import Test.QuickCheck (Gen, Property, Testable (..), counterexample)
+import Test.QuickCheck (Gen, Property, Testable (..), classify, counterexample)
 import Text.Pretty.Simple (pShow)
 
 generateCDDL :: CTreeRoot GenPhase -> Gen Term
@@ -138,3 +139,33 @@ spec = do
             TBytes "\x01\x02\x03\xff" -> True
             TBytesI "\x01\x02\x03\xff" -> True
             _ -> False
+
+  describe "Tagged bytes zapping" $ do
+    taggedBytesCddl <- tryResolveHuddle taggedUintExample
+    let env =
+          GenEnv
+            { geRoot = mapIndex taggedBytesCddl
+            , geTwiddle = True
+            }
+    prop "labels zapped result" $ do
+      ZapResult {zrValue} <-
+        zapAntiGenResult 1 . runCBORGen env $ generateFromName "root"
+      let
+        isBytes TBytes {} = True
+        isBytes TBytesI {} = True
+        isBytes _ = False
+        tagOmitted = case zrValue of
+          TTagged {} -> False
+          _ -> True
+        tagChanged = case zrValue of
+          TTagged t _ -> t /= 42
+          _ -> False
+        innerValueZapped = case zrValue of
+          TTagged 42 inner -> not (isBytes inner)
+          _ -> False
+      pure
+        . classify tagOmitted "tag omitted"
+        . classify tagChanged "tag changed"
+        . classify innerValueZapped "inner value zapped"
+        $ expectInvalid
+          (validateCBOR (toStrictByteString $ encodeTerm zrValue) "root" $ mapIndex taggedBytesCddl)
