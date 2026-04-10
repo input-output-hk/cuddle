@@ -402,7 +402,10 @@ genMap nodes = do
     genNodes !i !m (n : ns) =
       let
         ann = withAntiGen (withAnnotation (T.pack $ show i))
-        cont x y = scale (\s -> max 0 (s - 1)) $ genNodes (i + 1) x y
+        -- A term was produced, advance the index
+        next x y = scale (\s -> max 0 (s - 1)) $ genNodes (i + 1) x y
+        -- No term was produced, keep the index
+        same x y = scale (\s -> max 0 (s - 1)) $ genNodes i x y
         optGenKV kNode vNode = sized $ \sz ->
           frequency [(100, pure Nothing), (max 0 sz, ann $ tryGenKV 10 m kNode vNode)]
        in
@@ -410,19 +413,19 @@ genMap nodes = do
           KV kNode vNode _ -> do
             mKV <- ann $ tryGenKV 100 m kNode vNode
             case mKV of
-              Just (k, v) -> cont (Map.insert k v m) ns
+              Just (k, v) -> next (Map.insert k v m) ns
               Nothing -> pure Nothing
           Occur kv@(KV kNode vNode _) oi -> case oi of
             OIOptional -> do
               mt <- optGenKV kNode vNode
               case mt of
-                Just (k, v) -> cont (Map.insert k v m) ns
-                Nothing -> cont m ns
+                Just (k, v) -> next (Map.insert k v m) ns
+                Nothing -> same m ns
             OIZeroOrMore -> do
               mt <- optGenKV kNode vNode
               case mt of
-                Just (k, v) -> cont (Map.insert k v m) (n : ns)
-                Nothing -> cont m ns
+                Just (k, v) -> next (Map.insert k v m) (n : ns)
+                Nothing -> same m ns
             OIOneOrMore -> genNodes i m (kv : Occur kv OIZeroOrMore : ns)
             OIBounded mlb mub -> do
               let
@@ -432,12 +435,12 @@ genMap nodes = do
                 newHigh = clampedPred <$> mub
                 res
                   | maybe False (> 0) mlb = genNodes i m (kv : Occur kv (OIBounded newLow newHigh) : ns)
-                  | maybe False (< 1) mub = genNodes i m ns
+                  | maybe False (< 1) mub = same m ns
                   | otherwise = do
                       mt <- optGenKV kNode vNode
                       case mt of
-                        Just (k, v) -> cont (Map.insert k v m) (Occur kv (OIBounded newLow newHigh) : ns)
-                        Nothing -> genNodes i m ns
+                        Just (k, v) -> next (Map.insert k v m) (Occur kv (OIBounded newLow newHigh) : ns)
+                        Nothing -> same m ns
               res
           node -> error $ "Unexpected node: " <> showSimple node
   mItems <- genNodes 0 Map.empty $ sortOn (Down . elemsNeeded) nodes
