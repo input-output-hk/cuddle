@@ -1,8 +1,11 @@
 # Changelog for `cuddle`
 
-## 1.5.0.0
+## 1.5.1.0
 
 * Make generator omit tags when zapped
+
+## 1.5.0.0
+
 * Fix custom validators not running when reached via type-specific validators
 * Replace `TerminalRule (Maybe ControlInfo)` with `TerminalRule` and a new `ControlTrace` constructor
 * Fix `InvalidTag` trace showing the bad tag as the expected value
