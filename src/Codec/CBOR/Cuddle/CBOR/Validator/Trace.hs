@@ -180,7 +180,7 @@ data ValidationTrace (v :: Validity) where
   ListTrace :: ListValidationTrace v -> ValidationTrace v
   MapTrace :: MapValidationTrace v -> ValidationTrace v
   TagTrace :: Word64 -> ValidationTrace v -> ValidationTrace v
-  InvalidTag :: Word64 -> ValidationTrace IsInvalid
+  InvalidTag :: Word64 -> Word64 -> ValidationTrace IsInvalid
 
 deriving instance Show (ValidationTrace v)
 
@@ -515,8 +515,8 @@ prettyValidationTrace opts = \case
       [ "tag:" <+> annotate (color Green) ("#6." <> pretty t)
       , nestContainer $ prettyValidationTrace opts x
       ]
-  InvalidTag t ->
-    "expected tag #6." <> pretty t
+  InvalidTag expected actual ->
+    "expected tag #6." <> pretty expected <> ", got #6." <> pretty actual
 
 showValidationTrace :: ValidationTrace v -> String
 showValidationTrace =

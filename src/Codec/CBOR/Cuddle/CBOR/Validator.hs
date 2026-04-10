@@ -726,7 +726,7 @@ validateTagged cddl tag term rule =
       -- If the tag does not match, this is a direct fail
       if tag == tag'
         then mapTrace (TagTrace tag) $ validateTerm cddl term rule'
-        else evidence $ InvalidTag tag
+        else evidence $ InvalidTag tag' tag
     Choice opts -> validateChoice (validateTagged cddl tag term) opts
     _ -> unapplicable rule
 
