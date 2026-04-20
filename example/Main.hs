@@ -1,27 +1,26 @@
+{-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Main (main) where
 
-import Codec.CBOR.Cuddle.CBOR.Gen (generateCBORTerm)
+import Codec.CBOR.Cuddle.CBOR.Gen (generateFromName)
 import Codec.CBOR.Cuddle.CDDL (Name (..))
-import Codec.CBOR.Cuddle.CDDL.Resolve (
-  asMap,
-  buildMonoCTree,
-  buildRefCTree,
-  buildResolvedCTree,
- )
+import Codec.CBOR.Cuddle.CDDL.CBORGenerator (GenEnv (..), runCBORGen)
+import Codec.CBOR.Cuddle.CDDL.Resolve (MonoSimple, fullResolveCDDL)
 import Codec.CBOR.Cuddle.Huddle (toCDDL)
+import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..), mapCDDLDropExt)
 import Codec.CBOR.Cuddle.Parser (pCDDL)
-import Codec.CBOR.Cuddle.Pretty ()
+import Codec.CBOR.Cuddle.Pretty (PrettyStage)
 import Conway (conway)
 import Data.Text qualified as T
 import Data.Text.IO qualified as T
-import Monad qualified
 import Prettyprinter (Pretty (pretty))
 import Prettyprinter.Util (putDocW)
 import System.Environment (getArgs)
-import System.Random (getStdGen)
+import Test.AntiGen (runAntiGen)
+import Test.QuickCheck (generate)
 import Text.Megaparsec (ParseErrorBundle, Parsec, errorBundlePretty, runParser)
 
 main :: IO ()
@@ -32,24 +31,14 @@ main = do
       parseFromFile pCDDL fn >>= \case
         Left err -> putStrLn $ errorBundlePretty err
         Right res -> do
-          print res
-          putDocW 80 $ pretty res
+          putDocW 80 $ pretty (mapIndex @_ @_ @PrettyStage res)
           putStrLn "\n"
           putStrLn "--------------------------------------------------------------------------------"
-          putStrLn " As a CTree"
+          putStrLn " Resolving"
           putStrLn "--------------------------------------------------------------------------------"
-          let refCTree = buildRefCTree (asMap res)
-          print refCTree
-          putStrLn "--------------------------------------------------------------------------------"
-          putStrLn " After name resolution"
-          putStrLn "--------------------------------------------------------------------------------"
-          let resolvedCTree = buildResolvedCTree refCTree
-          print resolvedCTree
-          putStrLn "--------------------------------------------------------------------------------"
-          putStrLn " After monomorphisation"
-          putStrLn "--------------------------------------------------------------------------------"
-          let monoCTree = buildMonoCTree <$> resolvedCTree
-          print monoCTree
+          case fullResolveCDDL (mapCDDLDropExt res) of
+            Left nre -> putStrLn $ "Resolution error: " <> show nre
+            Right resolved -> print (mapIndex @_ @_ @MonoSimple resolved)
     [fn, name] -> do
       putStrLn "--------------------------------------------------------------------------------"
       putStrLn " Generating a term"
@@ -57,19 +46,15 @@ main = do
       parseFromFile pCDDL fn >>= \case
         Left err -> putStrLn $ errorBundlePretty err
         Right res -> do
-          stdGen <- getStdGen
-          case buildMonoCTree =<< buildResolvedCTree (buildRefCTree (asMap res)) of
+          case fullResolveCDDL (mapCDDLDropExt res) of
             Left nre -> error $ show nre
-            Right mt ->
-              let term = generateCBORTerm mt (Name (T.pack name) mempty) stdGen
-               in print term
+            Right resolved -> do
+              let genEnv = GenEnv {geRoot = mapIndex resolved, geTwiddle = True}
+              term <- generate . runAntiGen . runCBORGen genEnv $ generateFromName (Name (T.pack name))
+              print term
     [] -> do
       let cw = toCDDL conway
-      putDocW 80 $ pretty cw
-      putStrLn "--------------------------------------"
-      putDocW 80 $ pretty (toCDDL Monad.spec)
-      putStrLn "--------------------------------------"
-      putDocW 80 $ pretty (toCDDL Monad.spec2)
+      putDocW 80 $ pretty (mapIndex @_ @_ @PrettyStage cw)
     _ -> putStrLn "Expected filename"
 
 parseFromFile ::

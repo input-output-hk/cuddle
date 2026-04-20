@@ -1,3 +1,4 @@
+{-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE NoImplicitPrelude #-}
@@ -10,11 +11,9 @@ module Conway where
 import Codec.CBOR.Cuddle.Huddle
 import Data.Function (($))
 import Data.Semigroup ((<>))
-import Data.Text qualified as T
 import Data.Word (Word64)
 import GHC.Float (Double)
 import GHC.Num (Integer)
-import GHC.Show (Show (show))
 
 default (Integer, Double)
 
@@ -76,7 +75,7 @@ operational_cert =
       , "sigma" ==> signature
       ]
 
-protocol_version :: Named Group
+protocol_version :: GroupDef
 protocol_version = "protocol_version" =:~ grp [a major_protocol_version, a VUInt]
 
 next_major_protocol_version :: Rule
@@ -153,7 +152,7 @@ gov_action =
 policy_hash :: Rule
 policy_hash = "policy_hash" =:= scripthash
 
-parameter_change_action :: Named Group
+parameter_change_action :: GroupDef
 parameter_change_action =
   "parameter_change_action"
     =:~ grp
@@ -163,20 +162,20 @@ parameter_change_action =
       , a (policy_hash / VNil)
       ]
 
-hard_fork_initiation_action :: Named Group
+hard_fork_initiation_action :: GroupDef
 hard_fork_initiation_action =
   "hard_fork_initiation_action"
     =:~ grp [1, a (gov_action_id / VNil), a (arr [a protocol_version])]
 
-treasury_withdrawals_action :: Named Group
+treasury_withdrawals_action :: GroupDef
 treasury_withdrawals_action =
   "treasury_withdrawals_action"
     =:~ grp [2, a (arr [asKey reward_account ==> coin / VInt]), a (policy_hash / VNil)]
 
-no_confidence :: Named Group
+no_confidence :: GroupDef
 no_confidence = "no_confidence" =:~ grp [3, a (gov_action_id / VNil)]
 
-update_committee :: Named Group
+update_committee :: GroupDef
 update_committee =
   "update_committee"
     =:~ grp
@@ -187,7 +186,7 @@ update_committee =
       , a unit_interval
       ]
 
-new_constitution :: Named Group
+new_constitution :: GroupDef
 new_constitution =
   "new_constitution"
     =:~ grp [5, a (gov_action_id / VNil), a constitution]
@@ -295,75 +294,75 @@ certificate =
           )
       ]
 
-stake_registration :: Named Group
+stake_registration :: GroupDef
 stake_registration = "stake_registration" =:~ grp [0, a stake_credential]
 
-stake_deregistration :: Named Group
+stake_deregistration :: GroupDef
 stake_deregistration = "stake_deregistration" =:~ grp [0, a stake_credential]
 
-stake_delegation :: Named Group
+stake_delegation :: GroupDef
 stake_delegation =
   "stake_delegation"
     =:~ grp [0, a stake_credential, a pool_keyhash]
 
 -- POOL
-pool_registration :: Named Group
+pool_registration :: GroupDef
 pool_registration = "pool_registration" =:~ grp [3, a pool_params]
 
-pool_retirement :: Named Group
+pool_retirement :: GroupDef
 pool_retirement = "pool_retirement" =:~ grp [4, a pool_keyhash, a epoch]
 
 -- numbers 5 and 6 used to be the Genesis and MIR certificates respectively,
 -- which were deprecated in Conway
 
 -- DELEG
-reg_cert :: Named Group
+reg_cert :: GroupDef
 reg_cert = "reg_cert" =:~ grp [7, a stake_credential, a coin]
 
-unreg_cert :: Named Group
+unreg_cert :: GroupDef
 unreg_cert = "unreg_cert" =:~ grp [8, a stake_credential, a coin]
 
-vote_deleg_cert :: Named Group
+vote_deleg_cert :: GroupDef
 vote_deleg_cert = "vote_deleg_cert" =:~ grp [9, a stake_credential, a drep]
 
-stake_vote_deleg_cert :: Named Group
+stake_vote_deleg_cert :: GroupDef
 stake_vote_deleg_cert =
   "stake_vote_deleg_cert"
     =:~ grp [10, a stake_credential, a pool_keyhash, a drep]
 
-stake_reg_deleg_cert :: Named Group
+stake_reg_deleg_cert :: GroupDef
 stake_reg_deleg_cert =
   "stake_reg_deleg_cert"
     =:~ grp [11, a stake_credential, a pool_keyhash, a coin]
 
-vote_reg_deleg_cert :: Named Group
+vote_reg_deleg_cert :: GroupDef
 vote_reg_deleg_cert =
   "vote_reg_deleg_cert"
     =:~ grp [12, a stake_credential, a drep, a coin]
 
-stake_vote_reg_deleg_cert :: Named Group
+stake_vote_reg_deleg_cert :: GroupDef
 stake_vote_reg_deleg_cert =
   "stake_vote_reg_deleg_cert"
     =:~ grp [13, a stake_credential, a pool_keyhash, a drep, a coin]
 
 -- GOVCERT
-auth_committee_hot_cert :: Named Group
+auth_committee_hot_cert :: GroupDef
 auth_committee_hot_cert =
   "auth_committee_hot_cert"
     =:~ grp [14, a committee_cold_credential, a committee_hot_credential]
 
-resign_committee_cold_cert :: Named Group
+resign_committee_cold_cert :: GroupDef
 resign_committee_cold_cert =
   "resign_committee_cold_cert"
     =:~ grp [15, a committee_cold_credential, a (anchor / VNil)]
 
-reg_drep_cert :: Named Group
+reg_drep_cert :: GroupDef
 reg_drep_cert = "reg_drep_cert" =:~ grp [16, a drep_credential, a coin, a (anchor / VNil)]
 
-unreg_drep_cert :: Named Group
+unreg_drep_cert :: GroupDef
 unreg_drep_cert = "unreg_drep_cert" =:~ grp [17, a drep_credential, a coin]
 
-update_drep_cert :: Named Group
+update_drep_cert :: GroupDef
 update_drep_cert = "update_drep_cert" =:~ grp [18, a drep_credential, a (anchor / VNil)]
 
 delta_coin :: Rule
@@ -396,7 +395,7 @@ committee_cold_credential = "committee_cold_credential" =:= credential
 committee_hot_credential :: Rule
 committee_hot_credential = "committee_hot_credential" =:= credential
 
-pool_params :: Named Group
+pool_params :: GroupDef
 pool_params =
   "pool_params"
     =:~ grp
@@ -423,7 +422,7 @@ ipv6 = "ipv6" =:= VBytes `sized` (16 :: Word64)
 dns_name :: Rule
 dns_name = "dns_name" =:= VText `sized` (0 :: Word64, 128 :: Word64)
 
-single_host_addr :: Named Group
+single_host_addr :: GroupDef
 single_host_addr =
   "single_host_addr"
     =:~ grp
@@ -433,7 +432,7 @@ single_host_addr =
       , a (ipv6 / VNil)
       ]
 
-single_host_name :: Named Group
+single_host_name :: GroupDef
 single_host_name =
   "single_host_name"
     =:~ grp
@@ -442,7 +441,7 @@ single_host_name =
       , a dns_name -- An A or AAAA DNS record
       ]
 
-multi_host_name :: Named Group
+multi_host_name :: GroupDef
 multi_host_name =
   "multi_host_name"
     =:~ grp
@@ -731,34 +730,32 @@ native_script =
           )
       ]
 
-script_pubkey :: Named Group
+script_pubkey :: GroupDef
 script_pubkey = "script_pubkey" =:~ grp [0, a addr_keyhash]
 
-script_all :: Named Group
+script_all :: GroupDef
 script_all = "script_all" =:~ grp [1, a (arr [0 <+ a native_script])]
 
-script_any :: Named Group
+script_any :: GroupDef
 script_any = "script_any" =:~ grp [2, a (arr [0 <+ a native_script])]
 
-script_n_of_k :: Named Group
+script_n_of_k :: GroupDef
 script_n_of_k =
   "script_n_of_k"
     =:~ grp [3, "n" ==> VUInt, a (arr [0 <+ a native_script])]
 
-invalid_before :: Named Group
+invalid_before :: GroupDef
 invalid_before = "invalid_before" =:~ grp [4, a VUInt]
 
-invalid_hereafter :: Named Group
+invalid_hereafter :: GroupDef
 invalid_hereafter = "invalid_hereafter" =:~ grp [5, a VUInt]
 
 coin :: Rule
 coin = "coin" =:= VUInt
 
-multiasset :: (Show a, IsType0 a) => a -> Rule
-multiasset x =
-  "multiasset_"
-    <> T.pack (show x)
-      =:= mp [1 <+ asKey policy_id ==> mp [1 <+ asKey asset_name ==> x]]
+multiasset :: IsType0 t0 => t0 -> GRuleCall
+multiasset = binding $ \x ->
+  "multiasset" =:= mp [1 <+ asKey policy_id ==> mp [1 <+ asKey asset_name ==> x]]
 
 policy_id :: Rule
 policy_id = "policy_id" =:= scripthash

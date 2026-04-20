@@ -34,7 +34,7 @@ let
       builtins.concatMap
         (p: lib.attrsets.attrValues p.components.exes)
         (builtins.filter
-          (p: p.isLocal or false)
+          (p: (p.isLocal or false) && p.identifier.name != "example")
           (lib.attrsets.attrValues project.projectCross.musl64.hsPkgs));
   };
 

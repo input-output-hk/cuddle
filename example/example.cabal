@@ -1,0 +1,23 @@
+cabal-version: 3.4
+name: example
+version: 0.1.0.0
+synopsis: Example usage of the cuddle library
+license: Apache-2.0
+build-type: Simple
+
+executable example
+  default-language: GHC2021
+  ghc-options: -Wall
+  other-modules:
+    Conway
+
+  hs-source-dirs: .
+  main-is: Main.hs
+  build-depends:
+    QuickCheck,
+    antigen,
+    base,
+    cuddle,
+    megaparsec,
+    prettyprinter,
+    text,

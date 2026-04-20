@@ -31,11 +31,6 @@ source-repository head
   type: git
   location: https://github.com/input-output-hk/cuddle
 
-flag example
-  description: Enable the example executable
-  manual: True
-  default: False
-
 common warnings
   ghc-options: -Wall
 
@@ -62,7 +57,7 @@ library
     Codec.CBOR.Cuddle.Pretty.Utils
 
   build-depends:
-    QuickCheck >=2.14.3 && <2.18,
+    QuickCheck >=2.14.3,
     antigen ^>=0.4,
     base >=4.18 && <5,
     base16-bytestring >=1.0.2,
@@ -94,30 +89,6 @@ library
 
   hs-source-dirs: src
   default-language: GHC2021
-
-executable example
-  import: warnings
-
-  if flag(example)
-    buildable: True
-  else
-    buildable: False
-
-  default-language: GHC2021
-  other-modules:
-    Conway
-    Monad
-
-  hs-source-dirs: example
-  main-is: Main.hs
-  build-depends:
-    base,
-    bytestring,
-    cuddle,
-    megaparsec,
-    prettyprinter,
-    random,
-    text,
 
 executable cuddle
   import: warnings
