@@ -1,7 +1,8 @@
 # Changelog for `cuddle`
 
-## 1.5.1.0
+## 1.6.0.0
 
+* Remove `example` executable
 * Make generator omit tags when zapped
 
 ## 1.5.0.0
