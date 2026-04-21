@@ -294,13 +294,13 @@ bytesValidator t = CustomValidatorFailure $ "Expected bytes, got\n" <> T.pack (s
 spec :: Spec
 spec = describe "Validator" $ do
   describe "Generate and validate from file" $ do
-    genAndValidateFromFile "example/cddl-files/basic_assign.cddl"
-    genAndValidateFromFile "example/cddl-files/conway.cddl"
-    genAndValidateFromFile "example/cddl-files/costmdls_min.cddl"
-    genAndValidateFromFile "example/cddl-files/issue80-min.cddl"
-    genAndValidateFromFile "example/cddl-files/pretty.cddl"
-    genAndValidateFromFile "example/cddl-files/shelley.cddl"
-    genAndValidateFromFile "example/cddl-files/validator.cddl"
+    genAndValidateFromFile "cddl/basic_assign.cddl"
+    genAndValidateFromFile "cddl/conway.cddl"
+    genAndValidateFromFile "cddl/costmdls_min.cddl"
+    genAndValidateFromFile "cddl/issue80-min.cddl"
+    genAndValidateFromFile "cddl/pretty.cddl"
+    genAndValidateFromFile "cddl/shelley.cddl"
+    genAndValidateFromFile "cddl/validator.cddl"
   describe "Term tests" $ do
     describe "Maps and arrays" $ do
       describe "Positive" $ do
