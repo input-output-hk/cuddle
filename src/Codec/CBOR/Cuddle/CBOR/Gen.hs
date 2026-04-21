@@ -408,7 +408,7 @@ genMap nodes = do
         -- No term was produced, keep the index
         same x y = scale (\s -> max 0 (s - 1)) $ genNodes i x y
         optGenKV kNode vNode = sized $ \sz ->
-          frequency [(100, pure Nothing), (max 0 sz, ann $ tryGenKV 10 m kNode vNode)]
+          frequency [(1, pure Nothing), (max 0 sz, ann $ tryGenKV 10 m kNode vNode)]
        in
         case n of
           KV kNode vNode _ -> do
