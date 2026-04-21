@@ -1,0 +1,54 @@
+coin = uint
+
+epoch = uint
+
+header =
+  [ header_body
+  , body_signature : $kes_signature
+  , test           : coin/ null
+  , withComment    : null ;  This is a comment
+
+  , true
+  ]
+
+
+header_body = [issuer : text]
+
+$kes_signature = bytes .size 32
+
+unit_interval<denominator> = [0 .. denominator, denominator]
+
+unit_int = unit_interval<4294967295>
+
+mysize = 16
+
+sz1 = bytes .size 1
+
+sz2 = bytes .size 2
+
+sz32 = bytes .size 32
+
+sz16 = bytes .size mysize
+
+usz4 = uint .size 4
+
+usz8 = uint .size 8
+
+group = (usz4, usz8/ mysize, header_body, {* uint => coin})
+
+set<a> = [* a]
+
+set2<a> = set<a>
+
+coin_bag = set2<coin>
+
+big_group =
+  (    "hello"
+  ,    32
+  , 8* 4
+  ,    & group
+  ,    uint
+  ,    unit_interval<3>
+  ,    5 ... 10
+  ,    h'11aaff3351bc'
+  )

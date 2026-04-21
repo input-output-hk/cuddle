@@ -23,7 +23,7 @@ import Codec.CBOR.Cuddle.CDDL.Resolve (
  )
 import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..), mapCDDLDropExt)
 import Codec.CBOR.Cuddle.Parser (ParserStage, pCDDL)
-import Codec.CBOR.Cuddle.Pretty (PrettyStage)
+import Codec.CBOR.Cuddle.Pretty (PrettyStage, renderCDDL)
 import Codec.CBOR.FlatTerm (toFlatTerm)
 import Codec.CBOR.Pretty (prettyHexEnc)
 import Codec.CBOR.Read (deserialiseFromBytes)
@@ -48,13 +48,10 @@ import Paths_cuddle (version)
 import Prettyprinter (
   LayoutOptions (..),
   PageWidth (..),
-  Pretty (pretty),
   defaultLayoutOptions,
   layoutPretty,
-  removeTrailingWhitespace,
  )
 import Prettyprinter.Render.Terminal qualified as Ansi
-import Prettyprinter.Render.Text qualified as PT
 import System.Exit (exitFailure, exitSuccess)
 import System.IO (hPutStrLn, stderr)
 import System.Random (newStdGen)
@@ -348,9 +345,7 @@ run = \case
         | sort fOpts = fromRules $ sortCDDL res
         | otherwise = res
       layoutOptions = defaultLayoutOptions {layoutPageWidth = AvailablePerLine 80 1}
-      formattedText =
-        PT.renderStrict . removeTrailingWhitespace . layoutPretty layoutOptions . pretty $
-          mapIndex @_ @_ @PrettyStage defs
+      formattedText = renderCDDL layoutOptions $ mapIndex @_ @_ @PrettyStage defs
     T.putStr formattedText
   Validate vOpts cddlFile -> do
     res <- tryParseFromFile cddlFile
