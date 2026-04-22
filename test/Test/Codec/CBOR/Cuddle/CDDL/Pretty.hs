@@ -4,6 +4,7 @@
 
 module Test.Codec.CBOR.Cuddle.CDDL.Pretty (
   spec,
+  roundtripSpec,
 ) where
 
 import Codec.CBOR.Cuddle.CDDL (
@@ -25,18 +26,23 @@ import Codec.CBOR.Cuddle.CDDL (
 import Codec.CBOR.Cuddle.Huddle (HuddleItem (..), a, bstr, (<+), (=:=), (=:~))
 import Codec.CBOR.Cuddle.Huddle qualified as H
 import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
-import Codec.CBOR.Cuddle.Pretty (PrettyStage, XRule (..))
+import Codec.CBOR.Cuddle.Parser (pCDDL)
+import Codec.CBOR.Cuddle.Pretty (PrettyStage, XRule (..), renderCDDL)
 import Data.Default.Class (Default (..))
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Text qualified as T
+import Data.Text.IO qualified as T
 import Data.TreeDiff (ToExpr (..), prettyExpr)
+import Paths_cuddle (getDataFileName)
 import Prettyprinter (Pretty (..), defaultLayoutOptions, layoutPretty)
 import Prettyprinter.Render.String (renderString)
 import Test.Codec.CBOR.Cuddle.CDDL.Gen ()
 import Test.HUnit (assertEqual)
-import Test.Hspec (Expectation, Spec, describe, it, shouldBe, xit)
+import Test.Hspec (Expectation, Spec, describe, it, runIO, shouldBe, xit)
 import Test.Hspec.QuickCheck (xprop)
 import Test.QuickCheck (counterexample)
+import Text.Megaparsec (parse)
+import Text.Megaparsec.Error (errorBundlePretty)
 import Prelude hiding ((/))
 
 prettyPrintsTo :: (Pretty a, ToExpr a) => a -> String -> Expectation
@@ -164,7 +170,7 @@ unitSpec = describe "HUnit" $ do
                     :| []
                 )
             )
-            `prettyPrintsTo` "[ 1 ; one\n, 2 ; two\n]"
+            `prettyPrintsTo` "[ 1 ;one\n, 2 ;two\n]"
         it "two elements with multiline comments" $
           T2Array
             ( Group
@@ -182,7 +188,7 @@ unitSpec = describe "HUnit" $ do
                     :| []
                 )
             )
-            `prettyPrintsTo` "[ 1 ; first\n    ; multiline comment\n, 2 ; second\n    ; multiline comment\n]"
+            `prettyPrintsTo` "[ 1 ;first\n    ;multiline comment\n, 2 ;second\n    ;multiline comment\n]"
     describe "Rule" $ do
       it "simple assignment" $
         Rule @PrettyStage
@@ -199,7 +205,7 @@ unitSpec = describe "HUnit" $ do
           AssignEq
           (TOGType (Type0 (Type1 (T2Name (Name "b") mempty) Nothing mempty :| [])))
           (PrettyXRule "comment")
-          `prettyPrintsTo` "; comment\na = b"
+          `prettyPrintsTo` ";comment\na = b"
       xit "drep" $
         drep
           `prettyPrintsTo` "drep = [0, addr_keyhash // 1, script_hash // 2 // 3]"
@@ -214,14 +220,14 @@ unitSpec = describe "HUnit" $ do
           `huddlePrettyPrintsTo` "a = true\n"
       it "simple assignment with comment" $
         [HIRule $ H.comment "comment" $ "a" =:= H.bool True]
-          `huddlePrettyPrintsTo` "; comment\na = true\n"
+          `huddlePrettyPrintsTo` ";comment\na = true\n"
       it "comment and reference" $
         let
           b = H.comment "this is rule 'b'" $ "b" =:= H.text "bee"
          in
           [ HIRule $ H.comment "comment" $ "a" =:= b
           ]
-            `huddlePrettyPrintsTo` "; comment\na = b\n\n; this is rule 'b'\nb = \"bee\"\n"
+            `huddlePrettyPrintsTo` ";comment\na = b\n\n;this is rule 'b'\nb = \"bee\"\n"
       it "bstr expects hex, not bytes" $
         [ HIRule $ "a" =:= bstr "010200ff"
         ]
@@ -234,18 +240,45 @@ unitSpec = describe "HUnit" $ do
          in
           [ HIRule . H.comment "foo" $ "a" =:= b (H.bool True)
           ]
-            `huddlePrettyPrintsTo` "; foo\na = b<true>\n\n; bar\nb<a0> = [* a0]\n"
+            `huddlePrettyPrintsTo` ";foo\na = b<true>\n\n;bar\nb<a0> = [* a0]\n"
     describe "GroupDef" $ do
       it "simple pair" $
         [HIGroup $ "a" =:~ [a $ H.bool True, a $ H.int 3]]
           `huddlePrettyPrintsTo` "a = (true, 3)\n"
       it "simple pair with comment" $
         [HIGroup $ H.comment "comment" $ "a" =:~ [a $ H.bool True, a $ H.int 3]]
-          `huddlePrettyPrintsTo` "; comment\na = (true, 3)\n"
+          `huddlePrettyPrintsTo` ";comment\na = (true, 3)\n"
       it "comment and reference" $
         let
           b = H.comment "bar" $ "b" =:~ [a $ H.int 2, a $ H.text "bee"]
          in
           [ HIGroup . H.comment "foo" $ "a" =:~ [a $ H.bool True, a b]
           ]
-            `huddlePrettyPrintsTo` "; foo\na = (true, b)\n\n; bar\nb = (2, \"bee\")\n"
+            `huddlePrettyPrintsTo` ";foo\na = (true, b)\n\n;bar\nb = (2, \"bee\")\n"
+
+roundtripSpec :: Spec
+roundtripSpec = describe "Roundtrip (parse -> pretty -> parse)" $ do
+  prettyRoundtrip "basic_assign" "cddl/basic_assign.cddl"
+  prettyRoundtrip "pretty" "cddl/pretty.cddl"
+  prettyRoundtrip "costmdls_min" "cddl/costmdls_min.cddl"
+  prettyRoundtrip "issue80-min" "cddl/issue80-min.cddl"
+  prettyRoundtrip "conway" "cddl/conway.cddl"
+
+prettyRoundtrip :: String -> FilePath -> Spec
+prettyRoundtrip testName cddlPath = do
+  original <- runIO $ do
+    absolutePath <- getDataFileName cddlPath
+    contents <- T.readFile absolutePath
+    case parse pCDDL "" contents of
+      Left err -> fail $ "Failed to parse CDDL:\n" <> errorBundlePretty err
+      Right x -> pure x
+  it testName $ do
+    let
+      prettyStage1 = mapIndex @_ @_ @PrettyStage original
+      rendered = renderCDDL defaultLayoutOptions prettyStage1
+    case parse pCDDL "" rendered of
+      Left err ->
+        fail $ "Failed to re-parse pretty-printed CDDL:\n" <> errorBundlePretty err
+      Right reparsed ->
+        let prettyStage2 = mapIndex @_ @_ @PrettyStage reparsed
+         in prettyStage2 `shouldBe` prettyStage1

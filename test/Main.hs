@@ -4,6 +4,7 @@ import System.IO (BufferMode (..), hSetBuffering, hSetEncoding, stdout, utf8)
 import Test.Codec.CBOR.Cuddle.CDDL.Examples qualified as Examples
 import Test.Codec.CBOR.Cuddle.CDDL.GeneratorSpec qualified as Generator
 import Test.Codec.CBOR.Cuddle.CDDL.Parser (parserSpec)
+import Test.Codec.CBOR.Cuddle.CDDL.Pretty (roundtripSpec)
 import Test.Codec.CBOR.Cuddle.CDDL.Pretty.Golden qualified as PrettyGolden
 import Test.Codec.CBOR.Cuddle.CDDL.Validator qualified as Validator
 import Test.Codec.CBOR.Cuddle.CDDL.Validator.Golden qualified as ValidatorGolden
@@ -28,6 +29,7 @@ main = do
     describe "Generator" Generator.spec
     describe "Pretty" $ do
       describe "Golden" PrettyGolden.spec
+      describe "Roundtrip" roundtripSpec
     describe "Validator" $ do
       describe "Properties" Validator.spec
       describe "Golden" ValidatorGolden.spec

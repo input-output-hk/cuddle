@@ -6,7 +6,7 @@ header =
   [ header_body
   , body_signature : $kes_signature
   , test           : coin/ null
-  , withComment    : null ;  This is a comment
+  , withComment    : null ; This is a comment
   , true
   ]
 
