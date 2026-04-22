@@ -23,6 +23,7 @@ import Codec.CBOR.Cuddle.Parser.Lexer (
   charInRange,
   pCommentBlock,
   space,
+  trailingSpace,
  )
 import Control.Applicative.Combinators.NonEmpty qualified as NE
 import Data.ByteString.Base16 qualified as Base16
@@ -143,7 +144,7 @@ pGenericArg =
     <$> between "<" ">" (NE.sepBy1 (space !*> pType1 <*! space) ",")
 
 pType0 :: Parser (Type0 ParserStage)
-pType0 = Type0 <$> sepBy1' (space !*> pType1 <*! space) (try "/")
+pType0 = Type0 <$> sepBy1' (space !*> pType1 <*! trailingSpace) (try "/")
 
 pType1 :: Parser (Type1 ParserStage)
 pType1 = do

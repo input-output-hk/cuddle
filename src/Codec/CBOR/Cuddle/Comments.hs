@@ -33,13 +33,8 @@ import Optics.Core (Lens', lens, view, (%~), (&), (.~), (^.))
 
 newtype Comment = Comment T.Text
   deriving (Eq, Ord, Generic, Show)
-  deriving newtype (Monoid)
+  deriving newtype (Semigroup, Monoid)
   deriving anyclass (ToExpr, Hashable)
-
-instance Semigroup Comment where
-  Comment "" <> x = x
-  x <> Comment "" = x
-  Comment x <> Comment y = Comment $ x <> "\n" <> y
 
 unComment :: Comment -> [T.Text]
 unComment (Comment c) = T.lines c

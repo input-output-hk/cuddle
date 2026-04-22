@@ -6,5 +6,5 @@ b = [1, uint, (3, 4)]
 
 c =
   { 1 : a
-  , 2 : b ;  hello
+  , 2 : b ; hello
   }
