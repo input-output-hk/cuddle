@@ -18,13 +18,11 @@ signkeyKES = bytes .size 64
 $signature /=
   bytes .size 64 ;  extra.cddl Conway era introduces an optional 258 tag for sets, which will become mandatory in the second era after Conway. We recommend all the tooling to account for this future breaking change sooner rather than later, in order to provide a smooth transition for their users. This is an unordered set. Duplicate elements are not allowed and the order of elements is implementation specific.
 
-set<a
-> =
+set<a> =
   #6.258([* a])
   / [* a] ;  Just like `set`, but must contain at least one element.
 
-nonempty_set<a
-> =
+nonempty_set<a> =
   #6.258([+ a])
   / [ + a
   ] ;  This is a non-empty ordered set. Duplicate elements are not allowed and the order of elements will be preserved.
@@ -58,8 +56,7 @@ bounded_bytes =
   bytes .size ( 0 .. 64
               ) ;  the real bounded_bytes does not have this limit. it instead has a different limit which cannot be expressed in CDDL. The limit is as follows:  - bytes with a definite-length encoding are limited to size 0..64  - for bytes with an indefinite-length CBOR encoding, each chunk is    limited to size 0..64  ( reminder: in CBOR, the indefinite-length encoding of bytestrings    consists of a token #2.31 followed by a sequence of definite-length    encoded bytestrings and a stop code ) a type for distinct values. The type parameter must support .size, for example: bytes or uint
 
-distinct<a
-> =
+distinct<a> =
   a .size 8
   / a .size 16
   / a .size 20
@@ -109,8 +106,7 @@ major_protocol_version = 1 .. next_major_protocol_version
 protocol_version = (major_protocol_version, uint)
 
 transaction_body =
-  {   0  : set<transaction_input
-           > ;  inputs
+  {   0  : set<transaction_input> ;  inputs
   ,   1  : [* transaction_output]
   ,   2  : coin ;  fee
   , ? 3  : uint ;  time to live
@@ -120,14 +116,12 @@ transaction_body =
   , ? 8  : uint ;  validity interval start
   , ? 9  : mint
   , ? 11 : script_data_hash
-  , ? 13 : nonempty_set<transaction_input
-           > ;  collateral inputs
+  , ? 13 : nonempty_set<transaction_input> ;  collateral inputs
   , ? 14 : required_signers
   , ? 15 : network_id
   , ? 16 : transaction_output ;  collateral return
   , ? 17 : coin ;  total collateral
-  , ? 18 : nonempty_set<transaction_input
-           > ;  reference inputs
+  , ? 18 : nonempty_set<transaction_input> ;  reference inputs
   , ? 19 : voting_procedures ;  New; Voting procedures
   , ? 20 : proposal_procedures ;  New; Proposal procedures
   , ? 21 : coin ;  New; current treasury value
@@ -407,8 +401,7 @@ plutus_v2_script = distinct<bytes>
 plutus_v3_script = distinct<bytes>
 
 plutus_data =
-  constr<plutus_data
-  >
+  constr<plutus_data>
   / {* plutus_data => plutus_data}
   / [* plutus_data]
   / big_int
@@ -420,8 +413,7 @@ big_uint = #6.2(bounded_bytes)
 
 big_nint = #6.3(bounded_bytes)
 
-constr<a
-> =
+constr<a> =
   #6.121([* a])
   / #6.122([* a])
   / #6.123([* a])

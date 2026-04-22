@@ -1,5 +1,5 @@
-main = test<int,int>
+main = test<int, int>
 
 set<x> = [x]
 
-test<x,x1> = [1, x, set<x>]
+test<x, x1> = [1, x, set<x>]
