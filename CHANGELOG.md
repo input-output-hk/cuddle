@@ -6,6 +6,7 @@
 * Make generator omit tags when zapped
 * Add `renderCDDL` for pretty printing CDDL with trailing whitespace removal
 * Fix CDDL pretty printing: remove spurious blank lines after commented fields, never break generic arguments across lines
+* Fix prettyprinter adding an extra space at the start of comments
 
 ## 1.5.0.0
 
