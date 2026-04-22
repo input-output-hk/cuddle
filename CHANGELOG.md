@@ -4,6 +4,8 @@
 
 * Remove `example` executable
 * Make generator omit tags when zapped
+* Add `renderCDDL` for pretty printing CDDL with trailing whitespace removal
+* Fix CDDL pretty printing: remove spurious blank lines after commented fields, never break generic arguments across lines
 
 ## 1.5.0.0
 

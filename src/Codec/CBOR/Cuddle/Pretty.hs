@@ -15,6 +15,7 @@ module Codec.CBOR.Cuddle.Pretty (
   XTerm (..),
   XCddl (..),
   XRule (..),
+  renderCDDL,
 ) where
 
 import Codec.CBOR.Cuddle.CDDL
@@ -40,12 +41,14 @@ import Data.Default.Class (Default)
 import Data.Foldable (Foldable (..))
 import Data.List.NonEmpty qualified as NE
 import Data.String (IsString, fromString)
+import Data.Text (Text)
 import Data.Text qualified as T
 import Data.TreeDiff (ToExpr)
 import Data.Void (Void, absurd)
 import GHC.Generics (Generic)
 import Optics.Core ((^.))
 import Prettyprinter
+import Prettyprinter.Render.Text qualified as PT
 
 type data PrettyStage
 
@@ -118,17 +121,15 @@ instance Pretty (Rule PrettyStage) where
         AssignExt -> "//="
 
 instance Pretty (GenericArg PrettyStage) where
-  pretty (GenericArg (NE.toList -> l))
-    | null (collectComments l) = group . cEncloseSep "<" ">" "," $ fmap pretty l
-    | otherwise = columnarListing "<" ">" "," . Columnar $ singletonRow . pretty <$> l
+  pretty (GenericArg l) =
+    "<" <> concatWith (\x y -> x <> "," <+> y) (pretty <$> NE.toList l) <> ">"
 
 instance Pretty (GenericParameter PrettyStage) where
   pretty (GenericParameter n (PrettyXTerm c)) = pretty n <> prettyCommentNoBreakWS c
 
 instance Pretty (GenericParameters PrettyStage) where
-  pretty (GenericParameters (NE.toList -> l))
-    | null (collectComments l) = group . cEncloseSep "<" ">" "," $ pretty <$> l
-    | otherwise = columnarListing "<" ">" "," . Columnar $ singletonRow . pretty <$> l
+  pretty (GenericParameters l) =
+    "<" <> concatWith (\x y -> x <> "," <+> y) (pretty <$> NE.toList l) <> ">"
 
 instance Pretty (Type0 PrettyStage) where
   pretty t0@(Type0 (NE.toList -> l)) =
@@ -273,3 +274,8 @@ instance Pretty PTerm where
     PTAny -> "any"
     PTNil -> "nil"
     PTUndefined -> "undefined"
+
+-- | Render a pretty-stage CDDL to 'Text', removing trailing whitespace.
+renderCDDL :: LayoutOptions -> CDDL PrettyStage -> Text
+renderCDDL opts =
+  PT.renderStrict . removeTrailingWhitespace . layoutPretty opts . pretty

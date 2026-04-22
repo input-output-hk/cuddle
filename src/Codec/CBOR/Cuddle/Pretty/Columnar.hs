@@ -117,8 +117,11 @@ columnarListing lEnc rEnc s (Columnar (row : rows)) =
 columnarSepBy :: Doc ann -> Columnar ann -> Doc ann
 columnarSepBy _ (Columnar []) = mempty
 columnarSepBy s (Columnar rows@(Row x : xs)) =
-  prettyRow columnWidths x <> line' <> prettyColumnar (Columnar $ prependRow <$> xs)
+  prettyRow columnWidths x <> rest
   where
+    rest
+      | null xs = mempty
+      | otherwise = line' <> prettyColumnar (Columnar $ prependRow <$> xs)
     prependRow (Row (Cell c al : cs)) = Row $ Cell (s <+> c) al : cs
     prependRow (Row []) = Row []
     columnWidths =

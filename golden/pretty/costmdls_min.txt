@@ -1,0 +1,4 @@
+costmdls =
+  { 0 : [ 11* int
+        ] ;  Plutus v1, only 166 integers are used, but more are accepted (and ignored)
+  }
