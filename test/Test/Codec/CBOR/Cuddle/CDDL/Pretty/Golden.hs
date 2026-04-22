@@ -36,7 +36,8 @@ prettyPrintGolden testName cddlPath = do
 
 spec :: Spec
 spec = describe "golden" $ do
-  prettyPrintGolden "basic_assign" "example/cddl-files/basic_assign.cddl"
-  prettyPrintGolden "pretty" "example/cddl-files/pretty.cddl"
-  prettyPrintGolden "costmdls_min" "example/cddl-files/costmdls_min.cddl"
-  prettyPrintGolden "issue80-min" "example/cddl-files/issue80-min.cddl"
+  prettyPrintGolden "basic_assign" "cddl/basic_assign.cddl"
+  prettyPrintGolden "pretty" "cddl/pretty.cddl"
+  prettyPrintGolden "costmdls_min" "cddl/costmdls_min.cddl"
+  prettyPrintGolden "issue80-min" "cddl/issue80-min.cddl"
+  prettyPrintGolden "conway" "cddl/conway.cddl"

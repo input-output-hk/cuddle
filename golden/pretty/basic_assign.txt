@@ -7,10 +7,8 @@ header =
   , body_signature : $kes_signature
   , test           : coin/ null
   , withComment    : null ;  This is a comment
-
   , true
   ]
-
 
 header_body = [issuer : text]
 
