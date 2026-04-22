@@ -46,18 +46,18 @@ spec :: Spec
 spec = do
   describe "Validator" $ do
     describe "Positive" $ do
-      validateExpectSuccess "example/cddl-files/byron.cddl"
-      validateExpectSuccess "example/cddl-files/conway.cddl"
-      validateExpectSuccess "example/cddl-files/shelley.cddl"
-      validateExpectSuccess "example/cddl-files/basic_assign.cddl"
-      validateExpectSuccess "example/cddl-files/issue80-min.cddl"
-      validateExpectSuccess "example/cddl-files/pretty.cddl"
+      validateExpectSuccess "cddl/byron.cddl"
+      validateExpectSuccess "cddl/conway.cddl"
+      validateExpectSuccess "cddl/shelley.cddl"
+      validateExpectSuccess "cddl/basic_assign.cddl"
+      validateExpectSuccess "cddl/issue80-min.cddl"
+      validateExpectSuccess "cddl/pretty.cddl"
     describe "Negative" $ do
-      validateExpectFailure "example/cddl-files/validator/negative/unknown-name.cddl" $
+      validateExpectFailure "cddl/validator/negative/unknown-name.cddl" $
         UnboundReference "a"
-      validateExpectFailure "example/cddl-files/validator/negative/too-few-args.cddl" $
+      validateExpectFailure "cddl/validator/negative/too-few-args.cddl" $
         MismatchingArgs "foo" ["a", "b"]
-      validateExpectFailure "example/cddl-files/validator/negative/too-many-args.cddl" $
+      validateExpectFailure "cddl/validator/negative/too-many-args.cddl" $
         MismatchingArgs "foo" ["a"]
-      validateExpectFailure "example/cddl-files/validator/negative/args-to-postlude.cddl" $
+      validateExpectFailure "cddl/validator/negative/args-to-postlude.cddl" $
         ArgsToPostlude PTUInt [Literal (Value (VUInt 3) mempty)]
