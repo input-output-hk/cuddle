@@ -152,13 +152,14 @@ pGenOpts =
     <*> switch
       ( long "negative"
           <> short 'n'
-          <> help "Generate a negative example"
+          <> help "Generate a negative (zapped) example"
       )
-    <*> option
-      (not <$> auto)
-      ( long "no-twiddle"
-          <> help "Do not generate indefinite encodings"
-      )
+    <*> ( not
+            <$> switch
+              ( long "no-twiddle"
+                  <> help "Do not generate indefinite encodings"
+              )
+        )
     <*> argument
       str
       (metavar "RULE" <> help "Name of the CDDL rule to generate a CBOR term for")
