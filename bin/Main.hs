@@ -329,8 +329,6 @@ main = do
                     , "  Bash: source <(cuddle --bash-completion-script cuddle)"
                     , "  Zsh:  source <(cuddle --zsh-completion-script cuddle)"
                     , "  Fish: cuddle --fish-completion-script cuddle | source"
-                    , mempty
-                    , "Report bugs at https://github.com/input-output-hk/cuddle/issues"
                     ]
               )
         )
