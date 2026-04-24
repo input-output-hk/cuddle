@@ -131,6 +131,7 @@ pGenOpts =
           ( long "out-file"
               <> short 'o'
               <> help "Write to"
+              <> action "file"
           )
       )
     <*> switch
@@ -213,7 +214,7 @@ pValidateCBOROpts =
       ( metavar "RULE"
           <> help "Name of the CDDL rule to validate this file with"
       )
-    <*> argument str (metavar "CBOR_FILE")
+    <*> argument str (metavar "CBOR_FILE" <> action "file")
 
 data CBORInputFormat
   = FromHex
@@ -259,6 +260,7 @@ pFormatCBOROpts =
           ( long "out-file"
               <> short 'o'
               <> help "Write to"
+              <> action "file"
           )
       )
 
@@ -268,31 +270,34 @@ pCommand =
     ( command
         "format"
         ( info
-            (Format <$> pFormatOpts <*> argument str (metavar "CDDL_FILE") <**> helper)
+            (Format <$> pFormatOpts <*> argument str (metavar "CDDL_FILE" <> action "file") <**> helper)
             (progDesc "Format the provided CDDL file")
         )
         <> command
           "validate"
           ( info
-              (Validate <$> pValidateOpts <*> argument str (metavar "CDDL_FILE") <**> helper)
+              (Validate <$> pValidateOpts <*> argument str (metavar "CDDL_FILE" <> action "file") <**> helper)
               (progDesc "Validate the provided CDDL file")
           )
         <> command
           "gen"
           ( info
-              (GenerateCBOR <$> pGenOpts <*> argument str (metavar "CDDL_FILE") <**> helper)
+              (GenerateCBOR <$> pGenOpts <*> argument str (metavar "CDDL_FILE" <> action "file") <**> helper)
               (progDesc "Generate a CBOR term matching the schema")
           )
         <> command
           "validate-cbor"
           ( info
-              (ValidateCBOR <$> pValidateCBOROpts <*> argument str (metavar "CDDL_FILE") <**> helper)
+              ( ValidateCBOR
+                  <$> pValidateCBOROpts
+                  <*> argument str (metavar "CDDL_FILE" <> action "file") <**> helper
+              )
               (progDesc "Validate a CBOR file against a schema")
           )
         <> command
           "format-cbor"
           ( info
-              (FormatCBOR <$> pFormatCBOROpts <*> argument str (metavar "CBOR_FILE") <**> helper)
+              (FormatCBOR <$> pFormatCBOROpts <*> argument str (metavar "CBOR_FILE" <> action "file") <**> helper)
               (progDesc "Output a CBOR binary in diagnostic formatting")
           )
     )
