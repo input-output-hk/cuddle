@@ -1,0 +1,5 @@
+triple =
+  [ uint ; first element
+  , text ; second element
+  , true ; third element
+  ]

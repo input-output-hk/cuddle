@@ -8,7 +8,7 @@ module Test.Codec.CBOR.Cuddle.CDDL.Gen () where
 
 import Codec.CBOR.Cuddle.CDDL
 import Codec.CBOR.Cuddle.CDDL.CtlOp
-import Codec.CBOR.Cuddle.Comments (Comment (..))
+import Codec.CBOR.Cuddle.Comments (Comment, toComment)
 import Codec.CBOR.Cuddle.Parser (ParserStage, XTerm (..))
 import Codec.CBOR.Cuddle.Pretty (PrettyStage, XRule (..), XTerm (..), XXTopLevel (..))
 import Data.ByteString (ByteString)
@@ -48,7 +48,7 @@ instance Arbitrary ByteString where
   shrink = fmap BS.pack . shrink . BS.unpack
 
 instance Arbitrary Comment where
-  arbitrary = Comment <$> arbitrary
+  arbitrary = toComment <$> arbitrary
   shrink = genericShrink
 
 nameFstChars :: [Char]

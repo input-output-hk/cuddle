@@ -123,7 +123,7 @@ import Codec.CBOR.Cuddle.CDDL.CBORGenerator (
  )
 import Codec.CBOR.Cuddle.CDDL.CTree (CTreeRoot)
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
-import Codec.CBOR.Cuddle.Comments (Comment (..), HasComment (..))
+import Codec.CBOR.Cuddle.Comments (Comment, HasComment (..))
 import Codec.CBOR.Cuddle.Comments qualified as C
 import Codec.CBOR.Term (Term)
 import Control.Monad (when)
