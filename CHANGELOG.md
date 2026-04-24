@@ -5,6 +5,9 @@
 * Fix `--no-twiddle` argument
 * Add autocompletion hints
 * Add footer, improve output format failure message
+* Make `(//-)` prefix each comment line with a leading space and change its fixity from `infixr 0` to `infixl 1`
+* Hide the `Comment` constructor; use `toComment` or `commentLine` smart constructors instead
+* Add `appendComment` for raw comment concatenation in parser combinators
 
 ## 1.6.0.0
 
