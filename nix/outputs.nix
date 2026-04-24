@@ -28,15 +28,28 @@ let
 
   packages = flake.packages;
 
-  static = pkgs.symlinkJoin {
-    inherit name;
+  addShellCompletions = drv: pkgs.runCommand name
+    {
+      nativeBuildInputs = [ pkgs.installShellFiles ];
+      meta.mainProgram = name;
+    } ''
+    mkdir -p $out/bin
+    cp ${drv}/bin/${name} $out/bin/${name}
+    installShellCompletion --cmd ${name} \
+      --bash <($out/bin/${name} --bash-completion-script $out/bin/${name}) \
+      --zsh  <($out/bin/${name} --zsh-completion-script $out/bin/${name}) \
+      --fish <($out/bin/${name} --fish-completion-script $out/bin/${name})
+  '';
+
+  static = addShellCompletions (pkgs.symlinkJoin {
+    name = "${name}-unwrapped";
     paths =
       builtins.concatMap
         (p: lib.attrsets.attrValues p.components.exes)
         (builtins.filter
           (p: (p.isLocal or false) && p.identifier.name != "example")
           (lib.attrsets.attrValues project.projectCross.musl64.hsPkgs));
-  };
+  });
 
   devShells = lib.attrsets.mapAttrs
     (ghcName: _: mkShell ghcName)
@@ -53,6 +66,9 @@ let
 in
 
 flake // {
-  packages = packages // { inherit static; };
+  packages = packages // {
+    inherit static;
+    "${name}:exe:${name}" = addShellCompletions packages."${name}:exe:${name}";
+  };
   devShells = devShells // { default = devShells.${defaultVariant}; };
 }
