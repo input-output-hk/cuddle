@@ -50,6 +50,7 @@ import Prettyprinter (
   PageWidth (..),
   defaultLayoutOptions,
   layoutPretty,
+  vsep,
  )
 import Prettyprinter.Render.Terminal qualified as Ansi
 import System.Exit (exitFailure, exitSuccess)
@@ -102,7 +103,12 @@ pCBOROutputFormat :: ReadM CBOROutputFormat
 pCBOROutputFormat = eitherReader $ \k ->
   case Map.lookup k outputFormatOptions of
     Just x -> Right x
-    Nothing -> Left k
+    Nothing ->
+      Left $
+        unlines
+          [ "invalid value: " <> k
+          , "expecting one of: " <> unwords (Map.keys outputFormatOptions)
+          ]
 
 data GenOpts = GenOpts
   { outputFormat :: CBOROutputFormat
@@ -236,7 +242,12 @@ data FormatCBOROpts = FormatCBOROpts
 pCBORInputFormat :: ReadM CBORInputFormat
 pCBORInputFormat = eitherReader $ \k -> case Map.lookup k inputFormatOptions of
   Just x -> Right x
-  Nothing -> Left k
+  Nothing ->
+    Left $
+      unlines
+        [ "invalid value: " <> k
+        , "expecting one of: " <> unwords (Map.keys inputFormatOptions)
+        ]
 
 pFormatCBOROpts :: Parser FormatCBOROpts
 pFormatCBOROpts =
@@ -310,7 +321,18 @@ main = do
         (pCommand <**> helper <**> simpleVersioner (showVersion version))
         ( fullDesc
             <> progDesc "Manipulate CDDL files"
-            <> header "cuddle"
+            <> header "cuddle - a CDDL tool for validating, formatting, and generating CBOR"
+            <> footerDoc
+              ( Just $
+                  vsep
+                    [ "To enable shell completions, add the appropriate line to your shell config:"
+                    , "  Bash: source <(cuddle --bash-completion-script cuddle)"
+                    , "  Zsh:  source <(cuddle --zsh-completion-script cuddle)"
+                    , "  Fish: cuddle --fish-completion-script cuddle | source"
+                    , mempty
+                    , "Report bugs at https://github.com/input-output-hk/cuddle/issues"
+                    ]
+              )
         )
   run options
 
