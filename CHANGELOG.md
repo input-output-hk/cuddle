@@ -1,5 +1,10 @@
 # Changelog for `cuddle`
 
+## 1.7.0.0
+
+* Make `(//-) ` operator add a space before and newline after comment text
+* Add `appendComment` for raw comment concatenation in parser combinators
+
 ## 1.6.0.0
 
 * Remove `example` executable
