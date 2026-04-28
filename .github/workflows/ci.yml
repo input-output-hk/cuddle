@@ -20,7 +20,7 @@ jobs:
         ghc: ["9.6.7", "9.8.4", "9.10.2", "9.12.2", "9.14.1"]
         os: [ubuntu-latest]
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v6
     - name: Install Haskell
       uses: input-output-hk/setup-haskell@v1
       id: setup-haskell
@@ -33,7 +33,7 @@ jobs:
     - name: Cabal Configure
       run: cabal configure --enable-tests --write-ghc-environment-files=always
 
-    - uses: actions/cache@v3
+    - uses: actions/cache@v5
       if: matrix.os != 'macos-latest'
       name: Cache cabal store
       with:
@@ -68,7 +68,7 @@ jobs:
       fail-fast: false
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
 
     - name: Install fourmolu
       run: |
@@ -102,7 +102,7 @@ jobs:
       STACK_ARGS: '--resolver ${{ matrix.resolver }} --system-ghc'
       cache-version: v0 # bump up this version to invalidate currently stored cache
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
 
     - uses: haskell-actions/setup@v2
       id: setup-haskell-cabal
@@ -114,7 +114,7 @@ jobs:
         cabal-version: 'latest'
     - name: Cache
       id: cache
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: |
           ${{ steps.setup-haskell-cabal.outputs.stack-root }}
