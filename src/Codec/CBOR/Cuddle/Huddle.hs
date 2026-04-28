@@ -83,7 +83,7 @@ module Codec.CBOR.Cuddle.Huddle (
   tag,
 
   -- * Generics
-  GRef,
+  GRef (..),
   GRuleDef (..),
   GRuleCall (..),
   binding,
