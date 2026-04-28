@@ -1,5 +1,9 @@
 # Changelog for `cuddle`
 
+## 1.7.0.0
+
+* Export `GRef` constructor
+
 ## 1.6.0.0
 
 * Remove `example` executable
