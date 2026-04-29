@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE OverloadedStrings #-}
 
@@ -27,8 +28,11 @@ module Test.Codec.CBOR.Cuddle.CDDL.Examples.Huddle (
   mapNestedValueExample,
   deeplyNestedRefExample,
   taggedUintExample,
+  tagRangeExample,
 ) where
 
+import Codec.CBOR.Cuddle.CBOR.Gen (generateFromGRef)
+import Codec.CBOR.Cuddle.CBOR.Validator (validateFromGRef)
 import Codec.CBOR.Cuddle.CDDL (Name)
 import Codec.CBOR.Cuddle.CDDL.CBORGenerator (WrappedTerm (..))
 import Codec.CBOR.Cuddle.Huddle (
@@ -40,12 +44,14 @@ import Codec.CBOR.Cuddle.Huddle (
   a,
   arr,
   asKey,
+  binding,
   collectFrom,
   idx,
   mp,
   opt,
   tag,
   withCBORGen,
+  withValidator,
   (...),
   (=:=),
   (==>),
@@ -53,7 +59,7 @@ import Codec.CBOR.Cuddle.Huddle (
 import Codec.CBOR.Cuddle.Huddle qualified as H
 import Codec.CBOR.Term qualified as C
 import Data.Word (Word64)
-import Test.QuickCheck.GenT (MonadGen (..))
+import Test.QuickCheck.GenT (MonadGen (..), frequency)
 
 huddleRangeArray :: Huddle
 huddleRangeArray =
@@ -313,3 +319,38 @@ taggedUintExample =
   collectFrom
     [ HIRule $ "root" =:= tag 42 VBytes
     ]
+
+-- | @foo<a> = #6.1280(a) / #6.1400(a)@ with a custom generator that picks
+-- any tag in @1280..1400@ (broader than what the schema literally allows)
+-- and a custom validator that accepts the same range. Exercised at two
+-- different generic instantiations to make sure the bound type is
+-- resolved correctly per call.
+tagRangeExample :: Huddle
+tagRangeExample =
+  collectFrom
+    [ HIRule $
+        "root" =:= arr [a (fooTagRange VUInt), a (fooTagRange VNInt)]
+    ]
+  where
+    fooTagRange :: H.IsType0 t0 => t0 -> H.GRuleCall
+    fooTagRange = binding $ \x ->
+      withCBORGen (generator x)
+        . withValidator (validator x)
+        $ "foo" =:= tag 1280 x H./ tag 1400 x
+      where
+        generator x = do
+          tagN <-
+            frequency
+              [ (1, pure 1280)
+              , (1, pure 1400)
+              , (4, choose (1281, 1399))
+              ]
+          generateFromGRef x >>= \case
+            S inner -> pure $ S (C.TTagged tagN inner)
+            _ -> error "tagRangeExample: generic argument must be a single term"
+
+        validator x = \case
+          S (C.TTagged t inner)
+            | t >= 1280 && t <= 1400 -> validateFromGRef x inner
+            | otherwise -> fail $ "Tag out of range 1280..1400: " <> show t
+          wt -> fail $ "Expected a tagged term, got: " <> show wt

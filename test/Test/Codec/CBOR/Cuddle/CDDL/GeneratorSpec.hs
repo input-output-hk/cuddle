@@ -30,6 +30,7 @@ import Test.Codec.CBOR.Cuddle.CDDL.Examples.Huddle (
   refTermExample,
   sizeBytesExample,
   sizeTextExample,
+  tagRangeExample,
   taggedUintExample,
  )
 import Test.Codec.CBOR.Cuddle.CDDL.Validator (expectInvalid, genAndValidateRule)
@@ -99,6 +100,7 @@ spec = do
       genAndValidateHuddle "sizeBytes" sizeBytesExample
       genAndValidateHuddle "rangeList" rangeListExample
       genAndValidateHuddle "rangeMap" rangeMapExample
+      genAndValidateHuddle "tagRange" tagRangeExample
       xdescribe "Generator cannot reliably produce unique keys for maps" $ do
         genAndValidateHuddle "optionalMapExample" optionalMapExample
 
@@ -139,6 +141,20 @@ spec = do
             TBytes "\x01\x02\x03\xff" -> True
             TBytesI "\x01\x02\x03\xff" -> True
             _ -> False
+      tagRangeExampleCddl <- tryResolveHuddle tagRangeExample
+      prop "tagRange generator covers edges and middle" $ do
+        res <- generateCDDL $ mapIndex tagRangeExampleCddl
+        let tags = case res of
+              TList xs -> [t | TTagged t _ <- xs]
+              TListI xs -> [t | TTagged t _ <- xs]
+              _ -> []
+            classifyTag t p =
+              classify (t == 1280 || t == 1400) "edge tag (1280 or 1400)" $
+                classify (t > 1280 && t < 1400) "middle tag (1281..1399)" p
+            base =
+              counterexample ("tags: " <> show tags) $
+                all (\t -> t >= 1280 && t <= 1400) tags
+        pure $ foldr classifyTag (property base) tags
 
   describe "Tagged bytes zapping" $ do
     taggedBytesCddl <- tryResolveHuddle taggedUintExample
