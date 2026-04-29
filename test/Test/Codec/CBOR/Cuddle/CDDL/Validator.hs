@@ -24,7 +24,7 @@ import Codec.CBOR.Cuddle.CBOR.Validator.Trace (
 import Codec.CBOR.Cuddle.CDDL (Name (..))
 import Codec.CBOR.Cuddle.CDDL.CBORGenerator (
   CBORValidator,
-  GenEnv (..),
+  GenConfig (..),
   WrappedTerm (..),
   runCBORGen,
  )
@@ -104,12 +104,12 @@ genAndValidateRule :: String -> Name -> CTreeRoot MonoReferenced -> Spec
 genAndValidateRule description name resolvedCddl =
   prop description $ do
     let
-      genEnv =
-        GenEnv
-          { geRoot = mapIndex resolvedCddl
-          , geTwiddle = True
+      genCfg =
+        GenConfig
+          { gcRoot = mapIndex resolvedCddl
+          , gcTwiddle = True
           }
-    cborTerm <- runAntiGen . runCBORGen genEnv $ generateFromName name
+    cborTerm <- runAntiGen . runCBORGen genCfg $ generateFromName name
     let
       generatedCbor = toStrictByteString $ encodeTerm cborTerm
       res = validateCBOR generatedCbor name (mapIndex resolvedCddl)

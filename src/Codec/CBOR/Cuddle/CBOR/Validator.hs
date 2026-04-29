@@ -5,6 +5,8 @@
 
 module Codec.CBOR.Cuddle.CBOR.Validator (
   validateCBOR,
+  validateFromName,
+  validateFromGRef,
   ValidatorPhase,
 ) where
 
@@ -29,6 +31,8 @@ import Codec.CBOR.Cuddle.CDDL.CBORGenerator (
   ValidateEnv (..),
   ValidatorPhase,
   WrappedTerm (..),
+  lookupCddl,
+  lookupGRef,
   runCBORValidator,
  )
 import Codec.CBOR.Cuddle.CDDL.CTree
@@ -36,6 +40,7 @@ import Codec.CBOR.Cuddle.CDDL.CtlOp
 import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
 import Codec.CBOR.Read
 import Codec.CBOR.Term
+import Control.Monad.Reader (asks)
 import Data.Bifunctor (Bifunctor (..))
 import Data.Bits hiding (And)
 import Data.ByteString qualified as BS
@@ -70,6 +75,35 @@ validateCBOR bs rule cddl@(CTreeRoot tree) =
     Right (rest, term)
       | BSL.null rest -> validateTerm cddl term (tree Map.! rule)
       | otherwise -> error $ "Leftover bytes in CBOR: " <> show rest
+
+-- | Validate a CBOR 'Term' against a top-level rule from inside a custom
+-- validator.
+validateFromName ::
+  HasCallStack => Name -> Term -> CBORValidator ()
+validateFromName n term = do
+  mRule <- lookupCddl n
+  case mRule of
+    Nothing -> fail $ "Unbound reference: " <> show n
+    Just rule -> validateAgainst term rule
+
+-- | Validate a CBOR 'Term' against the type bound to the given generic
+-- parameter at the enclosing rule. Use this from inside a custom validator
+-- attached to a generic rule.
+validateFromGRef ::
+  HasCallStack => GRef -> Term -> CBORValidator ()
+validateFromGRef ref term = do
+  mRule <- lookupGRef ref
+  case mRule of
+    Nothing -> fail $ "Unbound generic reference: " <> show ref
+    Just rule -> validateAgainst term rule
+
+validateAgainst :: Term -> CTree ValidatorPhase -> CBORValidator ()
+validateAgainst term rule = do
+  cddl <- asks veRoot
+  let res = validateTerm cddl term rule
+  if isValid res
+    then pure ()
+    else fail $ "Validation failed for term: " <> show term
 
 --------------------------------------------------------------------------------
 -- Terms
@@ -117,7 +151,7 @@ runCustomValidator ::
   (WrappedTerm -> CBORValidator ()) ->
   Evidenced ValidationTrace
 runCustomValidator cddl term validator =
-  case runCBORValidator (validator term) (ValidateEnv cddl) of
+  case runCBORValidator cddl (validator term) of
     CustomValidatorSuccess -> evidence CustomSuccess
     CustomValidatorFailure err -> evidence $ CustomFailure err
 

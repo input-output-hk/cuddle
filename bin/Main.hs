@@ -15,7 +15,7 @@ import Codec.CBOR.Cuddle.CBOR.Validator.Trace (
   prettyValidationTrace,
  )
 import Codec.CBOR.Cuddle.CDDL (CDDL, Name (..), fromRules, sortCDDL)
-import Codec.CBOR.Cuddle.CDDL.CBORGenerator (GenEnv (..), runCBORGen)
+import Codec.CBOR.Cuddle.CDDL.CBORGenerator (GenConfig (..), runCBORGen)
 import Codec.CBOR.Cuddle.CDDL.CTree (CTreeRoot)
 import Codec.CBOR.Cuddle.CDDL.Postlude (appendPostlude)
 import Codec.CBOR.Cuddle.CDDL.Resolve (
@@ -372,12 +372,12 @@ run = \case
           zapN
             | goNegative = 1
             | otherwise = 0
-          env =
-            GenEnv
-              { geRoot = mapIndex mt
-              , geTwiddle = goTwiddle
+          cfg =
+            GenConfig
+              { gcRoot = mapIndex mt
+              , gcTwiddle = goTwiddle
               }
-          term = runGen seed goSize . zapAntiGen zapN . runCBORGen env $ generateFromName (Name itemName)
+          term = runGen seed goSize . zapAntiGen zapN . runCBORGen cfg $ generateFromName (Name itemName)
           formatted = formatTerm term outputFormat
         case outputTo of
           Just outputPath -> BS.writeFile outputPath formatted

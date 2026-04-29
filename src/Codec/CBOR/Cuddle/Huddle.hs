@@ -83,7 +83,7 @@ module Codec.CBOR.Cuddle.Huddle (
   tag,
 
   -- * Generics
-  GRef (..),
+  GRef,
   GRuleDef (..),
   GRuleCall (..),
   binding,
@@ -107,7 +107,14 @@ module Codec.CBOR.Cuddle.Huddle (
 )
 where
 
-import Codec.CBOR.Cuddle.CDDL (CDDL, GenericParameter (..), HasName (..), Name (..), XRule)
+import Codec.CBOR.Cuddle.CDDL (
+  CDDL,
+  GRef (..),
+  GenericParameter (..),
+  HasName (..),
+  Name (..),
+  XRule,
+ )
 import Codec.CBOR.Cuddle.CDDL qualified as C
 import Codec.CBOR.Cuddle.CDDL.CBORGenerator (
   CBORGen,
@@ -993,9 +1000,6 @@ tag mi = Tagged (Just mi)
 --------------------------------------------------------------------------------
 -- Generics
 --------------------------------------------------------------------------------
-
-newtype GRef = GRef T.Text
-  deriving (Show)
 
 freshName :: Int -> GRef
 freshName ix =

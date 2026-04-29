@@ -72,6 +72,8 @@ import Codec.CBOR.Cuddle.CDDL.CBORGenerator (
   ValidatorPhase,
   WrappedTerm,
   XXCTree (..),
+  withLocalGenBindings,
+  withLocalValidateBindings,
  )
 import Codec.CBOR.Cuddle.CDDL.CTreePhase (CTreePhase, XRule (..))
 import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
@@ -592,8 +594,18 @@ resolveGenericRef (DRef (GenericRef n)) = do
   case Map.lookup n localBinds of
     Just node -> pure node
     Nothing -> throwNR $ UnboundReference n
-resolveGenericRef (DGenerator g x) = CTreeE . MGenerator g <$> resolveGenericCTree x
-resolveGenericRef (DValidator v x) = CTreeE . MValidator v <$> resolveGenericCTree x
+resolveGenericRef (DGenerator g x) = do
+  binds <- ask @"local"
+  body <- resolveGenericCTree x
+  let bindsGen = fmap (mapIndex @CTree @MonoReferenced @GenPhase) binds
+      g' = withLocalGenBindings bindsGen g
+  pure . CTreeE $ MGenerator g' body
+resolveGenericRef (DValidator v x) = do
+  binds <- ask @"local"
+  body <- resolveGenericCTree x
+  let bindsVal = fmap (mapIndex @CTree @MonoReferenced @ValidatorPhase) binds
+      v' wt = withLocalValidateBindings bindsVal (v wt)
+  pure . CTreeE $ MValidator v' body
 
 resolveGenericCTree ::
   CTree DistReferenced ->
