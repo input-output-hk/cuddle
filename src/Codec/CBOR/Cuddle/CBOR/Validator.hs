@@ -5,7 +5,8 @@
 
 module Codec.CBOR.Cuddle.CBOR.Validator (
   validateCBOR,
-  ValidatorStage,
+  ValidatorPhase,
+  validateFromName,
 ) where
 
 import Codec.CBOR.Cuddle.CBOR.Validator.Trace (
@@ -16,7 +17,6 @@ import Codec.CBOR.Cuddle.CBOR.Validator.Trace (
   MapValidationTrace (..),
   SValidity (..),
   ValidationTrace (..),
-  ValidatorStage,
   XXCTree (..),
   evidence,
   isValid,
@@ -24,12 +24,23 @@ import Codec.CBOR.Cuddle.CBOR.Validator.Trace (
   showSimple,
  )
 import Codec.CBOR.Cuddle.CDDL hiding (CDDL, Group, Rule)
-import Codec.CBOR.Cuddle.CDDL.CBORGenerator (CBORValidator (..), CustomValidatorResult (..))
+import Codec.CBOR.Cuddle.CDDL.CBORGenerator (
+  CustomValidatorResult (..),
+  MonadCddl (..),
+  TermValidator,
+  ValidateEnv (..),
+  Validator,
+  ValidatorPhase,
+  WrappedTerm (..),
+  lookupCddl,
+  runValidator,
+ )
 import Codec.CBOR.Cuddle.CDDL.CTree
 import Codec.CBOR.Cuddle.CDDL.CtlOp
 import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
 import Codec.CBOR.Read
 import Codec.CBOR.Term
+import Control.Monad.Reader (asks)
 import Data.Bifunctor (Bifunctor (..))
 import Data.Bits hiding (And)
 import Data.ByteString qualified as BS
@@ -56,7 +67,7 @@ validateCBOR ::
   HasCallStack =>
   BS.ByteString ->
   Name ->
-  CTreeRoot ValidatorStage ->
+  CTreeRoot ValidatorPhase ->
   Evidenced ValidationTrace
 validateCBOR bs rule cddl@(CTreeRoot tree) =
   case deserialiseFromBytes decodeTerm (BSL.fromStrict bs) of
@@ -65,21 +76,39 @@ validateCBOR bs rule cddl@(CTreeRoot tree) =
       | BSL.null rest -> validateTerm cddl term (tree Map.! rule)
       | otherwise -> error $ "Leftover bytes in CBOR: " <> show rest
 
+-- | Validate a CBOR 'Term' against a top-level rule from inside a custom
+-- validator.
+validateFromName ::
+  HasCallStack => Name -> Term -> Validator ()
+validateFromName n term = do
+  mRule <- lookupCddl n
+  case mRule of
+    Nothing -> fail $ "Unbound reference: " <> show n
+    Just rule -> validateAgainst term rule
+
+validateAgainst :: Term -> CTree ValidatorPhase -> Validator ()
+validateAgainst term rule = do
+  cddl <- asks veRoot
+  let res = validateTerm cddl term rule
+  if isValid res
+    then pure ()
+    else fail $ "Validation failed for term: " <> show term
+
 --------------------------------------------------------------------------------
 -- Terms
 
 -- | Core function that validates a CBOR term to a particular rule of the CDDL
 -- spec
 validateTerm ::
-  CTreeRoot ValidatorStage ->
+  CTreeRoot ValidatorPhase ->
   Term ->
-  CTree ValidatorStage ->
+  CTree ValidatorPhase ->
   Evidenced ValidationTrace
 validateTerm cddl term rule
   | CTreeE (VRuleRef n) <- rule =
       dereferenceAndValidate cddl n (validateTerm cddl term)
   | CTreeE (VValidator v _) <- rule =
-      runCustomValidator term v
+      runCustomValidator cddl (S term) v
   | otherwise =
       case term of
         TInt i -> validateInteger cddl (fromIntegral i) rule
@@ -100,18 +129,22 @@ validateTerm cddl term rule
         TFloat h -> validateFloat cddl h rule
         TDouble d -> validateDouble cddl d rule
 
-terminal :: CTree ValidatorStage -> Evidenced ValidationTrace
+terminal :: CTree ValidatorPhase -> Evidenced ValidationTrace
 terminal = evidence . TerminalRule . mapIndex
 
 -- | Run a custom validator on a term. This is used by type-specific validators
 -- when they encounter a 'VValidator' node after dereferencing a rule reference.
-runCustomValidator :: Term -> CBORValidator -> Evidenced ValidationTrace
-runCustomValidator term (CBORValidator validator) =
-  case validator term of
+runCustomValidator ::
+  CTreeRoot ValidatorPhase ->
+  WrappedTerm ->
+  TermValidator ->
+  Evidenced ValidationTrace
+runCustomValidator cddl term validator =
+  case runValidator (validator term) cddl of
     CustomValidatorSuccess -> evidence CustomSuccess
     CustomValidatorFailure err -> evidence $ CustomFailure err
 
-unapplicable :: CTree ValidatorStage -> Evidenced ValidationTrace
+unapplicable :: CTree ValidatorPhase -> Evidenced ValidationTrace
 unapplicable = evidence . UnapplicableRule . mapIndex
 
 --------------------------------------------------------------------------------
@@ -130,14 +163,14 @@ unapplicable = evidence . UnapplicableRule . mapIndex
 -- Ints, so we convert everything to Integer.
 validateInteger ::
   HasCallStack =>
-  CTreeRoot ValidatorStage ->
+  CTreeRoot ValidatorPhase ->
   Integer ->
-  CTree ValidatorStage ->
+  CTree ValidatorPhase ->
   Evidenced ValidationTrace
 validateInteger cddl i rule =
   case rule of
     CTreeE (VRuleRef n) -> dereferenceAndValidate cddl n $ validateInteger cddl i
-    CTreeE (VValidator v _) -> runCustomValidator (TInteger i) v
+    CTreeE (VValidator v _) -> runCustomValidator cddl (S $ TInteger i) v
     -- echo "C24101" | xxd -r -p - example.cbor
     -- echo "foo = int" > a.cddl
     -- cddl a.cddl validate example.cbor
@@ -229,10 +262,10 @@ validateInteger cddl i rule =
 -- | Controls for an Integer
 controlInteger ::
   HasCallStack =>
-  CTreeRoot ValidatorStage ->
+  CTreeRoot ValidatorPhase ->
   Integer ->
   CtlOp ->
-  CTree ValidatorStage ->
+  CTree ValidatorPhase ->
   Bool
 controlInteger cddl i op (CTreeE (VRuleRef n)) =
   controlInteger cddl i op $ dereference cddl n
@@ -302,12 +335,12 @@ controlInteger _ _ _ ctrl = error $ "unexpected control: " <> showSimple ctrl
 -- | Validating a `Float16`
 validateHalf ::
   HasCallStack =>
-  CTreeRoot ValidatorStage ->
+  CTreeRoot ValidatorPhase ->
   Float ->
-  CTree ValidatorStage ->
+  CTree ValidatorPhase ->
   Evidenced ValidationTrace
 validateHalf cddl f (CTreeE (VRuleRef n)) = dereferenceAndValidate cddl n $ validateHalf cddl f
-validateHalf _ f (CTreeE (VValidator v _)) = runCustomValidator (THalf f) v
+validateHalf cddl f (CTreeE (VValidator v _)) = runCustomValidator cddl (S $ THalf f) v
 validateHalf cddl f rule =
   case rule of
     -- a = any
@@ -332,10 +365,10 @@ validateHalf cddl f rule =
 -- | Controls for `Float16`
 controlHalf ::
   HasCallStack =>
-  CTreeRoot ValidatorStage ->
+  CTreeRoot ValidatorPhase ->
   Float ->
   CtlOp ->
-  CTree ValidatorStage ->
+  CTree ValidatorPhase ->
   Bool
 controlHalf cddl f op (CTreeE (VRuleRef n)) =
   controlHalf cddl f op $ dereference cddl n
@@ -352,13 +385,13 @@ controlHalf _ _ op _ = error $ "Not yet implemented for half: " <> show op
 -- | Validating a `Float32`
 validateFloat ::
   HasCallStack =>
-  CTreeRoot ValidatorStage ->
+  CTreeRoot ValidatorPhase ->
   Float ->
-  CTree ValidatorStage ->
+  CTree ValidatorPhase ->
   Evidenced ValidationTrace
 validateFloat cddl f (CTreeE (VRuleRef n)) =
   dereferenceAndValidate cddl n $ validateFloat cddl f
-validateFloat _ f (CTreeE (VValidator v _)) = runCustomValidator (TFloat f) v
+validateFloat cddl f (CTreeE (VValidator v _)) = runCustomValidator cddl (S $ TFloat f) v
 validateFloat cddl f rule =
   case rule of
     -- a = any
@@ -392,10 +425,10 @@ validateFloat cddl f rule =
 -- | Controls for `Float32`
 controlFloat ::
   HasCallStack =>
-  CTreeRoot ValidatorStage ->
+  CTreeRoot ValidatorPhase ->
   Float ->
   CtlOp ->
-  CTree ValidatorStage ->
+  CTree ValidatorPhase ->
   Bool
 controlFloat cddl f op (CTreeE (VRuleRef n)) =
   controlFloat cddl f op $ dereference cddl n
@@ -414,13 +447,13 @@ controlFloat _ _ op _ = error $ "Not yet implemented for float: " <> show op
 -- | Validating a `Float64`
 validateDouble ::
   HasCallStack =>
-  CTreeRoot ValidatorStage ->
+  CTreeRoot ValidatorPhase ->
   Double ->
-  CTree ValidatorStage ->
+  CTree ValidatorPhase ->
   Evidenced ValidationTrace
 validateDouble cddl f (CTreeE (VRuleRef n)) =
   dereferenceAndValidate cddl n $ validateDouble cddl f
-validateDouble _ f (CTreeE (VValidator v _)) = runCustomValidator (TDouble f) v
+validateDouble cddl f (CTreeE (VValidator v _)) = runCustomValidator cddl (S $ TDouble f) v
 validateDouble cddl f rule =
   case rule of
     -- a = any
@@ -458,10 +491,10 @@ validateDouble cddl f rule =
 -- | Controls for `Float64`
 controlDouble ::
   HasCallStack =>
-  CTreeRoot ValidatorStage ->
+  CTreeRoot ValidatorPhase ->
   Double ->
   CtlOp ->
-  CTree ValidatorStage ->
+  CTree ValidatorPhase ->
   Bool
 controlDouble cddl f op (CTreeE (VRuleRef n)) =
   controlDouble cddl f op $ dereference cddl n
@@ -484,13 +517,13 @@ controlDouble _ _ op _ = error $ "Not yet implmented for double: " <> show op
 
 -- | Validating a boolean
 validateBool ::
-  CTreeRoot ValidatorStage ->
+  CTreeRoot ValidatorPhase ->
   Bool ->
-  CTree ValidatorStage ->
+  CTree ValidatorPhase ->
   Evidenced ValidationTrace
 validateBool cddl b (CTreeE (VRuleRef n)) =
   dereferenceAndValidate cddl n $ validateBool cddl b
-validateBool _ b (CTreeE (VValidator v _)) = runCustomValidator (TBool b) v
+validateBool cddl b (CTreeE (VValidator v _)) = runCustomValidator cddl (S $ TBool b) v
 validateBool cddl b rule =
   case rule of
     -- a = any
@@ -508,10 +541,10 @@ validateBool cddl b rule =
 -- | Controls for `Bool`
 controlBool ::
   HasCallStack =>
-  CTreeRoot ValidatorStage ->
+  CTreeRoot ValidatorPhase ->
   Bool ->
   CtlOp ->
-  CTree ValidatorStage ->
+  CTree ValidatorPhase ->
   Bool
 controlBool cddl b op (CTreeE (VRuleRef n)) =
   controlBool cddl b op $ dereference cddl n
@@ -530,13 +563,13 @@ controlBool _ _ op _ = error $ "Not yet implemented for bool: " <> show op
 
 -- | Validating a `TSimple`. It is unclear if this is used for anything else than `undefined`.
 validateSimple ::
-  CTreeRoot ValidatorStage ->
+  CTreeRoot ValidatorPhase ->
   Word8 ->
-  CTree ValidatorStage ->
+  CTree ValidatorPhase ->
   Evidenced ValidationTrace
 validateSimple cddl i (CTreeE (VRuleRef n)) =
   dereferenceAndValidate cddl n $ validateSimple cddl i
-validateSimple _ i (CTreeE (VValidator v _)) = runCustomValidator (TSimple i) v
+validateSimple cddl i (CTreeE (VValidator v _)) = runCustomValidator cddl (S $ TSimple i) v
 validateSimple cddl 23 rule =
   case rule of
     -- a = any
@@ -552,10 +585,10 @@ validateSimple _ n _ = error $ "Found simple different to 23! please report this
 -- Null/nil
 
 -- | Validating nil
-validateNull :: CTreeRoot ValidatorStage -> CTree ValidatorStage -> Evidenced ValidationTrace
+validateNull :: CTreeRoot ValidatorPhase -> CTree ValidatorPhase -> Evidenced ValidationTrace
 validateNull cddl (CTreeE (VRuleRef n)) =
   dereferenceAndValidate cddl n $ validateNull cddl
-validateNull _ (CTreeE (VValidator v _)) = runCustomValidator TNull v
+validateNull cddl (CTreeE (VValidator v _)) = runCustomValidator cddl (S TNull) v
 validateNull cddl rule =
   case rule of
     -- a = any
@@ -570,10 +603,10 @@ validateNull cddl rule =
 
 -- | Validating a byte sequence
 validateBytes ::
-  CTreeRoot ValidatorStage -> BS.ByteString -> CTree ValidatorStage -> Evidenced ValidationTrace
+  CTreeRoot ValidatorPhase -> BS.ByteString -> CTree ValidatorPhase -> Evidenced ValidationTrace
 validateBytes cddl bs (CTreeE (VRuleRef n)) =
   dereferenceAndValidate cddl n $ validateBytes cddl bs
-validateBytes _ bs (CTreeE (VValidator v _)) = runCustomValidator (TBytes bs) v
+validateBytes cddl bs (CTreeE (VValidator v _)) = runCustomValidator cddl (S $ TBytes bs) v
 validateBytes cddl bs rule =
   case rule of
     -- a = any
@@ -591,10 +624,10 @@ validateBytes cddl bs rule =
 -- | Controls for byte strings
 controlBytes ::
   HasCallStack =>
-  CTreeRoot ValidatorStage ->
+  CTreeRoot ValidatorPhase ->
   BS.ByteString ->
   CtlOp ->
-  CTree ValidatorStage ->
+  CTree ValidatorPhase ->
   Bool
 controlBytes cddl bs op (CTreeE (VRuleRef n)) =
   controlBytes cddl bs op $ dereference cddl n
@@ -653,13 +686,13 @@ controlBytes _ _ op _ = error $ "Not yet implmented for bytes: " <> show op
 
 -- | Validating text strings
 validateText ::
-  CTreeRoot ValidatorStage ->
+  CTreeRoot ValidatorPhase ->
   T.Text ->
-  CTree ValidatorStage ->
+  CTree ValidatorPhase ->
   Evidenced ValidationTrace
 validateText cddl txt (CTreeE (VRuleRef n)) =
   dereferenceAndValidate cddl n $ validateText cddl txt
-validateText _ txt (CTreeE (VValidator v _)) = runCustomValidator (TString txt) v
+validateText cddl txt (CTreeE (VValidator v _)) = runCustomValidator cddl (S $ TString txt) v
 validateText cddl txt rule =
   case rule of
     -- a = any
@@ -677,10 +710,10 @@ validateText cddl txt rule =
 -- | Controls for text strings
 controlText ::
   HasCallStack =>
-  CTreeRoot ValidatorStage ->
+  CTreeRoot ValidatorPhase ->
   T.Text ->
   CtlOp ->
-  CTree ValidatorStage ->
+  CTree ValidatorPhase ->
   Bool
 controlText cddl bs op (CTreeE (VRuleRef n)) =
   controlText cddl bs op $ dereference cddl n
@@ -715,10 +748,10 @@ controlText _ _ op _ = error $ "Not yet implemented for text: " <> show op
 
 -- | Validating a `TTagged`
 validateTagged ::
-  CTreeRoot ValidatorStage -> Word64 -> Term -> CTree ValidatorStage -> Evidenced ValidationTrace
+  CTreeRoot ValidatorPhase -> Word64 -> Term -> CTree ValidatorPhase -> Evidenced ValidationTrace
 validateTagged cddl tag term (CTreeE (VRuleRef n)) =
   dereferenceAndValidate cddl n $ validateTagged cddl tag term
-validateTagged _ tag term (CTreeE (VValidator v _)) = runCustomValidator (TTagged tag term) v
+validateTagged cddl tag term (CTreeE (VValidator v _)) = runCustomValidator cddl (S $ TTagged tag term) v
 validateTagged cddl tag term rule =
   case rule of
     Postlude PTAny -> terminal rule
@@ -766,13 +799,13 @@ decrementBounds (lb, ub) = OIBounded (clampedPred <$> lb) (clampedPred <$> ub)
     clampedPred x = pred x
 
 validateList ::
-  CTreeRoot ValidatorStage ->
+  CTreeRoot ValidatorPhase ->
   [Term] ->
-  CTree ValidatorStage ->
+  CTree ValidatorPhase ->
   Evidenced ValidationTrace
 validateList cddl terms (CTreeE (VRuleRef n)) =
   dereferenceAndValidate cddl n $ validateList cddl terms
-validateList _ terms (CTreeE (VValidator v _)) = runCustomValidator (TList terms) v
+validateList cddl terms (CTreeE (VValidator v _)) = runCustomValidator cddl (S $ TList terms) v
 validateList cddl terms rule =
   case rule of
     Postlude PTAny -> terminal rule
@@ -797,10 +830,10 @@ validateList cddl terms rule =
     _ -> unapplicable rule
   where
     validate ::
-      ([CTree ValidatorStage] -> [Term] -> Evidenced ListValidationTrace) ->
-      [CTree ValidatorStage] ->
+      ([CTree ValidatorPhase] -> [Term] -> Evidenced ListValidationTrace) ->
+      [CTree ValidatorPhase] ->
       [Term] ->
-      [CTree ValidatorStage] ->
+      [CTree ValidatorPhase] ->
       (Evidenced ListValidationTrace, [Term])
     validate f skipped tss [] = (f skipped tss, tss)
     validate f skipped [] (r : rs)
@@ -852,13 +885,13 @@ validateList cddl terms rule =
 
 validateMap ::
   HasCallStack =>
-  CTreeRoot ValidatorStage ->
+  CTreeRoot ValidatorPhase ->
   [(Term, Term)] ->
-  CTree ValidatorStage ->
+  CTree ValidatorPhase ->
   Evidenced ValidationTrace
 validateMap cddl terms (CTreeE (VRuleRef n)) =
   dereferenceAndValidate cddl n $ validateMap cddl terms
-validateMap _ terms (CTreeE (VValidator v _)) = runCustomValidator (TMap terms) v
+validateMap cddl terms (CTreeE (VValidator v _)) = runCustomValidator cddl (S $ TMap terms) v
 validateMap cddl terms rule =
   case rule of
     Postlude PTAny -> terminal rule
@@ -867,7 +900,7 @@ validateMap cddl terms rule =
     _ -> unapplicable rule
   where
     validate ::
-      [CTree ValidatorStage] -> [(Term, Term)] -> [CTree ValidatorStage] -> Evidenced MapValidationTrace
+      [CTree ValidatorPhase] -> [(Term, Term)] -> [CTree ValidatorPhase] -> Evidenced MapValidationTrace
     validate _ [] [] = evidence MapValidationDone
     validate exhausted (kv : _) [] =
       let
@@ -930,12 +963,12 @@ validateMap cddl terms rule =
 -- Choices
 
 validateChoice ::
-  (CTree ValidatorStage -> Evidenced ValidationTrace) ->
-  NE.NonEmpty (CTree ValidatorStage) ->
+  (CTree ValidatorPhase -> Evidenced ValidationTrace) ->
+  NE.NonEmpty (CTree ValidatorPhase) ->
   Evidenced ValidationTrace
 validateChoice v = go 0
   where
-    go :: Int -> NE.NonEmpty (CTree ValidatorStage) -> Evidenced ValidationTrace
+    go :: Int -> NE.NonEmpty (CTree ValidatorPhase) -> Evidenced ValidationTrace
     go i (choice NE.:| xs) = do
       case v choice of
         Evidenced SValid trc -> evidence $ ChoiceBranch i trc
@@ -948,9 +981,9 @@ validateChoice v = go 0
 
 -- | Validate both rules
 ctrlAnd ::
-  (CTree ValidatorStage -> Evidenced ValidationTrace) ->
-  CTree ValidatorStage ->
-  CTree ValidatorStage ->
+  (CTree ValidatorPhase -> Evidenced ValidationTrace) ->
+  CTree ValidatorPhase ->
+  CTree ValidatorPhase ->
   Evidenced ValidationTrace
 ctrlAnd v tgt ctrl =
   case v tgt of
@@ -959,11 +992,11 @@ ctrlAnd v tgt ctrl =
 
 -- | Dispatch to the appropriate control
 ctrlDispatch ::
-  (CTree ValidatorStage -> Evidenced ValidationTrace) ->
+  (CTree ValidatorPhase -> Evidenced ValidationTrace) ->
   CtlOp ->
-  CTree ValidatorStage ->
-  CTree ValidatorStage ->
-  (CtlOp -> CTree ValidatorStage -> Bool) ->
+  CTree ValidatorPhase ->
+  CTree ValidatorPhase ->
+  (CtlOp -> CTree ValidatorPhase -> Bool) ->
   Evidenced ValidationTrace
 ctrlDispatch v And tgt ctrl _ = ctrlAnd v tgt ctrl
 ctrlDispatch v Within tgt ctrl _ = ctrlAnd v tgt ctrl
@@ -979,7 +1012,7 @@ ctrlDispatch v op tgt ctrl vctrl =
 --------------------------------------------------------------------------------
 -- Bits control
 
-getIndicesOfChoice :: CTreeRoot ValidatorStage -> NE.NonEmpty (CTree ValidatorStage) -> [Word64]
+getIndicesOfChoice :: CTreeRoot ValidatorPhase -> NE.NonEmpty (CTree ValidatorPhase) -> [Word64]
 getIndicesOfChoice cddl = concatMap go
   where
     go = \case
@@ -1000,7 +1033,7 @@ getIndicesOfChoice cddl = concatMap go
             <> showSimple somethingElse
 
 getIndicesOfRange ::
-  CTreeRoot ValidatorStage -> CTree ValidatorStage -> CTree ValidatorStage -> RangeBound -> [Word64]
+  CTreeRoot ValidatorPhase -> CTree ValidatorPhase -> CTree ValidatorPhase -> RangeBound -> [Word64]
 getIndicesOfRange cddl (CTreeE (VRuleRef n)) tt incl =
   dereference cddl n & \ff -> getIndicesOfRange cddl ff tt incl
 getIndicesOfRange cddl ff (CTreeE (VRuleRef n)) incl =
@@ -1015,7 +1048,7 @@ getIndicesOfRange _ ff tt incl =
         rng = [ff' .. tt']
     (lo, hi) -> error $ "Malformed range in .bits: (" <> showSimple lo <> ", " <> showSimple hi <> ")"
 
-getIndicesOfEnum :: CTreeRoot ValidatorStage -> CTree ValidatorStage -> [Word64]
+getIndicesOfEnum :: CTreeRoot ValidatorPhase -> CTree ValidatorPhase -> [Word64]
 getIndicesOfEnum cddl (CTreeE (VRuleRef n)) = getIndicesOfEnum cddl $ dereference cddl n
 getIndicesOfEnum cddl g =
   case g of
@@ -1023,18 +1056,18 @@ getIndicesOfEnum cddl g =
     somethingElse -> error $ "Malformed enum in .bits: " <> showSimple somethingElse
 
 dereference ::
-  CTreeRoot ValidatorStage ->
+  CTreeRoot ValidatorPhase ->
   Name ->
-  CTree ValidatorStage
+  CTree ValidatorPhase
 dereference (CTreeRoot m) n =
   case Map.lookup n m of
     Just r -> r
     Nothing -> error $ "Nonexistent rule referenced: " <> T.unpack (unName n)
 
 dereferenceAndValidate ::
-  CTreeRoot ValidatorStage ->
+  CTreeRoot ValidatorPhase ->
   Name ->
-  (CTree ValidatorStage -> Evidenced ValidationTrace) ->
+  (CTree ValidatorPhase -> Evidenced ValidationTrace) ->
   Evidenced ValidationTrace
 dereferenceAndValidate cddl n f =
   mapTrace (ReferenceRule n) . f $ dereference cddl n

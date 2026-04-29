@@ -67,8 +67,9 @@ import Data.List (foldl')
 #endif
 import Codec.CBOR.Cuddle.CDDL.CBORGenerator (
   CBORGen,
-  CBORValidator,
   GenPhase,
+  TermValidator,
+  ValidatorPhase,
   WrappedTerm,
   XXCTree (..),
  )
@@ -98,7 +99,7 @@ newtype PartialCTreeRoot i = PartialCTreeRoot (Map.Map Name (ProvidedParameters 
 data CDDLMapEntry = CDDLMapEntry
   { cmeProvidedParameters :: ProvidedParameters (TypeOrGroup CTreePhase)
   , cmeCustomGenerator :: Maybe (CBORGen WrappedTerm)
-  , cmeCustomValidator :: Maybe CBORValidator
+  , cmeCustomValidator :: Maybe TermValidator
   }
   deriving (Generic)
 
@@ -160,7 +161,7 @@ data instance XXCTree OrReferenced
   = -- | Reference to another node with possible generic arguments supplied
     OrRef Name [CTree OrReferenced]
   | OGenerator (CBORGen WrappedTerm) (CTree OrReferenced)
-  | OValidator CBORValidator (CTree OrReferenced)
+  | OValidator TermValidator (CTree OrReferenced)
 
 type data OrReferencedSimple
 
@@ -170,7 +171,7 @@ data instance XXCTree OrReferencedSimple = DGOrRef Name [CTree OrReferencedSimpl
 instance IndexMappable CTree OrReferenced OrReferencedSimple where
   mapIndex = foldCTree mapExt mapIndex
     where
-      mapExt (OrRef n xs) = CTreeE . DGOrRef n $ mapIndex <$> xs
+      mapExt (OrRef n xs) = CTreeE $ DGOrRef n (mapIndex <$> xs)
       mapExt (OGenerator _ x) = mapIndex x
       mapExt (OValidator _ x) = mapIndex x
 
@@ -178,10 +179,20 @@ instance IndexMappable CTree MonoReferenced GenPhase where
   mapIndex = foldCTree mapExt mapIndex
     where
       mapExt (MRuleRef n) = CTreeE $ GenRef n
-      mapExt (MGenerator g x) = CTreeE . GenGenerator g $ mapIndex x
+      mapExt (MGenerator g x) = CTreeE $ GenGenerator g (mapIndex x)
       mapExt (MValidator _ x) = mapIndex x
 
 instance IndexMappable CTreeRoot MonoReferenced GenPhase where
+  mapIndex (CTreeRoot m) = CTreeRoot $ mapIndex <$> m
+
+instance IndexMappable CTree MonoReferenced ValidatorPhase where
+  mapIndex = foldCTree mapExt mapIndex
+    where
+      mapExt (MRuleRef n) = CTreeE $ VRuleRef n
+      mapExt (MGenerator _ x) = mapIndex x
+      mapExt (MValidator v x) = CTreeE $ VValidator v (mapIndex x)
+
+instance IndexMappable CTreeRoot MonoReferenced ValidatorPhase where
   mapIndex (CTreeRoot m) = CTreeRoot $ mapIndex <$> m
 
 -- | Build a CTree incorporating references.
@@ -395,7 +406,7 @@ instance Hashable (CTree.Node i) => Hashable (DistRef i)
 data instance XXCTree DistReferenced
   = DRef (DistRef DistReferenced)
   | DGenerator (CBORGen WrappedTerm) (CTree DistReferenced)
-  | DValidator CBORValidator (CTree DistReferenced)
+  | DValidator TermValidator (CTree DistReferenced)
 
 type data DistReferencedNoGen
 
@@ -450,7 +461,7 @@ type data MonoReferenced
 data instance XXCTree MonoReferenced
   = MRuleRef Name
   | MGenerator (CBORGen WrappedTerm) (CTree MonoReferenced)
-  | MValidator CBORValidator (CTree MonoReferenced)
+  | MValidator TermValidator (CTree MonoReferenced)
 
 type MonoEnv = BindingEnv DistReferenced MonoReferenced
 

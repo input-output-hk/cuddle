@@ -9,6 +9,16 @@
 * Hide the `Comment` constructor; use `toComment` or `commentLine` smart constructors instead
 * Add `appendComment` for raw comment concatenation in parser combinators
 * Export `GRef` constructor
+* Custom generators and validators on generic rules can now refer to their
+  generic argument: looking up a `GRef` resolves to the type bound at the
+  enclosing rule
+* Add `generateFromGRef`
+* Add `validateFromName` and `validateFromGRef`
+* Move `GRef` to `Codec.CBOR.Cuddle.CDDL`
+* Add `MonadCddl`
+* `runCBORValidator` now takes `CTreeRoot ValidatorPhase` instead of `ValidateEnv`
+* Split `GenEnv` into a user-supplied `GenConfig` and a runtime `GenEnv`. `runCBORGen` now takes a `GenConfig`.
+* Rename `ValidatorStage` to `ValidatorPhase`
 
 ## 1.6.0.0
 

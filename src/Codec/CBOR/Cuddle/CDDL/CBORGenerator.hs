@@ -2,38 +2,58 @@
 {-# LANGUAGE TypeFamilies #-}
 
 module Codec.CBOR.Cuddle.CDDL.CBORGenerator (
-  CBORGen (..),
+  MonadCddl (..),
+  GenPhase,
+  ValidatorPhase,
+
+  -- * Custom generators
+  CBORGen,
   GenEnv (..),
   HasGenerator (..),
   WrappedTerm (..),
-  CBORValidator (..),
-  HasValidator (..),
-  GenPhase,
   XXCTree (..),
-  CustomValidatorResult (..),
-  liftAntiGen,
   runCBORGen,
-  lookupCddl,
+  liftAntiGen,
   withAntiGen,
   withTwiddle,
+
+  -- * Custom validators
+  Validator,
+  TermValidator,
+  CustomValidatorResult (..),
+  ValidateEnv (..),
+  HasValidator (..),
+  runValidator,
 ) where
 
 import Codec.CBOR.Cuddle.CDDL (Name)
 import Codec.CBOR.Cuddle.CDDL.CTree (CTree, CTreeRoot (..), XXCTree)
 import Codec.CBOR.Term (Term)
 import Control.Monad.Reader (MonadReader (..), ReaderT (..), asks, mapReaderT)
+import Data.Kind (Type)
 import Data.Map.Strict qualified as Map
 import Data.Text (Text)
+import Data.Text qualified as T
 import GHC.Generics (Generic)
 import Optics.Core (Lens')
 import Test.AntiGen (AntiGen)
 import Test.QuickCheck.GenT (MonadGen (..))
 
+class MonadCddl m where
+  type Phase m :: Type
+
+  lookupCddl :: Name -> m (Maybe (CTree (Phase m)))
+
 type data GenPhase
+type data ValidatorPhase
+
+data instance XXCTree ValidatorPhase
+  = VRuleRef Name
+  | VValidator (WrappedTerm -> Validator ()) (CTree ValidatorPhase)
 
 data GenEnv = GenEnv
   { geRoot :: CTreeRoot GenPhase
-  , geTwiddle :: Bool
+  , geTwiddle :: !Bool
   }
   deriving (Generic)
 
@@ -54,10 +74,12 @@ liftAntiGen m = CBORGen . ReaderT $ const m
 runCBORGen :: GenEnv -> CBORGen a -> AntiGen a
 runCBORGen env (CBORGen m) = runReaderT m env
 
-lookupCddl :: Name -> CBORGen (Maybe (CTree GenPhase))
-lookupCddl n = do
-  CTreeRoot root <- asks geRoot
-  pure $ Map.lookup n root
+instance MonadCddl CBORGen where
+  type Phase CBORGen = GenPhase
+
+  lookupCddl n = do
+    CTreeRoot root <- asks geRoot
+    pure $ Map.lookup n root
 
 withAntiGen :: (AntiGen a -> AntiGen b) -> CBORGen a -> CBORGen b
 withAntiGen f (CBORGen m) = CBORGen $ ReaderT $ \env -> f (runReaderT m env)
@@ -82,11 +104,32 @@ class HasGenerator a where
   generatorL :: Lens' a (Maybe (CBORGen WrappedTerm))
 
 class HasValidator a where
-  validatorL :: Lens' a (Maybe CBORValidator)
+  validatorL :: Lens' a (Maybe (WrappedTerm -> Validator ()))
 
 data CustomValidatorResult
   = CustomValidatorSuccess
   | CustomValidatorFailure Text
   deriving (Generic, Show, Eq)
 
-newtype CBORValidator = CBORValidator (Term -> CustomValidatorResult)
+newtype ValidateEnv = ValidateEnv {veRoot :: CTreeRoot ValidatorPhase}
+
+newtype Validator a = Validator (ReaderT ValidateEnv (Either Text) a)
+  deriving (Functor, Applicative, Monad, MonadReader ValidateEnv)
+
+type TermValidator = WrappedTerm -> Validator ()
+
+instance MonadCddl Validator where
+  type Phase Validator = ValidatorPhase
+
+  lookupCddl n = do
+    CTreeRoot root <- asks veRoot
+    pure $ Map.lookup n root
+
+instance MonadFail Validator where
+  fail msg = Validator . ReaderT $ \_ -> Left $ T.pack msg
+
+runValidator ::
+  Validator () -> CTreeRoot ValidatorPhase -> CustomValidatorResult
+runValidator (Validator m) cddl =
+  either CustomValidatorFailure (const CustomValidatorSuccess) $
+    runReaderT m ValidateEnv {veRoot = cddl}
