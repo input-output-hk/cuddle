@@ -1,5 +1,11 @@
 # Changelog for `cuddle`
 
+## 1.7.0.0
+
+* Fix `--no-twiddle` argument
+* Add autocompletion hints
+* Add footer, improve output format failure message
+
 ## 1.6.0.0
 
 * Remove `example` executable
