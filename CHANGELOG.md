@@ -1,5 +1,17 @@
 # Changelog for `cuddle`
 
+## 1.7.0.0
+
+* Custom generators and validators on generic rules can now refer to their
+  generic argument: looking up a `GRef` resolves to the type bound at the
+  enclosing rule
+* Add `generateFromGRef`
+* Add `validateFromName` and `validateFromGRef`
+* Move `GRef` to `Codec.CBOR.Cuddle.CDDL`
+* Add `MonadCddl`
+* `runCBORValidator` now takes `CTreeRoot ValidatorPhase` instead of `ValidateEnv`
+* Split `GenEnv` into a user-supplied `GenConfig` and a runtime `GenEnv`. `runCBORGen` now takes a `GenConfig`.
+
 ## 1.6.0.0
 
 * Remove `example` executable

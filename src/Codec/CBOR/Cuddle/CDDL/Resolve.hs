@@ -69,8 +69,11 @@ import Codec.CBOR.Cuddle.CDDL.CBORGenerator (
   CBORGen,
   CBORValidator,
   GenPhase,
+  ValidatorPhase,
   WrappedTerm,
   XXCTree (..),
+  withLocalGenBindings,
+  withLocalValidateBindings,
  )
 import Codec.CBOR.Cuddle.CDDL.CTreePhase (CTreePhase, XRule (..))
 import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
@@ -79,6 +82,8 @@ import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import GHC.Generics (Generic)
 import Optics.Core
+import Prettyprinter (Pretty (..), encloseSep, layoutCompact)
+import Prettyprinter.Render.Text (renderStrict)
 
 data ProvidedParameters a = ProvidedParameters
   { parameters :: [Name]
@@ -98,7 +103,7 @@ newtype PartialCTreeRoot i = PartialCTreeRoot (Map.Map Name (ProvidedParameters 
 data CDDLMapEntry = CDDLMapEntry
   { cmeProvidedParameters :: ProvidedParameters (TypeOrGroup CTreePhase)
   , cmeCustomGenerator :: Maybe (CBORGen WrappedTerm)
-  , cmeCustomValidator :: Maybe CBORValidator
+  , cmeCustomValidator :: Maybe (WrappedTerm -> CBORValidator ())
   }
   deriving (Generic)
 
@@ -160,7 +165,7 @@ data instance XXCTree OrReferenced
   = -- | Reference to another node with possible generic arguments supplied
     OrRef Name [CTree OrReferenced]
   | OGenerator (CBORGen WrappedTerm) (CTree OrReferenced)
-  | OValidator CBORValidator (CTree OrReferenced)
+  | OValidator (WrappedTerm -> CBORValidator ()) (CTree OrReferenced)
 
 type data OrReferencedSimple
 
@@ -182,6 +187,16 @@ instance IndexMappable CTree MonoReferenced GenPhase where
       mapExt (MValidator _ x) = mapIndex x
 
 instance IndexMappable CTreeRoot MonoReferenced GenPhase where
+  mapIndex (CTreeRoot m) = CTreeRoot $ mapIndex <$> m
+
+instance IndexMappable CTree MonoReferenced ValidatorPhase where
+  mapIndex = foldCTree mapExt mapIndex
+    where
+      mapExt (MRuleRef n) = CTreeE $ VRuleRef n
+      mapExt (MGenerator _ x) = mapIndex x
+      mapExt (MValidator v x) = CTreeE . VValidator v $ mapIndex x
+
+instance IndexMappable CTreeRoot MonoReferenced ValidatorPhase where
   mapIndex (CTreeRoot m) = CTreeRoot $ mapIndex <$> m
 
 -- | Build a CTree incorporating references.
@@ -392,15 +407,20 @@ deriving instance Show (CTree.Node i) => Show (DistRef i)
 
 instance Hashable (CTree.Node i) => Hashable (DistRef i)
 
+instance Pretty (XXCTree i) => Pretty (DistRef i) where
+  pretty (GenericRef n) = pretty n
+  pretty (RuleRef rule []) = pretty rule
+  pretty (RuleRef rule args) = pretty rule <> encloseSep "<" ">" "," (pretty <$> args)
+
 data instance XXCTree DistReferenced
   = DRef (DistRef DistReferenced)
   | DGenerator (CBORGen WrappedTerm) (CTree DistReferenced)
-  | DValidator CBORValidator (CTree DistReferenced)
+  | DValidator (WrappedTerm -> CBORValidator ()) (CTree DistReferenced)
 
 type data DistReferencedNoGen
 
 newtype instance XXCTree DistReferencedNoGen = DHRef (DistRef DistReferencedNoGen)
-  deriving (Eq, Hashable)
+  deriving (Eq, Hashable, Show, Pretty)
 
 resolveRef ::
   BindingEnv OrReferenced OrReferenced ->
@@ -450,7 +470,7 @@ type data MonoReferenced
 data instance XXCTree MonoReferenced
   = MRuleRef Name
   | MGenerator (CBORGen WrappedTerm) (CTree MonoReferenced)
-  | MValidator CBORValidator (CTree MonoReferenced)
+  | MValidator (WrappedTerm -> CBORValidator ()) (CTree MonoReferenced)
 
 type MonoEnv = BindingEnv DistReferenced MonoReferenced
 
@@ -540,10 +560,11 @@ throwNR = throw @"nameResolution"
 -- | Synthesize a monomorphic rule definition, returning the name
 synthMono :: Name -> [CTree DistReferenced] -> MonoM Name
 synthMono origName args =
-  let dropGenerator = fmap $ mapIndex @_ @_ @DistReferencedNoGen
-      fresh =
-        -- % is not a valid CBOR name, so this should avoid conflict
-        origName <> "%" <> Name (T.pack (show . hash $ dropGenerator args))
+  let dropGenerator = fmap $ mapIndex @_ @DistReferenced @DistReferencedNoGen
+      argsName = Name (T.intercalate "," $ renderStrict . layoutCompact . pretty <$> dropGenerator args)
+      -- We use % to mark a monomorphised generic rule, '%' is not allowed in
+      -- CDDL names, so there should be no conflicts
+      fresh = "%" <> origName <> "<" <> argsName <> ">"
    in do
         -- Lookup the original name in the global bindings
         globalBinds <- ask @"global"
@@ -573,8 +594,18 @@ resolveGenericRef (DRef (GenericRef n)) = do
   case Map.lookup n localBinds of
     Just node -> pure node
     Nothing -> throwNR $ UnboundReference n
-resolveGenericRef (DGenerator g x) = CTreeE . MGenerator g <$> resolveGenericCTree x
-resolveGenericRef (DValidator v x) = CTreeE . MValidator v <$> resolveGenericCTree x
+resolveGenericRef (DGenerator g x) = do
+  binds <- ask @"local"
+  body <- resolveGenericCTree x
+  let bindsGen = fmap (mapIndex @CTree @MonoReferenced @GenPhase) binds
+      g' = withLocalGenBindings bindsGen g
+  pure . CTreeE $ MGenerator g' body
+resolveGenericRef (DValidator v x) = do
+  binds <- ask @"local"
+  body <- resolveGenericCTree x
+  let bindsVal = fmap (mapIndex @CTree @MonoReferenced @ValidatorPhase) binds
+      v' wt = withLocalValidateBindings bindsVal (v wt)
+  pure . CTreeE $ MValidator v' body
 
 resolveGenericCTree ::
   CTree DistReferenced ->

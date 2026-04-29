@@ -1,11 +1,13 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module Codec.CBOR.Cuddle.CDDL.CTree where
 
-import Codec.CBOR.Cuddle.CDDL (Name, OccurrenceIndicator, RangeBound, Value)
+import Codec.CBOR.Cuddle.CDDL (Name, OccurrenceIndicator (..), RangeBound (..), Value)
 import Codec.CBOR.Cuddle.CDDL.CtlOp
 import Control.Monad.Identity (Identity (..))
 import Data.Hashable (Hashable)

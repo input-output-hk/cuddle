@@ -22,7 +22,12 @@ import Codec.CBOR.Cuddle.CBOR.Validator.Trace (
   prettyValidationTrace,
  )
 import Codec.CBOR.Cuddle.CDDL (Name (..))
-import Codec.CBOR.Cuddle.CDDL.CBORGenerator (CustomValidatorResult (..), GenEnv (..), runCBORGen)
+import Codec.CBOR.Cuddle.CDDL.CBORGenerator (
+  CBORValidator,
+  GenConfig (..),
+  WrappedTerm (..),
+  runCBORGen,
+ )
 import Codec.CBOR.Cuddle.CDDL.CTree (CTreeRoot (..))
 import Codec.CBOR.Cuddle.CDDL.CTree qualified as CTree
 import Codec.CBOR.Cuddle.CDDL.Postlude (appendPostlude)
@@ -99,12 +104,12 @@ genAndValidateRule :: String -> Name -> CTreeRoot MonoReferenced -> Spec
 genAndValidateRule description name resolvedCddl =
   prop description $ do
     let
-      genEnv =
-        GenEnv
-          { geRoot = mapIndex resolvedCddl
-          , geTwiddle = True
+      genCfg =
+        GenConfig
+          { gcRoot = mapIndex resolvedCddl
+          , gcTwiddle = True
           }
-    cborTerm <- runAntiGen . runCBORGen genEnv $ generateFromName name
+    cborTerm <- runAntiGen . runCBORGen genCfg $ generateFromName name
     let
       generatedCbor = toStrictByteString $ encodeTerm cborTerm
       res = validateCBOR generatedCbor name (mapIndex resolvedCddl)
@@ -281,15 +286,15 @@ expectInvalid (Evidenced SValid t) =
       <> renderStrict (layoutPretty defaultLayoutOptions $ prettyValidationTrace defaultTraceOptions t)
 expectInvalid _ = pure ()
 
-stringValidator :: Term -> CustomValidatorResult
-stringValidator (TString _) = CustomValidatorSuccess
-stringValidator (TStringI _) = CustomValidatorSuccess
-stringValidator t = CustomValidatorFailure $ "Expected a string, got\n" <> T.pack (show t)
+stringValidator :: WrappedTerm -> CBORValidator ()
+stringValidator (S (TString _)) = pure ()
+stringValidator (S (TStringI _)) = pure ()
+stringValidator t = fail $ "Expected a string, got\n" <> show t
 
-bytesValidator :: Term -> CustomValidatorResult
-bytesValidator (TBytes _) = CustomValidatorSuccess
-bytesValidator (TBytesI _) = CustomValidatorSuccess
-bytesValidator t = CustomValidatorFailure $ "Expected bytes, got\n" <> T.pack (show t)
+bytesValidator :: WrappedTerm -> CBORValidator ()
+bytesValidator (S (TBytes _)) = pure ()
+bytesValidator (S (TBytesI _)) = pure ()
+bytesValidator t = fail $ "Expected bytes, got\n" <> show t
 
 spec :: Spec
 spec = describe "Validator" $ do

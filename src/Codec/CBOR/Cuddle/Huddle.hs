@@ -91,8 +91,6 @@ module Codec.CBOR.Cuddle.Huddle (
   callToDef,
 
   -- * Generators
-  withAntiGen,
-  withGenerator,
   withCBORGen,
 
   -- * Validators
@@ -109,25 +107,26 @@ module Codec.CBOR.Cuddle.Huddle (
 )
 where
 
-import Codec.CBOR.Cuddle.CDDL (CDDL, GenericParameter (..), HasName (..), Name (..), XRule)
+import Codec.CBOR.Cuddle.CDDL (
+  CDDL,
+  GRef (..),
+  GenericParameter (..),
+  HasName (..),
+  Name (..),
+  XRule,
+ )
 import Codec.CBOR.Cuddle.CDDL qualified as C
 import Codec.CBOR.Cuddle.CDDL.CBORGenerator (
-  CBORGen (..),
-  CBORValidator (..),
-  CustomValidatorResult,
-  GenEnv (..),
-  GenPhase,
+  CBORGen,
+  CBORValidator,
   HasGenerator (..),
   HasValidator (..),
   WrappedTerm,
  )
-import Codec.CBOR.Cuddle.CDDL.CTree (CTreeRoot)
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
 import Codec.CBOR.Cuddle.Comments (Comment (..), HasComment (..))
 import Codec.CBOR.Cuddle.Comments qualified as C
-import Codec.CBOR.Term (Term)
 import Control.Monad (when)
-import Control.Monad.Reader (ReaderT (..))
 import Control.Monad.State (MonadState (get), State, execState, modify)
 import Data.ByteString (ByteString)
 import Data.ByteString.Base16 qualified as Base16
@@ -148,9 +147,6 @@ import GHC.Exts (IsList (Item, fromList, toList))
 import GHC.Generics (Generic)
 import Optics.Core (lens, view, (%), (%~), (&))
 import Optics.Core qualified as L
-import Test.AntiGen (AntiGen)
-import Test.QuickCheck.Gen (Gen)
-import Test.QuickCheck.GenT (MonadGen (liftGen))
 import Prelude hiding ((/))
 
 type data HuddleStage
@@ -164,7 +160,7 @@ newtype instance C.XCddl HuddleStage = HuddleXCddl [C.Comment]
 data instance C.XRule HuddleStage = HuddleXRule
   { hxrComment :: C.Comment
   , hxrGenerator :: Maybe (CBORGen WrappedTerm)
-  , hxrValidator :: Maybe CBORValidator
+  , hxrValidator :: Maybe (WrappedTerm -> CBORValidator ())
   }
   deriving (Generic)
 
@@ -1005,9 +1001,6 @@ tag mi = Tagged (Just mi)
 -- Generics
 --------------------------------------------------------------------------------
 
-newtype GRef = GRef T.Text
-  deriving (Show)
-
 freshName :: Int -> GRef
 freshName ix =
   GRef $
@@ -1377,23 +1370,10 @@ toCDDL' HuddleConfig {..} hdl =
           C.GenericParameters $
             fmap (\(GRef t) -> GenericParameter (C.Name t) $ HuddleXTerm mempty) (args gr)
 
--- | Use a custom `QuickCheck` generator to generate the term. Will override
--- the generator passed via `withAntiGen`
-withGenerator :: HasGenerator a => (CTreeRoot GenPhase -> Gen WrappedTerm) -> a -> a
-withGenerator f = L.set generatorL (Just . CBORGen . ReaderT $ \GenEnv {geRoot} -> liftGen $ f geRoot)
-{-# DEPRECATED withGenerator "Use withCBORGen instead" #-}
-
--- | Use a custom `AntiGen` generator to generate the term. Will override
--- the custom generator passed via `withGenerator`. The advantage of using
--- `AntiGen` generator is that it can also be used to generate negative examples.
-withAntiGen :: HasGenerator a => (CTreeRoot GenPhase -> AntiGen WrappedTerm) -> a -> a
-withAntiGen f = L.set generatorL (Just . CBORGen . ReaderT $ \GenEnv {geRoot} -> f geRoot)
-{-# DEPRECATED withAntiGen "Use withCBORGen instead" #-}
-
 -- | Use a custom `CBORGen` generator to generate the term. Will override
 -- the custom generator passed via `withGenerator`.
 withCBORGen :: HasGenerator a => CBORGen WrappedTerm -> a -> a
-withCBORGen gen = L.set generatorL (Just gen)
+withCBORGen gen = L.set generatorL $ Just gen
 
-withValidator :: HasValidator a => (Term -> CustomValidatorResult) -> a -> a
-withValidator p = L.set validatorL . Just $ CBORValidator p
+withValidator :: HasValidator a => (WrappedTerm -> CBORValidator ()) -> a -> a
+withValidator p = L.set validatorL $ Just p
