@@ -4,6 +4,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeData #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -19,7 +20,8 @@ module Codec.CBOR.Cuddle.Pretty (
 ) where
 
 import Codec.CBOR.Cuddle.CDDL
-import Codec.CBOR.Cuddle.CDDL.CTree (PTerm (..))
+import Codec.CBOR.Cuddle.CDDL.CTree (CTree, PTerm (..), XXCTree)
+import Codec.CBOR.Cuddle.CDDL.CTree qualified as CT
 import Codec.CBOR.Cuddle.CDDL.CtlOp (CtlOp)
 import Codec.CBOR.Cuddle.Comments (CollectComments (..), Comment (..), HasComment (..), unComment)
 import Codec.CBOR.Cuddle.Pretty.Columnar (
@@ -279,3 +281,26 @@ instance Pretty PTerm where
 renderCDDL :: LayoutOptions -> CDDL PrettyStage -> Text
 renderCDDL opts =
   PT.renderStrict . removeTrailingWhitespace . layoutPretty opts . pretty
+
+instance Pretty (XXCTree p) => Pretty (CTree p) where
+  pretty = \case
+    CT.Literal v -> pretty v
+    CT.Postlude v -> pretty v
+    CT.Range lo hi ClOpen -> pretty lo <+> "..." <+> pretty hi
+    CT.Range lo hi Closed -> pretty lo <+> ".." <+> pretty hi
+    CT.KV k v _ -> pretty k <+> "==>" <+> pretty v
+    CT.CTreeE x -> pretty x
+    CT.Occur v oi ->
+      case oi of
+        OIOptional -> "?" <+> pretty v
+        OIZeroOrMore -> "*" <+> pretty v
+        OIOneOrMore -> "+" <+> pretty v
+        OIBounded lo hi -> foldMap pretty lo <> "*" <> foldMap pretty hi <+> pretty v
+    CT.Map m -> encloseSep "{" "}" "," $ pretty <$> m
+    CT.Array e -> list $ pretty <$> e
+    CT.Choice c -> group . vsep . punctuate "//" $ pretty <$> toList c
+    CT.Group g -> tupled $ pretty <$> g
+    CT.Control op tgt ctl -> pretty tgt <+> pretty op <+> pretty ctl
+    CT.Enum e -> "&" <> pretty e
+    CT.Unwrap x -> "~" <> pretty x
+    CT.Tag t x -> "#6." <> pretty t <> "(" <> pretty x <> ")"

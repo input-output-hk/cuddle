@@ -33,7 +33,7 @@ module Codec.CBOR.Cuddle.CBOR.Validator.Trace (
   foldEvidenced,
 ) where
 
-import Codec.CBOR.Cuddle.CDDL (Name (..), OccurrenceIndicator (..), RangeBound (..))
+import Codec.CBOR.Cuddle.CDDL (Name (..))
 import Codec.CBOR.Cuddle.CDDL.CBORGenerator (ValidatorPhase)
 import Codec.CBOR.Cuddle.CDDL.CTree (CTree (..), CTreeRoot (..), Node, XXCTree, foldCTree)
 import Codec.CBOR.Cuddle.CDDL.CtlOp (CtlOp)
@@ -53,14 +53,9 @@ import Prettyprinter (
   Pretty (..),
   annotate,
   defaultLayoutOptions,
-  encloseSep,
-  group,
   hang,
   indent,
   layoutPretty,
-  list,
-  punctuate,
-  tupled,
   vsep,
   (<+>),
  )
@@ -74,6 +69,9 @@ type data ValidatorPhaseSimple
 
 newtype instance XXCTree ValidatorPhaseSimple = VRuleRefSimple Name
 
+instance Pretty (XXCTree ValidatorPhaseSimple) where
+  pretty (VRuleRefSimple n) = pretty n
+
 instance IndexMappable CTreeRoot ValidatorPhase ValidatorPhaseSimple where
   mapIndex (CTreeRoot m) = CTreeRoot $ mapIndex <$> m
 
@@ -82,29 +80,6 @@ instance IndexMappable CTree ValidatorPhase ValidatorPhaseSimple where
     where
       mapExt (VRuleRef n) = CTreeE $ VRuleRefSimple n
       mapExt (VValidator _ x) = mapIndex x
-
-instance Pretty (CTree ValidatorPhaseSimple) where
-  pretty = \case
-    Literal v -> pretty v
-    Postlude v -> pretty v
-    Range lo hi ClOpen -> pretty lo <+> "..." <+> pretty hi
-    Range lo hi Closed -> pretty lo <+> ".." <+> pretty hi
-    KV k v _ -> pretty k <+> "==>" <+> pretty v
-    CTreeE (VRuleRefSimple (Name n)) -> pretty n
-    Occur v oi ->
-      case oi of
-        OIOptional -> "?" <+> pretty v
-        OIZeroOrMore -> "*" <+> pretty v
-        OIOneOrMore -> "+" <+> pretty v
-        OIBounded lo hi -> foldMap pretty lo <> "*" <> foldMap pretty hi <+> pretty v
-    Map m -> encloseSep "{" "}" "," $ pretty <$> m
-    Array e -> list $ pretty <$> e
-    Choice c -> group . vsep . punctuate "//" $ pretty <$> toList c
-    Group g -> tupled $ pretty <$> g
-    Control op tgt ctl -> pretty tgt <+> pretty op <+> pretty ctl
-    Enum e -> "&" <> pretty e
-    Unwrap x -> "~" <> pretty x
-    Tag t x -> "#6." <> pretty t <> "(" <> pretty x <> ")"
 
 showSimple ::
   ( IndexMappable a ValidatorPhase ValidatorPhaseSimple

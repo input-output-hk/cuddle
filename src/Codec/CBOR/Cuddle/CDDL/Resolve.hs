@@ -80,6 +80,8 @@ import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import GHC.Generics (Generic)
 import Optics.Core
+import Prettyprinter (Pretty (..), encloseSep, layoutCompact)
+import Prettyprinter.Render.Text (renderStrict)
 
 data ProvidedParameters a = ProvidedParameters
   { parameters :: [Name]
@@ -403,6 +405,11 @@ deriving instance Show (CTree.Node i) => Show (DistRef i)
 
 instance Hashable (CTree.Node i) => Hashable (DistRef i)
 
+instance Pretty (XXCTree i) => Pretty (DistRef i) where
+  pretty (GenericRef n) = pretty n
+  pretty (RuleRef rule []) = pretty rule
+  pretty (RuleRef rule args) = pretty rule <> encloseSep "<" ">" "," (pretty <$> args)
+
 data instance XXCTree DistReferenced
   = DRef (DistRef DistReferenced)
   | DGenerator (CBORGen WrappedTerm) (CTree DistReferenced)
@@ -411,7 +418,7 @@ data instance XXCTree DistReferenced
 type data DistReferencedNoGen
 
 newtype instance XXCTree DistReferencedNoGen = DHRef (DistRef DistReferencedNoGen)
-  deriving (Eq, Hashable)
+  deriving (Eq, Hashable, Show, Pretty)
 
 resolveRef ::
   BindingEnv OrReferenced OrReferenced ->
@@ -551,10 +558,11 @@ throwNR = throw @"nameResolution"
 -- | Synthesize a monomorphic rule definition, returning the name
 synthMono :: Name -> [CTree DistReferenced] -> MonoM Name
 synthMono origName args =
-  let dropGenerator = fmap $ mapIndex @_ @_ @DistReferencedNoGen
-      fresh =
-        -- % is not a valid CBOR name, so this should avoid conflict
-        origName <> "%" <> Name (T.pack (show . hash $ dropGenerator args))
+  let dropGenerator = fmap $ mapIndex @_ @DistReferenced @DistReferencedNoGen
+      argsName = Name (T.intercalate "," $ renderStrict . layoutCompact . pretty <$> dropGenerator args)
+      -- We use % to mark a monomorphised generic rule, '%' is not allowed in
+      -- CDDL names, so there should be no conflicts
+      fresh = "%" <> origName <> "<" <> argsName <> ">"
    in do
         -- Lookup the original name in the global bindings
         globalBinds <- ask @"global"
