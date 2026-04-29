@@ -29,7 +29,8 @@ data instance XXTopLevel CTreePhase
 data instance XCddl CTreePhase = CTreeXCddl
   deriving (Generic, Show, Eq, Ord)
 
-data instance XRule CTreePhase = CTreeXRule (Maybe (CBORGen WrappedTerm)) (Maybe CBORValidator)
+data instance XRule CTreePhase
+  = CTreeXRule (Maybe (CBORGen WrappedTerm)) (Maybe (WrappedTerm -> CBORValidator ()))
   deriving (Generic)
 
 data instance XXType2 CTreePhase

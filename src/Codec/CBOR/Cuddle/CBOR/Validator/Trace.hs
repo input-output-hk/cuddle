@@ -10,8 +10,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 
 module Codec.CBOR.Cuddle.CBOR.Validator.Trace (
-  ValidatorStage,
-  ValidatorStageSimple,
+  ValidatorPhaseSimple,
   XXCTree (..),
   SValidity (..),
   Validity (..),
@@ -34,11 +33,11 @@ module Codec.CBOR.Cuddle.CBOR.Validator.Trace (
   foldEvidenced,
 ) where
 
-import Codec.CBOR.Cuddle.CDDL (Name (..), OccurrenceIndicator (..), RangeBound (..), XTerm)
-import Codec.CBOR.Cuddle.CDDL.CBORGenerator (CBORValidator)
+import Codec.CBOR.Cuddle.CDDL (Name (..), OccurrenceIndicator (..), RangeBound (..))
+import Codec.CBOR.Cuddle.CDDL.CBORGenerator (ValidatorPhase)
 import Codec.CBOR.Cuddle.CDDL.CTree (CTree (..), CTreeRoot (..), Node, XXCTree, foldCTree)
 import Codec.CBOR.Cuddle.CDDL.CtlOp (CtlOp)
-import Codec.CBOR.Cuddle.CDDL.Resolve (MonoReferenced, XXCTree (..))
+import Codec.CBOR.Cuddle.CDDL.Resolve (XXCTree (..))
 import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
 import Codec.CBOR.Term (Term)
 import Data.Foldable (Foldable (..))
@@ -69,41 +68,22 @@ import Prettyprinter.Render.Terminal (AnsiStyle, Color (..), color, italicized)
 import Prettyprinter.Render.Terminal qualified as Ansi
 
 --------------------------------------------------------------------------------
--- ValidatorStage
+-- ValidatorPhase
 
-type data ValidatorStage
+type data ValidatorPhaseSimple
 
-data instance XTerm ValidatorStage = ValidatorXTerm
-  deriving (Show, Eq)
+newtype instance XXCTree ValidatorPhaseSimple = VRuleRefSimple Name
 
-data instance XXCTree ValidatorStage
-  = VRuleRef Name
-  | VValidator CBORValidator (CTree ValidatorStage)
-
-instance IndexMappable CTreeRoot MonoReferenced ValidatorStage where
+instance IndexMappable CTreeRoot ValidatorPhase ValidatorPhaseSimple where
   mapIndex (CTreeRoot m) = CTreeRoot $ mapIndex <$> m
 
-instance IndexMappable CTree MonoReferenced ValidatorStage where
-  mapIndex = foldCTree mapExt mapIndex
-    where
-      mapExt (MRuleRef n) = CTreeE $ VRuleRef n
-      mapExt (MGenerator _ x) = mapIndex x
-      mapExt (MValidator v x) = CTreeE . VValidator v $ mapIndex x
-
-type data ValidatorStageSimple
-
-newtype instance XXCTree ValidatorStageSimple = VRuleRefSimple Name
-
-instance IndexMappable CTreeRoot ValidatorStage ValidatorStageSimple where
-  mapIndex (CTreeRoot m) = CTreeRoot $ mapIndex <$> m
-
-instance IndexMappable CTree ValidatorStage ValidatorStageSimple where
+instance IndexMappable CTree ValidatorPhase ValidatorPhaseSimple where
   mapIndex = foldCTree mapExt mapIndex
     where
       mapExt (VRuleRef n) = CTreeE $ VRuleRefSimple n
       mapExt (VValidator _ x) = mapIndex x
 
-instance Pretty (CTree ValidatorStageSimple) where
+instance Pretty (CTree ValidatorPhaseSimple) where
   pretty = \case
     Literal v -> pretty v
     Postlude v -> pretty v
@@ -127,15 +107,15 @@ instance Pretty (CTree ValidatorStageSimple) where
     Tag t x -> "#6." <> pretty t <> "(" <> pretty x <> ")"
 
 showSimple ::
-  ( IndexMappable a ValidatorStage ValidatorStageSimple
-  , Show (a ValidatorStageSimple)
+  ( IndexMappable a ValidatorPhase ValidatorPhaseSimple
+  , Show (a ValidatorPhaseSimple)
   ) =>
-  a ValidatorStage -> String
-showSimple = show . mapIndex @_ @_ @ValidatorStageSimple
+  a ValidatorPhase -> String
+showSimple = show . mapIndex @_ @_ @ValidatorPhaseSimple
 
-deriving instance Eq (Node ValidatorStageSimple)
+deriving instance Eq (Node ValidatorPhaseSimple)
 
-deriving instance Show (Node ValidatorStageSimple)
+deriving instance Show (Node ValidatorPhaseSimple)
 
 --------------------------------------------------------------------------------
 -- Validation result
@@ -161,7 +141,7 @@ instance TestEquality SValidity where
 
 data ControlInfo = ControlInfo
   { ciOp :: CtlOp
-  , ciRule :: CTree ValidatorStageSimple
+  , ciRule :: CTree ValidatorPhaseSimple
   }
   deriving (Show)
 
@@ -169,13 +149,13 @@ instance Pretty ControlInfo where
   pretty ControlInfo {..} = pretty ciOp <+> pretty ciRule
 
 data ValidationTrace (v :: Validity) where
-  UnapplicableRule :: CTree ValidatorStageSimple -> ValidationTrace IsInvalid
-  TerminalRule :: CTree ValidatorStageSimple -> ValidationTrace IsValid
+  UnapplicableRule :: CTree ValidatorPhaseSimple -> ValidationTrace IsInvalid
+  TerminalRule :: CTree ValidatorPhaseSimple -> ValidationTrace IsValid
   ControlTrace :: ControlInfo -> ValidationTrace IsValid -> ValidationTrace IsValid
   ReferenceRule :: Name -> ValidationTrace v -> ValidationTrace v
   CustomFailure :: Text -> ValidationTrace IsInvalid
   CustomSuccess :: ValidationTrace IsValid
-  UnsatisfiedControl :: CtlOp -> CTree ValidatorStageSimple -> ValidationTrace IsInvalid
+  UnsatisfiedControl :: CtlOp -> CTree ValidatorPhaseSimple -> ValidationTrace IsInvalid
   ChoiceBranch :: Int -> ValidationTrace IsValid -> ValidationTrace IsValid
   ListTrace :: ListValidationTrace v -> ValidationTrace v
   MapTrace :: MapValidationTrace v -> ValidationTrace v
@@ -188,18 +168,18 @@ data ListValidationTrace (v :: Validity) where
   ListValidationDone :: ListValidationTrace IsValid
   ListValidationLeftoverTerms ::
     NonEmpty Term ->
-    Maybe (CTree ValidatorStageSimple, ValidationTrace IsInvalid) ->
+    Maybe (CTree ValidatorPhaseSimple, ValidationTrace IsInvalid) ->
     ListValidationTrace IsInvalid
   ListValidationUnappliedRule ::
-    CTree ValidatorStageSimple ->
+    CTree ValidatorPhaseSimple ->
     ListValidationTrace IsInvalid
   ListValidationConsume ::
-    CTree ValidatorStageSimple ->
+    CTree ValidatorPhaseSimple ->
     ValidationTrace IsValid ->
     ListValidationTrace v ->
     ListValidationTrace v
   ListValidationMissingRequired ::
-    CTree ValidatorStageSimple ->
+    CTree ValidatorPhaseSimple ->
     ValidationTrace IsInvalid ->
     ListValidationTrace IsInvalid
   ListValidationConsumeGroup ::
@@ -218,16 +198,16 @@ data MapValidationTrace (v :: Validity) where
   MapValidationDone :: MapValidationTrace IsValid
   MapValidationLeftoverKVs ::
     (Term, Term) ->
-    Maybe (CTree ValidatorStageSimple, MapValidationTrace IsInvalid) ->
+    Maybe (CTree ValidatorPhaseSimple, MapValidationTrace IsInvalid) ->
     MapValidationTrace IsInvalid
-  MapValidationUnappliedRules :: NonEmpty (CTree ValidatorStageSimple) -> MapValidationTrace IsInvalid
+  MapValidationUnappliedRules :: NonEmpty (CTree ValidatorPhaseSimple) -> MapValidationTrace IsInvalid
   MapValidationInvalidValue ::
-    CTree ValidatorStageSimple ->
+    CTree ValidatorPhaseSimple ->
     ValidationTrace IsValid ->
     ValidationTrace IsInvalid ->
     MapValidationTrace IsInvalid
   MapValidationConsume ::
-    CTree ValidatorStageSimple ->
+    CTree ValidatorPhaseSimple ->
     ValidationTrace IsValid ->
     ValidationTrace IsValid ->
     MapValidationTrace v ->

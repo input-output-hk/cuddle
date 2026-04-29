@@ -417,7 +417,7 @@ parseFromFile ::
   IO (Either (ParseErrorBundle T.Text e) a)
 parseFromFile p file = runParser p file <$> T.readFile file
 
-runValidateCBOR :: BS.ByteString -> Name -> CTreeRoot ValidatorStage -> TraceOptions -> IO ()
+runValidateCBOR :: BS.ByteString -> Name -> CTreeRoot ValidatorPhase -> TraceOptions -> IO ()
 runValidateCBOR bs rule cddl traceOpts =
   case validateCBOR bs rule cddl of
     Evidenced validity trc -> do

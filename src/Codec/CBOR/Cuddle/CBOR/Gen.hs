@@ -31,7 +31,7 @@ import Codec.CBOR.Cuddle.CDDL (
   ValueVariant (..),
  )
 import Codec.CBOR.Cuddle.CDDL.CBORGenerator (
-  CBORGen (..),
+  CBORGen,
   GenEnv (..),
   GenPhase,
   WrappedTerm (..),
