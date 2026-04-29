@@ -7,7 +7,7 @@ module Test.Codec.CBOR.Cuddle.CDDL.GeneratorSpec (spec) where
 import Codec.CBOR.Cuddle.CBOR.Gen (GenPhase, generateFromName)
 import Codec.CBOR.Cuddle.CBOR.Validator (validateCBOR)
 import Codec.CBOR.Cuddle.CDDL (Name)
-import Codec.CBOR.Cuddle.CDDL.CBORGenerator (GenEnv (..), runCBORGen)
+import Codec.CBOR.Cuddle.CDDL.CBORGenerator (GenConfig (..), runCBORGen)
 import Codec.CBOR.Cuddle.CDDL.CTree (CTreeRoot (..))
 import Codec.CBOR.Cuddle.CDDL.Resolve (MonoReferenced, MonoSimple, fullResolveCDDL)
 import Codec.CBOR.Cuddle.Huddle (Huddle, toCDDL)
@@ -40,12 +40,12 @@ import Test.QuickCheck (Gen, Property, Testable (..), classify, counterexample)
 import Text.Pretty.Simple (pShow)
 
 generateCDDL :: CTreeRoot GenPhase -> Gen Term
-generateCDDL cddl = runAntiGen . runCBORGen env $ generateFromName "root"
+generateCDDL cddl = runAntiGen . runCBORGen cfg $ generateFromName "root"
   where
-    env =
-      GenEnv
-        { geRoot = cddl
-        , geTwiddle = True
+    cfg =
+      GenConfig
+        { gcRoot = cddl
+        , gcTwiddle = True
         }
 
 tryResolveHuddle :: HasCallStack => Huddle -> SpecM () (CTreeRoot MonoReferenced)
@@ -57,12 +57,12 @@ tryResolveHuddle huddle = do
 expectZapInvalidates :: CTreeRoot MonoReferenced -> Name -> Property
 expectZapInvalidates cddl name = property $ do
   let
-    env =
-      GenEnv
-        { geRoot = mapIndex cddl
-        , geTwiddle = True
+    cfg =
+      GenConfig
+        { gcRoot = mapIndex cddl
+        , gcTwiddle = True
         }
-  res@ZapResult {zrValue} <- zapAntiGenResult 1 . runCBORGen env $ generateFromName name
+  res@ZapResult {zrValue} <- zapAntiGenResult 1 . runCBORGen cfg $ generateFromName name
   let
     bs = toStrictByteString $ encodeTerm zrValue
     validationRes = validateCBOR bs name $ mapIndex cddl
@@ -142,14 +142,14 @@ spec = do
 
   describe "Tagged bytes zapping" $ do
     taggedBytesCddl <- tryResolveHuddle taggedUintExample
-    let env =
-          GenEnv
-            { geRoot = mapIndex taggedBytesCddl
-            , geTwiddle = True
+    let cfg =
+          GenConfig
+            { gcRoot = mapIndex taggedBytesCddl
+            , gcTwiddle = True
             }
     prop "labels zapped result" $ do
       ZapResult {zrValue} <-
-        zapAntiGenResult 1 . runCBORGen env $ generateFromName "root"
+        zapAntiGenResult 1 . runCBORGen cfg $ generateFromName "root"
       let
         isBytes TBytes {} = True
         isBytes TBytesI {} = True

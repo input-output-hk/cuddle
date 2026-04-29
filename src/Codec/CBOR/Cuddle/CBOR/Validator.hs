@@ -5,8 +5,9 @@
 
 module Codec.CBOR.Cuddle.CBOR.Validator (
   validateCBOR,
-  ValidatorPhase,
   validateFromName,
+  validateFromGRef,
+  ValidatorPhase,
 ) where
 
 import Codec.CBOR.Cuddle.CBOR.Validator.Trace (
@@ -33,6 +34,7 @@ import Codec.CBOR.Cuddle.CDDL.CBORGenerator (
   ValidatorPhase,
   WrappedTerm (..),
   lookupCddl,
+  lookupGRef,
   runValidator,
  )
 import Codec.CBOR.Cuddle.CDDL.CTree
@@ -83,7 +85,18 @@ validateFromName ::
 validateFromName n term = do
   mRule <- lookupCddl n
   case mRule of
-    Nothing -> fail $ "Unbound reference: " <> show n
+    Nothing -> fail $ "Unbound name: " <> show n
+    Just rule -> validateAgainst term rule
+
+-- | Validate a CBOR 'Term' against the type bound to the given generic
+-- parameter at the enclosing rule. Use this from inside a custom validator
+-- attached to a generic rule.
+validateFromGRef ::
+  HasCallStack => GRef -> Term -> Validator ()
+validateFromGRef ref term = do
+  mRule <- lookupGRef ref
+  case mRule of
+    Nothing -> fail $ "Unbound generic reference: " <> show ref
     Just rule -> validateAgainst term rule
 
 validateAgainst :: Term -> CTree ValidatorPhase -> Validator ()

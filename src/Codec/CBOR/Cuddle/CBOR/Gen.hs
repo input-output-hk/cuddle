@@ -16,6 +16,7 @@
 -- | Generate example CBOR given a CDDL specification
 module Codec.CBOR.Cuddle.CBOR.Gen (
   generateFromName,
+  generateFromGRef,
   GenPhase,
   GenSimple,
   XXCTree (..),
@@ -24,6 +25,7 @@ module Codec.CBOR.Cuddle.CBOR.Gen (
 #if MIN_VERSION_random(1,3,0)
 #endif
 import Codec.CBOR.Cuddle.CDDL (
+  GRef (..),
   Name (..),
   OccurrenceIndicator (..),
   RangeBound (..),
@@ -32,12 +34,14 @@ import Codec.CBOR.Cuddle.CDDL (
  )
 import Codec.CBOR.Cuddle.CDDL.CBORGenerator (
   CBORGen,
+  GenConfig (..),
   GenEnv (..),
   GenPhase,
   WrappedTerm (..),
   XXCTree (..),
   liftAntiGen,
   lookupCddl,
+  lookupGRef,
   withAntiGen,
   withTwiddle,
  )
@@ -160,28 +164,28 @@ genHalf = do
 
 twiddleString :: Text -> CBORGen Term
 twiddleString t = do
-  twiddle <- asks geTwiddle
+  twiddle <- asks (gcTwiddle . geConfig)
   if twiddle
     then ($ t) <$> elements [TString, TStringI . TL.fromStrict]
     else pure $ TString t
 
 twiddleList :: [Term] -> CBORGen Term
 twiddleList t = do
-  twiddle <- asks geTwiddle
+  twiddle <- asks (gcTwiddle . geConfig)
   if twiddle
     then ($ t) <$> elements [TList, TListI]
     else pure $ TList t
 
 twiddleBytes :: ByteString -> CBORGen Term
 twiddleBytes t = do
-  twiddle <- asks geTwiddle
+  twiddle <- asks (gcTwiddle . geConfig)
   if twiddle
     then ($ t) <$> elements [TBytes, TBytesI . LBS.fromStrict]
     else pure $ TBytes t
 
 twiddleMap :: [(Term, Term)] -> CBORGen Term
 twiddleMap t = do
-  twiddle <- asks geTwiddle
+  twiddle <- asks (gcTwiddle . geConfig)
   if twiddle
     then ($ t) <$> elements [TMap, TMapI]
     else pure $ TMap t
@@ -609,6 +613,16 @@ generateFromName n = do
             "Tried to generate a top-level term for "
               <> show n
               <> ", but it does not correspond to a single term."
+
+-- | Generate a 'WrappedTerm' for the type bound to the given generic
+-- parameter at the enclosing rule. Use this from inside a custom generator
+-- attached to a generic rule.
+generateFromGRef :: HasCallStack => GRef -> CBORGen WrappedTerm
+generateFromGRef ref = do
+  mRule <- lookupGRef ref
+  case mRule of
+    Nothing -> error $ "Unbound generic reference: " <> show ref
+    Just val -> genForCTree val
 
 sizeBiasedBool :: MonadGen m => m Bool
 sizeBiasedBool = sized $ \sz -> (> 1) <$> choose (0, sz)

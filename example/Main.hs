@@ -7,7 +7,7 @@ module Main (main) where
 
 import Codec.CBOR.Cuddle.CBOR.Gen (generateFromName)
 import Codec.CBOR.Cuddle.CDDL (Name (..))
-import Codec.CBOR.Cuddle.CDDL.CBORGenerator (GenEnv (..), runCBORGen)
+import Codec.CBOR.Cuddle.CDDL.CBORGenerator (GenConfig (..), runCBORGen)
 import Codec.CBOR.Cuddle.CDDL.Resolve (MonoSimple, fullResolveCDDL)
 import Codec.CBOR.Cuddle.Huddle (toCDDL)
 import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..), mapCDDLDropExt)
@@ -49,8 +49,8 @@ main = do
           case fullResolveCDDL (mapCDDLDropExt res) of
             Left nre -> error $ show nre
             Right resolved -> do
-              let genEnv = GenEnv {geRoot = mapIndex resolved, geTwiddle = True}
-              term <- generate . runAntiGen . runCBORGen genEnv $ generateFromName (Name (T.pack name))
+              let cfg = GenConfig {gcRoot = mapIndex resolved, gcTwiddle = True}
+              term <- generate . runAntiGen . runCBORGen cfg $ generateFromName (Name (T.pack name))
               print term
     [] -> do
       let cw = toCDDL conway
