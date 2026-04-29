@@ -10,6 +10,7 @@ module Codec.CBOR.Cuddle.Comments (
   CollectComments (..),
   hasComment,
   (//-),
+  appendComment,
   (<*!),
   (!*>),
   WithComment (..),
@@ -126,19 +127,26 @@ hasComment = (/= mempty) . view commentL
 -- arr [0, 1] //- "This is an array with two values"
 -- ```
 (//-) :: HasComment a => a -> Comment -> a
-x //- c = x & commentL %~ (<> c)
+x //- c
+  | c == mempty = x
+  | otherwise = x & commentL %~ (<> (" " <> c <> "\n"))
 
 infixr 0 //-
+
+-- | Raw comment append without adding space or newline. Used by parser
+-- combinators where the comment text is already formatted.
+appendComment :: HasComment a => a -> Comment -> a
+appendComment x c = x & commentL %~ (<> c)
 
 -- | This operator will parse the values from left to right and then append the
 -- parsed comment on the right to the parsed value on the left.
 (<*!) :: (HasComment a, Applicative m) => m a -> m Comment -> m a
-(<*!) x c = (//-) <$> x <*> c
+(<*!) x c = appendComment <$> x <*> c
 
 -- | This operator will parse the values from left to right and then append the
 -- parsed comment on the left to the parsed value on the right.
 (!*>) :: (HasComment a, Applicative m) => m Comment -> m a -> m a
-(!*>) c x = flip (//-) <$> c <*> x
+(!*>) c x = flip appendComment <$> c <*> x
 
 data WithComment a = WithComment
   { unWithComment :: Comment
@@ -168,7 +176,7 @@ withComment = WithComment mempty
 -- (\x -> LInt x "a") !$> WithComment "b" (1 :: Integer) == Literal (LInt 1) "a\nb"
 -- ```
 (!$>) :: (HasComment b, Functor f) => (a -> b) -> f (WithComment a) -> f b
-f !$> wc = fmap (\(WithComment c x) -> f x //- c) wc
+f !$> wc = fmap (\(WithComment c x) -> appendComment (f x) c) wc
 
 instance HasComment a => HasComment (NonEmpty a) where
   commentL = lens (\(x :| _) -> x ^. commentL) (\(x :| xs) y -> (x & commentL .~ y) :| xs)
