@@ -50,6 +50,7 @@ import Prettyprinter (
   PageWidth (..),
   defaultLayoutOptions,
   layoutPretty,
+  vsep,
  )
 import Prettyprinter.Render.Terminal qualified as Ansi
 import System.Exit (exitFailure, exitSuccess)
@@ -102,7 +103,12 @@ pCBOROutputFormat :: ReadM CBOROutputFormat
 pCBOROutputFormat = eitherReader $ \k ->
   case Map.lookup k outputFormatOptions of
     Just x -> Right x
-    Nothing -> Left k
+    Nothing ->
+      Left $
+        unlines
+          [ "invalid value: " <> k
+          , "expecting one of: " <> unwords (Map.keys outputFormatOptions)
+          ]
 
 data GenOpts = GenOpts
   { outputFormat :: CBOROutputFormat
@@ -131,6 +137,7 @@ pGenOpts =
           ( long "out-file"
               <> short 'o'
               <> help "Write to"
+              <> action "file"
           )
       )
     <*> switch
@@ -152,13 +159,14 @@ pGenOpts =
     <*> switch
       ( long "negative"
           <> short 'n'
-          <> help "Generate a negative example"
+          <> help "Generate a negative (zapped) example"
       )
-    <*> option
-      (not <$> auto)
-      ( long "no-twiddle"
-          <> help "Do not generate indefinite encodings"
-      )
+    <*> ( not
+            <$> switch
+              ( long "no-twiddle"
+                  <> help "Do not generate indefinite encodings"
+              )
+        )
     <*> argument
       str
       (metavar "RULE" <> help "Name of the CDDL rule to generate a CBOR term for")
@@ -212,7 +220,7 @@ pValidateCBOROpts =
       ( metavar "RULE"
           <> help "Name of the CDDL rule to validate this file with"
       )
-    <*> argument str (metavar "CBOR_FILE")
+    <*> argument str (metavar "CBOR_FILE" <> action "file")
 
 data CBORInputFormat
   = FromHex
@@ -234,7 +242,12 @@ data FormatCBOROpts = FormatCBOROpts
 pCBORInputFormat :: ReadM CBORInputFormat
 pCBORInputFormat = eitherReader $ \k -> case Map.lookup k inputFormatOptions of
   Just x -> Right x
-  Nothing -> Left k
+  Nothing ->
+    Left $
+      unlines
+        [ "invalid value: " <> k
+        , "expecting one of: " <> unwords (Map.keys inputFormatOptions)
+        ]
 
 pFormatCBOROpts :: Parser FormatCBOROpts
 pFormatCBOROpts =
@@ -258,6 +271,7 @@ pFormatCBOROpts =
           ( long "out-file"
               <> short 'o'
               <> help "Write to"
+              <> action "file"
           )
       )
 
@@ -267,31 +281,34 @@ pCommand =
     ( command
         "format"
         ( info
-            (Format <$> pFormatOpts <*> argument str (metavar "CDDL_FILE") <**> helper)
+            (Format <$> pFormatOpts <*> argument str (metavar "CDDL_FILE" <> action "file") <**> helper)
             (progDesc "Format the provided CDDL file")
         )
         <> command
           "validate"
           ( info
-              (Validate <$> pValidateOpts <*> argument str (metavar "CDDL_FILE") <**> helper)
+              (Validate <$> pValidateOpts <*> argument str (metavar "CDDL_FILE" <> action "file") <**> helper)
               (progDesc "Validate the provided CDDL file")
           )
         <> command
           "gen"
           ( info
-              (GenerateCBOR <$> pGenOpts <*> argument str (metavar "CDDL_FILE") <**> helper)
+              (GenerateCBOR <$> pGenOpts <*> argument str (metavar "CDDL_FILE" <> action "file") <**> helper)
               (progDesc "Generate a CBOR term matching the schema")
           )
         <> command
           "validate-cbor"
           ( info
-              (ValidateCBOR <$> pValidateCBOROpts <*> argument str (metavar "CDDL_FILE") <**> helper)
+              ( ValidateCBOR
+                  <$> pValidateCBOROpts
+                  <*> argument str (metavar "CDDL_FILE" <> action "file") <**> helper
+              )
               (progDesc "Validate a CBOR file against a schema")
           )
         <> command
           "format-cbor"
           ( info
-              (FormatCBOR <$> pFormatCBOROpts <*> argument str (metavar "CBOR_FILE") <**> helper)
+              (FormatCBOR <$> pFormatCBOROpts <*> argument str (metavar "CBOR_FILE" <> action "file") <**> helper)
               (progDesc "Output a CBOR binary in diagnostic formatting")
           )
     )
@@ -304,7 +321,16 @@ main = do
         (pCommand <**> helper <**> simpleVersioner (showVersion version))
         ( fullDesc
             <> progDesc "Manipulate CDDL files"
-            <> header "cuddle"
+            <> header "cuddle - a CDDL tool for validating, formatting, and generating CBOR"
+            <> footerDoc
+              ( Just $
+                  vsep
+                    [ "To enable shell completions, add the appropriate line to your shell config:"
+                    , "  Bash: source <(cuddle --bash-completion-script cuddle)"
+                    , "  Zsh:  source <(cuddle --zsh-completion-script cuddle)"
+                    , "  Fish: cuddle --fish-completion-script cuddle | source"
+                    ]
+              )
         )
   run options
 
