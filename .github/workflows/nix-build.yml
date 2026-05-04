@@ -23,7 +23,7 @@ jobs:
       id: build
       run: |
         nix build --accept-flake-config .#static
-        echo "name=$(nix derivation show ./result | jq -r '.[].env.name')" >>"$GITHUB_OUTPUT"
+        echo "name=$(nix eval --raw .#static.name)" >>"$GITHUB_OUTPUT"
 
     - name: Record system details
       id: system-details
@@ -35,4 +35,4 @@ jobs:
       uses: actions/upload-artifact@v7
       with:
         name: ${{ steps.build.outputs.name }}-${{ steps.system-details.outputs.system }}-${{ steps.system-details.outputs.machine }}
-        path: result/bin/*
+        path: echo "artifacts=$(find -L result/bin -type f)" >>"$GITHUB_OUTPUT"

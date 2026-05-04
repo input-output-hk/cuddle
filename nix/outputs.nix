@@ -12,63 +12,80 @@ let
 
   name = "cuddle";
 
-  project = pkgs.haskell-nix.cabalProject' ({ ... }: {
-    inherit name;
-    src = lib.cleanSource ../.;
-    compiler-nix-name = lib.mkDefault "ghc967";
-    flake.variants = {
-      ghc96 = { }; # Alias for the default variant
-      ghc98.compiler-nix-name = "ghc984";
-      ghc910.compiler-nix-name = "ghc9102";
-      ghc912.compiler-nix-name = "ghc9122";
-    };
-  });
+  project = pkgs.haskell-nix.cabalProject' (
+    { ... }:
+    {
+      inherit name;
+      src = lib.cleanSource ../.;
+      compiler-nix-name = lib.mkDefault "ghc967";
+      flake.variants = {
+        ghc96 = { }; # Alias for the default variant
+        ghc98.compiler-nix-name = "ghc984";
+        ghc910.compiler-nix-name = "ghc9102";
+        ghc912.compiler-nix-name = "ghc9122";
+      };
+      modules = [
+        {
+          packages.${name}.components.exes.${name} = addShellCompletions name;
+        }
+      ];
+    }
+  );
+
+  addShellCompletions = name: {
+    build-tools = [ pkgs.installShellFiles ];
+    postInstall = ''
+      installShellCompletion --cmd ${name} \
+        --bash <($out/bin/${name} --bash-completion-script $out/bin/${name}) \
+        --zsh  <($out/bin/${name} --zsh-completion-script $out/bin/${name}) \
+        --fish <($out/bin/${name} --fish-completion-script $out/bin/${name})
+    '';
+  };
 
   flake = project.flake { };
 
   packages = flake.packages;
 
-  addShellCompletions = drv: pkgs.runCommand name
-    {
-      nativeBuildInputs = [ pkgs.installShellFiles ];
-      meta.mainProgram = name;
-    } ''
-    mkdir -p $out/bin
-    cp ${drv}/bin/${name} $out/bin/${name}
-    installShellCompletion --cmd ${name} \
-      --bash <($out/bin/${name} --bash-completion-script $out/bin/${name}) \
-      --zsh  <($out/bin/${name} --zsh-completion-script $out/bin/${name}) \
-      --fish <($out/bin/${name} --fish-completion-script $out/bin/${name})
-  '';
+  static = pkgs.symlinkJoin {
+    inherit name;
+    paths = builtins.concatMap (p: lib.attrsets.attrValues p.components.exes) (
+      builtins.filter (p: (p.isLocal or false) && p.identifier.name != "example") (
+        lib.attrsets.attrValues project.projectCross.musl64.hsPkgs
+      )
+    );
+  };
 
-  static = addShellCompletions (pkgs.symlinkJoin {
-    name = "${name}-unwrapped";
-    paths =
-      builtins.concatMap
-        (p: lib.attrsets.attrValues p.components.exes)
-        (builtins.filter
-          (p: (p.isLocal or false) && p.identifier.name != "example")
-          (lib.attrsets.attrValues project.projectCross.musl64.hsPkgs));
-  });
+  devShells = lib.attrsets.mapAttrs (ghcName: _: mkShell ghcName) project.projectVariants;
 
-  devShells = lib.attrsets.mapAttrs
-    (ghcName: _: mkShell ghcName)
-    project.projectVariants;
+  mkShell =
+    ghc:
+    import ./shell.nix {
+      inherit
+        ghc
+        pkgs
+        lib
+        project
+        pre-commit-hooks
+        ;
+    };
 
-  mkShell = ghc: import ./shell.nix { inherit ghc pkgs lib project pre-commit-hooks; };
-
-  defaultVariant =
-    lib.attrsets.foldlAttrs
-      (acc: k: v: if v ? "compiler-nix-name" then acc else k)
-      builtins.null
-      project.args.flake.variants;
+  defaultVariant = lib.attrsets.foldlAttrs
+    (
+      acc: k: v:
+        if v ? "compiler-nix-name" then acc else k
+    )
+    builtins.null
+    project.args.flake.variants;
 
 in
 
-flake // {
+flake
+  // {
   packages = packages // {
     inherit static;
-    "${name}:exe:${name}" = addShellCompletions packages."${name}:exe:${name}";
+    default = project.hsPkgs.${name}.components.exes.${name};
   };
-  devShells = devShells // { default = devShells.${defaultVariant}; };
+  devShells = devShells // {
+    default = devShells.${defaultVariant};
+  };
 }
