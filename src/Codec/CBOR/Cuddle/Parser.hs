@@ -13,9 +13,9 @@ import Codec.CBOR.Cuddle.Comments (
   Comment,
   HasComment (..),
   WithComment (..),
+  appendComment,
   withComment,
   (!*>),
-  (//-),
   (<*!),
  )
 import Codec.CBOR.Cuddle.Parser.Lexer (
@@ -75,7 +75,10 @@ pCDDL = do
   initialRule <- pRule
   cddlTail <- many $ pTopLevel <* C.space
   eof
-    $> CDDL (initialRule //- fold initialRuleComment) cddlTail (ParserXXTopLevel <$> initialComments)
+    $> CDDL
+      (appendComment initialRule (fold initialRuleComment))
+      cddlTail
+      (ParserXXTopLevel <$> initialComments)
 
 pTopLevel :: Parser (TopLevel ParserStage)
 pTopLevel = try tlRule <|> tlComment
@@ -83,7 +86,7 @@ pTopLevel = try tlRule <|> tlComment
     tlRule = do
       mCmt <- optional pCommentBlock
       rule <- pRule
-      pure . TopLevelRule $ rule //- fold mCmt
+      pure . TopLevelRule $ appendComment rule (fold mCmt)
     tlComment = XXTopLevel . ParserXXTopLevel <$> pCommentBlock
 
 pRule :: Parser (Rule ParserStage)

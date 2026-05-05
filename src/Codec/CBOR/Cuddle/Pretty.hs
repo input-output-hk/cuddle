@@ -21,7 +21,7 @@ module Codec.CBOR.Cuddle.Pretty (
 import Codec.CBOR.Cuddle.CDDL
 import Codec.CBOR.Cuddle.CDDL.CTree (PTerm (..))
 import Codec.CBOR.Cuddle.CDDL.CtlOp (CtlOp)
-import Codec.CBOR.Cuddle.Comments (CollectComments (..), Comment (..), HasComment (..), unComment)
+import Codec.CBOR.Cuddle.Comments (CollectComments (..), Comment, HasComment (..), unComment)
 import Codec.CBOR.Cuddle.Pretty.Columnar (
   Cell (..),
   CellAlign (..),
@@ -97,8 +97,9 @@ prettyCommentNoBreakWS cmt
   | otherwise = space <> prettyCommentNoBreak cmt
 
 instance Pretty Comment where
-  pretty (Comment "") = mempty
-  pretty c = prettyCommentNoBreak c <> hardline
+  pretty c
+    | c == mempty = mempty
+    | otherwise = prettyCommentNoBreak c <> hardline
 
 type0Def :: Type0 PrettyStage -> Doc ann
 type0Def t = nest 2 $ line' <> pretty t

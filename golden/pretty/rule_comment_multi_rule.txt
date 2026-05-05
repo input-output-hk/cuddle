@@ -1,0 +1,8 @@
+; the listening port
+port = uint
+
+; the host name
+host = text
+
+; TLS only
+secure = true
