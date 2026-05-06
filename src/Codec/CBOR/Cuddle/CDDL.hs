@@ -39,6 +39,7 @@ module Codec.CBOR.Cuddle.CDDL (
   unwrap,
   compareRuleName,
   HasName (..),
+  GRef (..),
   -- Extension
   ForAllExtensions,
   XCddl,
@@ -160,6 +161,10 @@ newtype Name = Name {unName :: T.Text}
   deriving (Generic)
   deriving (Eq, Ord, Show)
   deriving newtype (Semigroup, Monoid)
+
+-- | A reference to a generic parameter inside the body of a generic rule.
+newtype GRef = GRef T.Text
+  deriving (Show)
 
 deriving anyclass instance ToExpr Name
 

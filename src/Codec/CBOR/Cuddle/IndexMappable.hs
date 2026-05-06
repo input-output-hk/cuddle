@@ -201,7 +201,7 @@ instance
   where
   mapIndex (GrpChoice gs e) = GrpChoice (mapIndex <$> gs) $ mapIndex e
 
--- ParserStage -> PrettyStage
+-- ParserStage ~ PrettyStage
 
 instance IndexMappable XCddl ParserStage PrettyStage where
   mapIndex (ParserXCddl c) = PrettyXCddl c
@@ -277,7 +277,7 @@ instance IndexMappable XTerm HuddleStage PrettyStage where
 instance IndexMappable XRule HuddleStage PrettyStage where
   mapIndex (HuddleXRule c _ _) = PrettyXRule c
 
--- ParserStage -> ParserStage
+-- ParserStage ~ ParserStage
 
 instance IndexMappable XCddl ParserStage ParserStage
 
