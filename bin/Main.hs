@@ -15,8 +15,8 @@ import Codec.CBOR.Cuddle.CBOR.Validator.Trace (
   prettyValidationTrace,
  )
 import Codec.CBOR.Cuddle.CDDL (CDDL, Name (..), fromRules, sortCDDL)
-import Codec.CBOR.Cuddle.CDDL.CBORGenerator (GenConfig (..), runCBORGen)
 import Codec.CBOR.Cuddle.CDDL.CTree (CTreeRoot)
+import Codec.CBOR.Cuddle.CDDL.Custom.Generator (GenConfig (..), runCBORGen)
 import Codec.CBOR.Cuddle.CDDL.Postlude (appendPostlude)
 import Codec.CBOR.Cuddle.CDDL.Resolve (
   fullResolveCDDL,

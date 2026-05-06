@@ -116,14 +116,10 @@ import Codec.CBOR.Cuddle.CDDL (
   XRule,
  )
 import Codec.CBOR.Cuddle.CDDL qualified as C
-import Codec.CBOR.Cuddle.CDDL.CBORGenerator (
-  CBORGen,
-  HasGenerator (..),
-  HasValidator (..),
-  TermValidator,
-  WrappedTerm,
- )
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
+import Codec.CBOR.Cuddle.CDDL.Custom.Core (RuleTerm)
+import Codec.CBOR.Cuddle.CDDL.Custom.Generator (CBORGen, HasGenerator (..))
+import Codec.CBOR.Cuddle.CDDL.Custom.Validator (HasValidator (..), TermValidator)
 import Codec.CBOR.Cuddle.Comments (Comment, HasComment (..))
 import Codec.CBOR.Cuddle.Comments qualified as C
 import Control.Monad (when)
@@ -159,7 +155,7 @@ newtype instance C.XCddl HuddleStage = HuddleXCddl [C.Comment]
 
 data instance C.XRule HuddleStage = HuddleXRule
   { hxrComment :: C.Comment
-  , hxrGenerator :: Maybe (CBORGen WrappedTerm)
+  , hxrGenerator :: Maybe (CBORGen RuleTerm)
   , hxrValidator :: Maybe TermValidator
   }
   deriving (Generic)
@@ -1372,7 +1368,7 @@ toCDDL' HuddleConfig {..} hdl =
 
 -- | Use a custom `CBORGen` generator to generate the term. Will override
 -- the custom generator passed via `withGenerator`.
-withCBORGen :: HasGenerator a => CBORGen WrappedTerm -> a -> a
+withCBORGen :: HasGenerator a => CBORGen RuleTerm -> a -> a
 withCBORGen gen = L.set generatorL $ Just gen
 
 withValidator :: HasValidator a => TermValidator -> a -> a

@@ -22,14 +22,11 @@ import Codec.CBOR.Cuddle.CBOR.Validator.Trace (
   prettyValidationTrace,
  )
 import Codec.CBOR.Cuddle.CDDL (Name (..))
-import Codec.CBOR.Cuddle.CDDL.CBORGenerator (
-  GenConfig (..),
-  TermValidator,
-  WrappedTerm (..),
-  runCBORGen,
- )
 import Codec.CBOR.Cuddle.CDDL.CTree (CTreeRoot (..))
 import Codec.CBOR.Cuddle.CDDL.CTree qualified as CTree
+import Codec.CBOR.Cuddle.CDDL.Custom.Core (RuleTerm (..))
+import Codec.CBOR.Cuddle.CDDL.Custom.Generator (GenConfig (..), runCBORGen)
+import Codec.CBOR.Cuddle.CDDL.Custom.Validator (TermValidator)
 import Codec.CBOR.Cuddle.CDDL.Postlude (appendPostlude)
 import Codec.CBOR.Cuddle.CDDL.Resolve (MonoReferenced, fullResolveCDDL)
 import Codec.CBOR.Cuddle.Huddle (
@@ -287,13 +284,13 @@ expectInvalid (Evidenced SValid t) =
 expectInvalid _ = pure ()
 
 stringValidator :: TermValidator
-stringValidator (S (TString _)) = pure ()
-stringValidator (S (TStringI _)) = pure ()
+stringValidator (SingleTerm (TString _)) = pure ()
+stringValidator (SingleTerm (TStringI _)) = pure ()
 stringValidator t = fail $ "Expected a string, got\n" <> show t
 
 bytesValidator :: TermValidator
-bytesValidator (S (TBytes _)) = pure ()
-bytesValidator (S (TBytesI _)) = pure ()
+bytesValidator (SingleTerm (TBytes _)) = pure ()
+bytesValidator (SingleTerm (TBytesI _)) = pure ()
 bytesValidator t = fail $ "Expected bytes, got\n" <> show t
 
 spec :: Spec
