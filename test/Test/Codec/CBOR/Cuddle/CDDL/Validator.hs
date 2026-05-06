@@ -284,13 +284,13 @@ expectInvalid (Evidenced SValid t) =
 expectInvalid _ = pure ()
 
 stringValidator :: TermValidator
-stringValidator (S (TString _)) = pure ()
-stringValidator (S (TStringI _)) = pure ()
+stringValidator (SingleTerm (TString _)) = pure ()
+stringValidator (SingleTerm (TStringI _)) = pure ()
 stringValidator t = fail $ "Expected a string, got\n" <> show t
 
 bytesValidator :: TermValidator
-bytesValidator (S (TBytes _)) = pure ()
-bytesValidator (S (TBytesI _)) = pure ()
+bytesValidator (SingleTerm (TBytes _)) = pure ()
+bytesValidator (SingleTerm (TBytesI _)) = pure ()
 bytesValidator t = fail $ "Expected bytes, got\n" <> show t
 
 spec :: Spec

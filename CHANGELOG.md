@@ -2,6 +2,10 @@
 
 ## 1.7.0.0
 
+* Rename `RuleTerm` constructors:
+  * `S` -> `SingleTerm`
+  * `G` -> `GroupTerm`
+  * `P` -> `PairTerm`
 * Split `Codec.CBOR.Cuddle.CDDL.CBORGenerator` into:
   * `Codec.CBOR.Cuddle.CDDL.Custom.Generator`
   * `Codec.CBOR.Cuddle.CDDL.Custom.Validator`

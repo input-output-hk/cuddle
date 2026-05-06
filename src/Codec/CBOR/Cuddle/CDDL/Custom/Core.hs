@@ -18,11 +18,8 @@ class MonadCddl m where
   -- attached to a generic rule.
   lookupGRef :: GRef -> m (Maybe (CTree (Phase m)))
 
-data WrappedTerm
-  = -- | Single term
-    S Term
-  | -- | Pair term
-    P Term Term
-  | -- | Group term
-    G [WrappedTerm]
+data RuleTerm
+  = SingleTerm Term
+  | PairTerm Term Term
+  | GroupTerm [RuleTerm]
   deriving (Eq, Ord, Show)
