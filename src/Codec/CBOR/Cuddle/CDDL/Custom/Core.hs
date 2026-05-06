@@ -1,6 +1,6 @@
 {-# LANGUAGE TypeFamilies #-}
 
-module Codec.CBOR.Cuddle.CDDL.Custom.Core (MonadCddl (..), WrappedTerm (..)) where
+module Codec.CBOR.Cuddle.CDDL.Custom.Core (MonadCddl (..), RuleTerm (..)) where
 
 import Codec.CBOR.Cuddle.CDDL (GRef, Name)
 import Codec.CBOR.Cuddle.CDDL.CTree (CTree)

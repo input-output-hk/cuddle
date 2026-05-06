@@ -41,7 +41,7 @@ import Codec.CBOR.Cuddle.CDDL.CTree (
  )
 import Codec.CBOR.Cuddle.CDDL.CTree qualified as CTree
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
-import Codec.CBOR.Cuddle.CDDL.Custom.Core (MonadCddl (..), WrappedTerm (..))
+import Codec.CBOR.Cuddle.CDDL.Custom.Core (MonadCddl (..), RuleTerm (..))
 import Codec.CBOR.Cuddle.CDDL.Custom.Generator (
   CBORGen,
   GenConfig (..),
@@ -285,7 +285,7 @@ genPostlude pt = genPTerm =<< liftAntiGen (faultyPTerm pt)
 
 -- | Recursively flatten wrapped list. That is, expand any groups out to their
 -- individual entries.
-flattenWrappedList :: [WrappedTerm] -> [WrappedTerm]
+flattenWrappedList :: [RuleTerm] -> [RuleTerm]
 flattenWrappedList [] = []
 flattenWrappedList (GroupTerm xxs : xs) =
   flattenWrappedList xxs <> flattenWrappedList xs
@@ -293,7 +293,7 @@ flattenWrappedList (y : xs) = y : flattenWrappedList xs
 
 -- | Convert a list of wrapped terms to a list of terms. If any 'PairTerm's are
 -- present, we just take their "value" part.
-singleTermList :: [WrappedTerm] -> Maybe [Term]
+singleTermList :: [RuleTerm] -> Maybe [Term]
 singleTermList [] = Just []
 singleTermList (SingleTerm x : xs) = (x :) <$> singleTermList xs
 singleTermList (PairTerm _ y : xs) = (y :) <$> singleTermList xs
@@ -310,7 +310,7 @@ dropNegativeGen = liftGen . runAntiGen
 -- Generator functions
 --------------------------------------------------------------------------------
 
-genSized :: HasCallStack => Word64 -> CTree GenPhase -> CBORGen WrappedTerm
+genSized :: HasCallStack => Word64 -> CTree GenPhase -> CBORGen RuleTerm
 genSized s target = annotateTerm target $ case target of
   CTree.Postlude PTText -> fmap SingleTerm . twiddleString =<< genNBytesText (fromIntegral s)
   CTree.Postlude PTBytes -> fmap SingleTerm . twiddleBytes =<< genNBytes (fromIntegral s)
@@ -352,7 +352,7 @@ annotateTerm = \case
   CTree.CTreeE (GenRef n) -> annotate (unName n)
   CTree.CTreeE (GenGenerator _ _) -> annotate "custom_generator"
 
-genForCTree :: HasCallStack => CTree GenPhase -> CBORGen WrappedTerm
+genForCTree :: HasCallStack => CTree GenPhase -> CBORGen RuleTerm
 genForCTree node = annotateTerm node $ case node of
   CTree.Literal v -> SingleTerm <$> valueToTerm v
   CTree.Postlude pt -> SingleTerm <$> genPostlude pt
@@ -375,7 +375,7 @@ genForCTree node = annotateTerm node $ case node of
 
 -- | Generate a map from a list of nodes
 genMap ::
-  HasCallStack => [CTree GenPhase] -> CBORGen WrappedTerm
+  HasCallStack => [CTree GenPhase] -> CBORGen RuleTerm
 genMap nodes = do
   let
     elemsNeeded KV {} = 1
@@ -451,7 +451,7 @@ genMap nodes = do
     Nothing -> error "Failed to generate unique keys for map after max retries"
 
 -- | Generate an array from a list of nodes
-genArray :: HasCallStack => [CTree GenPhase] -> CBORGen WrappedTerm
+genArray :: HasCallStack => [CTree GenPhase] -> CBORGen RuleTerm
 genArray nodes = do
   items <-
     singleTermList . flattenWrappedList
@@ -464,7 +464,7 @@ genArray nodes = do
     Nothing -> error "Something weird happened which shouldn't be possible"
 
 -- | Generate a key-value pair
-genKV :: HasCallStack => CTree GenPhase -> CTree GenPhase -> CBORGen WrappedTerm
+genKV :: HasCallStack => CTree GenPhase -> CTree GenPhase -> CBORGen RuleTerm
 genKV key value = do
   kg <- withAntiGen (withAnnotation "key") $ genForCTree key
   vg <- withAntiGen (withAnnotation "value") $ genForCTree value
@@ -483,7 +483,7 @@ genRange ::
   CTree GenPhase ->
   CTree GenPhase ->
   RangeBound ->
-  CBORGen WrappedTerm
+  CBORGen RuleTerm
 genRange from to bounds = do
   term1 <- withAntiGen dropNegativeGen $ genForCTree from
   term2 <- withAntiGen dropNegativeGen $ genForCTree to
@@ -509,7 +509,7 @@ genControl ::
   CtlOp.CtlOp ->
   CTree GenPhase ->
   CTree GenPhase ->
-  CBORGen WrappedTerm
+  CBORGen RuleTerm
 genControl op target controller = annotateTerm target $ do
   resolvedController <- case controller of
     CTreeE (GenRef n) -> withAntiGen dropNegativeGen $ resolveRef n
@@ -550,7 +550,7 @@ genControl op target controller = annotateTerm target $ do
     (c, _) -> error $ "Controller not yet implemented: " <> show c
 
 -- | Generate a value from an enum
-genEnum :: HasCallStack => CTree GenPhase -> CBORGen WrappedTerm
+genEnum :: HasCallStack => CTree GenPhase -> CBORGen RuleTerm
 genEnum tree = case tree of
   CTree.Group trees -> do
     ix <- choose (0, length trees - 1)
@@ -558,7 +558,7 @@ genEnum tree = case tree of
   _ -> error "Attempt to form an enum from something other than a group"
 
 -- | Generate a tagged value
-genTag :: HasCallStack => Word64 -> CTree GenPhase -> CBORGen WrappedTerm
+genTag :: HasCallStack => Word64 -> CTree GenPhase -> CBORGen RuleTerm
 genTag t node = do
   omitTag <- liftAntiGen $ faultyBool False
   if omitTag
@@ -575,7 +575,7 @@ genTag t node = do
         SingleTerm x -> pure $ SingleTerm $ TTagged tag x
         _ -> error "Tag controller does not correspond to a single term"
 
-genForNode :: HasCallStack => Name -> CBORGen WrappedTerm
+genForNode :: HasCallStack => Name -> CBORGen RuleTerm
 genForNode = genForCTree <=< resolveRef
 
 -- | Take a reference and resolve it to the relevant Tree, following multiple
@@ -611,10 +611,10 @@ generateFromName n = do
               <> show n
               <> ", but it does not correspond to a single term."
 
--- | Generate a 'WrappedTerm' for the type bound to the given generic
+-- | Generate a 'RuleTerm' for the type bound to the given generic
 -- parameter at the enclosing rule. Use this from inside a custom generator
 -- attached to a generic rule.
-generateFromGRef :: HasCallStack => GRef -> CBORGen WrappedTerm
+generateFromGRef :: HasCallStack => GRef -> CBORGen RuleTerm
 generateFromGRef ref = do
   mRule <- lookupGRef ref
   case mRule of
@@ -637,8 +637,8 @@ listOfScaled1 g = sized $ \sz -> do
 -- | Apply an occurence indicator to a group entry
 applyOccurenceIndicator ::
   OccurrenceIndicator ->
-  CBORGen WrappedTerm ->
-  CBORGen WrappedTerm
+  CBORGen RuleTerm ->
+  CBORGen RuleTerm
 applyOccurenceIndicator OIOptional oldGen =
   sizeBiasedBool >>= \case
     False -> pure $ GroupTerm mempty

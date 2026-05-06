@@ -24,7 +24,7 @@ import Codec.CBOR.Cuddle.CBOR.Validator.Trace (
 import Codec.CBOR.Cuddle.CDDL (Name (..))
 import Codec.CBOR.Cuddle.CDDL.CTree (CTreeRoot (..))
 import Codec.CBOR.Cuddle.CDDL.CTree qualified as CTree
-import Codec.CBOR.Cuddle.CDDL.Custom.Core (WrappedTerm (..))
+import Codec.CBOR.Cuddle.CDDL.Custom.Core (RuleTerm (..))
 import Codec.CBOR.Cuddle.CDDL.Custom.Generator (GenConfig (..), runCBORGen)
 import Codec.CBOR.Cuddle.CDDL.Custom.Validator (TermValidator)
 import Codec.CBOR.Cuddle.CDDL.Postlude (appendPostlude)

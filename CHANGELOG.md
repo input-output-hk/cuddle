@@ -2,6 +2,7 @@
 
 ## 1.7.0.0
 
+* Rename `WrappedTerm` to `RuleTerm`
 * Rename `RuleTerm` constructors:
   * `S` -> `SingleTerm`
   * `G` -> `GroupTerm`

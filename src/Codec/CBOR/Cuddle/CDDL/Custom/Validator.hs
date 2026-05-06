@@ -15,7 +15,7 @@ module Codec.CBOR.Cuddle.CDDL.Custom.Validator (
 
 import Codec.CBOR.Cuddle.CDDL (GRef (..), Name (..))
 import Codec.CBOR.Cuddle.CDDL.CTree (CTree, CTreeRoot (..))
-import Codec.CBOR.Cuddle.CDDL.Custom.Core (MonadCddl (..), WrappedTerm)
+import Codec.CBOR.Cuddle.CDDL.Custom.Core (MonadCddl (..), RuleTerm)
 import Codec.CBOR.Cuddle.CDDL.Custom.Generator (XXCTree)
 import Control.Monad.Reader (MonadReader (..), ReaderT (..), asks)
 import Data.Map.Strict (Map)
@@ -47,7 +47,7 @@ data ValidateEnv = ValidateEnv
 newtype Validator a = Validator (ReaderT ValidateEnv (Either Text) a)
   deriving (Functor, Applicative, Monad, MonadReader ValidateEnv)
 
-type TermValidator = WrappedTerm -> Validator ()
+type TermValidator = RuleTerm -> Validator ()
 
 instance MonadCddl Validator where
   type Phase Validator = ValidatorPhase

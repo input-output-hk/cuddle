@@ -27,7 +27,7 @@ import Codec.CBOR.Cuddle.CBOR.Validator.Trace (
 import Codec.CBOR.Cuddle.CDDL hiding (CDDL, Group, Rule)
 import Codec.CBOR.Cuddle.CDDL.CTree
 import Codec.CBOR.Cuddle.CDDL.CtlOp
-import Codec.CBOR.Cuddle.CDDL.Custom.Core (MonadCddl (..), WrappedTerm (..))
+import Codec.CBOR.Cuddle.CDDL.Custom.Core (MonadCddl (..), RuleTerm (..))
 import Codec.CBOR.Cuddle.CDDL.Custom.Validator (
   CustomValidatorResult (..),
   TermValidator,
@@ -146,7 +146,7 @@ terminal = evidence . TerminalRule . mapIndex
 -- when they encounter a 'VValidator' node after dereferencing a rule reference.
 runCustomValidator ::
   CTreeRoot ValidatorPhase ->
-  WrappedTerm ->
+  RuleTerm ->
   TermValidator ->
   Evidenced ValidationTrace
 runCustomValidator cddl term validator =

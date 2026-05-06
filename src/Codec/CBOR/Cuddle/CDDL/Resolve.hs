@@ -66,7 +66,7 @@ import Data.Hashable
 import Data.List (foldl')
 #endif
 import Codec.CBOR.Cuddle.CDDL.CTreePhase (CTreePhase, XRule (..))
-import Codec.CBOR.Cuddle.CDDL.Custom.Core (WrappedTerm)
+import Codec.CBOR.Cuddle.CDDL.Custom.Core (RuleTerm)
 import Codec.CBOR.Cuddle.CDDL.Custom.Generator (
   CBORGen,
   GenPhase,
@@ -105,7 +105,7 @@ newtype PartialCTreeRoot i = PartialCTreeRoot (Map.Map Name (ProvidedParameters 
 
 data CDDLMapEntry = CDDLMapEntry
   { cmeProvidedParameters :: ProvidedParameters (TypeOrGroup CTreePhase)
-  , cmeCustomGenerator :: Maybe (CBORGen WrappedTerm)
+  , cmeCustomGenerator :: Maybe (CBORGen RuleTerm)
   , cmeCustomValidator :: Maybe TermValidator
   }
   deriving (Generic)
@@ -167,7 +167,7 @@ type data OrReferenced
 data instance XXCTree OrReferenced
   = -- | Reference to another node with possible generic arguments supplied
     OrRef Name [CTree OrReferenced]
-  | OGenerator (CBORGen WrappedTerm) (CTree OrReferenced)
+  | OGenerator (CBORGen RuleTerm) (CTree OrReferenced)
   | OValidator TermValidator (CTree OrReferenced)
 
 type data OrReferencedSimple
@@ -415,7 +415,7 @@ instance Pretty (XXCTree i) => Pretty (DistRef i) where
 
 data instance XXCTree DistReferenced
   = DRef (DistRef DistReferenced)
-  | DGenerator (CBORGen WrappedTerm) (CTree DistReferenced)
+  | DGenerator (CBORGen RuleTerm) (CTree DistReferenced)
   | DValidator TermValidator (CTree DistReferenced)
 
 type data DistReferencedNoGen
@@ -471,7 +471,7 @@ type data MonoReferenced
 
 data instance XXCTree MonoReferenced
   = MRuleRef Name
-  | MGenerator (CBORGen WrappedTerm) (CTree MonoReferenced)
+  | MGenerator (CBORGen RuleTerm) (CTree MonoReferenced)
   | MValidator TermValidator (CTree MonoReferenced)
 
 type MonoEnv = BindingEnv DistReferenced MonoReferenced
