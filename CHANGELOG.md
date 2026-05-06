@@ -2,6 +2,10 @@
 
 ## 1.7.0.0
 
+* Split `Codec.CBOR.Cuddle.CDDL.CBORGenerator` into:
+  * `Codec.CBOR.Cuddle.CDDL.Custom.Generator`
+  * `Codec.CBOR.Cuddle.CDDL.Custom.Validator`
+  * `Codec.CBOR.Cuddle.CDDL.Custom.Core`
 * Fix `--no-twiddle` argument
 * Add autocompletion hints
 * Add footer, improve output format failure message

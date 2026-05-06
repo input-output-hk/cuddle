@@ -25,20 +25,17 @@ import Codec.CBOR.Cuddle.CBOR.Validator.Trace (
   showSimple,
  )
 import Codec.CBOR.Cuddle.CDDL hiding (CDDL, Group, Rule)
-import Codec.CBOR.Cuddle.CDDL.CBORGenerator (
+import Codec.CBOR.Cuddle.CDDL.CTree
+import Codec.CBOR.Cuddle.CDDL.CtlOp
+import Codec.CBOR.Cuddle.CDDL.Custom.Core (MonadCddl (..), WrappedTerm (..))
+import Codec.CBOR.Cuddle.CDDL.Custom.Validator (
   CustomValidatorResult (..),
-  MonadCddl (..),
   TermValidator,
   ValidateEnv (..),
   Validator,
   ValidatorPhase,
-  WrappedTerm (..),
-  lookupCddl,
-  lookupGRef,
   runValidator,
  )
-import Codec.CBOR.Cuddle.CDDL.CTree
-import Codec.CBOR.Cuddle.CDDL.CtlOp
 import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
 import Codec.CBOR.Read
 import Codec.CBOR.Term

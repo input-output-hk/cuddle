@@ -32,19 +32,6 @@ import Codec.CBOR.Cuddle.CDDL (
   Value (..),
   ValueVariant (..),
  )
-import Codec.CBOR.Cuddle.CDDL.CBORGenerator (
-  CBORGen,
-  GenConfig (..),
-  GenEnv (..),
-  GenPhase,
-  WrappedTerm (..),
-  XXCTree (..),
-  liftAntiGen,
-  lookupCddl,
-  lookupGRef,
-  withAntiGen,
-  withTwiddle,
- )
 import Codec.CBOR.Cuddle.CDDL.CTree (
   CTree (..),
   PTerm (..),
@@ -54,6 +41,16 @@ import Codec.CBOR.Cuddle.CDDL.CTree (
  )
 import Codec.CBOR.Cuddle.CDDL.CTree qualified as CTree
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
+import Codec.CBOR.Cuddle.CDDL.Custom.Core (MonadCddl (..), WrappedTerm (..))
+import Codec.CBOR.Cuddle.CDDL.Custom.Generator (
+  CBORGen,
+  GenConfig (..),
+  GenEnv (..),
+  GenPhase,
+  disableTwiddle,
+  liftAntiGen,
+  withAntiGen,
+ )
 import Codec.CBOR.Cuddle.CDDL.Resolve (XXCTree (..))
 import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
 import Codec.CBOR.Term (Term (..))
@@ -572,7 +569,7 @@ genTag t node = do
         n
           | n == 2 || n == 3 ->
               -- TODO remove this once `cborg` can decode indefinite bytes in bignums
-              withTwiddle False $ genForCTree node
+              disableTwiddle $ genForCTree node
         _ -> genForCTree node
       case enc of
         S x -> pure $ S $ TTagged tag x

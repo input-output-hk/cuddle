@@ -12,7 +12,9 @@ module Codec.CBOR.Cuddle.CDDL.CTreePhase (
 ) where
 
 import Codec.CBOR.Cuddle.CDDL (XCddl, XRule, XTerm, XXTopLevel, XXType2)
-import Codec.CBOR.Cuddle.CDDL.CBORGenerator (CBORGen, TermValidator, WrappedTerm)
+import Codec.CBOR.Cuddle.CDDL.Custom.Core (WrappedTerm)
+import Codec.CBOR.Cuddle.CDDL.Custom.Generator (CBORGen)
+import Codec.CBOR.Cuddle.CDDL.Custom.Validator (TermValidator)
 import Data.Default.Class (Default)
 import Data.Hashable (Hashable)
 import GHC.Generics (Generic)

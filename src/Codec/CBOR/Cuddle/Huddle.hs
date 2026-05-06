@@ -116,14 +116,10 @@ import Codec.CBOR.Cuddle.CDDL (
   XRule,
  )
 import Codec.CBOR.Cuddle.CDDL qualified as C
-import Codec.CBOR.Cuddle.CDDL.CBORGenerator (
-  CBORGen,
-  HasGenerator (..),
-  HasValidator (..),
-  TermValidator,
-  WrappedTerm,
- )
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
+import Codec.CBOR.Cuddle.CDDL.Custom.Core (WrappedTerm)
+import Codec.CBOR.Cuddle.CDDL.Custom.Generator (CBORGen, HasGenerator (..))
+import Codec.CBOR.Cuddle.CDDL.Custom.Validator (HasValidator (..), TermValidator)
 import Codec.CBOR.Cuddle.Comments (Comment, HasComment (..))
 import Codec.CBOR.Cuddle.Comments qualified as C
 import Control.Monad (when)

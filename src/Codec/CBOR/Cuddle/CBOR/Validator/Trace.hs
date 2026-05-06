@@ -34,9 +34,9 @@ module Codec.CBOR.Cuddle.CBOR.Validator.Trace (
 ) where
 
 import Codec.CBOR.Cuddle.CDDL (Name (..))
-import Codec.CBOR.Cuddle.CDDL.CBORGenerator (ValidatorPhase)
 import Codec.CBOR.Cuddle.CDDL.CTree (CTree (..), CTreeRoot (..), Node, XXCTree, foldCTree)
 import Codec.CBOR.Cuddle.CDDL.CtlOp (CtlOp)
+import Codec.CBOR.Cuddle.CDDL.Custom.Validator (ValidatorPhase)
 import Codec.CBOR.Cuddle.CDDL.Resolve (XXCTree (..))
 import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
 import Codec.CBOR.Term (Term)

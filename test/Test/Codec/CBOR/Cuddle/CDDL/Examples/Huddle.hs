@@ -34,7 +34,7 @@ module Test.Codec.CBOR.Cuddle.CDDL.Examples.Huddle (
 import Codec.CBOR.Cuddle.CBOR.Gen (generateFromGRef)
 import Codec.CBOR.Cuddle.CBOR.Validator (validateFromGRef)
 import Codec.CBOR.Cuddle.CDDL (Name)
-import Codec.CBOR.Cuddle.CDDL.CBORGenerator (WrappedTerm (..))
+import Codec.CBOR.Cuddle.CDDL.Custom.Core (WrappedTerm (..))
 import Codec.CBOR.Cuddle.Huddle (
   CanQuantify (..),
   Huddle,

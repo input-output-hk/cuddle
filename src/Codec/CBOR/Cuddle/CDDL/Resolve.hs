@@ -65,17 +65,20 @@ import Data.Hashable
 #if __GLASGOW_HASKELL__ < 910
 import Data.List (foldl')
 #endif
-import Codec.CBOR.Cuddle.CDDL.CBORGenerator (
+import Codec.CBOR.Cuddle.CDDL.CTreePhase (CTreePhase, XRule (..))
+import Codec.CBOR.Cuddle.CDDL.Custom.Core (WrappedTerm)
+import Codec.CBOR.Cuddle.CDDL.Custom.Generator (
   CBORGen,
   GenPhase,
-  TermValidator,
-  ValidatorPhase,
-  WrappedTerm,
   XXCTree (..),
   withLocalGenBindings,
+ )
+import Codec.CBOR.Cuddle.CDDL.Custom.Validator (
+  TermValidator,
+  ValidatorPhase,
+  XXCTree (..),
   withLocalValidateBindings,
  )
-import Codec.CBOR.Cuddle.CDDL.CTreePhase (CTreePhase, XRule (..))
 import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as Map

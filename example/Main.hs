@@ -7,7 +7,7 @@ module Main (main) where
 
 import Codec.CBOR.Cuddle.CBOR.Gen (generateFromName)
 import Codec.CBOR.Cuddle.CDDL (Name (..))
-import Codec.CBOR.Cuddle.CDDL.CBORGenerator (GenConfig (..), runCBORGen)
+import Codec.CBOR.Cuddle.CDDL.Custom.Generator (GenConfig (..), runCBORGen)
 import Codec.CBOR.Cuddle.CDDL.Resolve (MonoSimple, fullResolveCDDL)
 import Codec.CBOR.Cuddle.Huddle (toCDDL)
 import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..), mapCDDLDropExt)
