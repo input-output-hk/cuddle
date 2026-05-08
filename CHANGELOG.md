@@ -1,5 +1,9 @@
 # Changelog for `cuddle`
 
+## 1.8.0.0
+
+* Add `choiceFromList` to fold a `NonEmpty` list into a `Choice` using `(/)`
+
 ## 1.7.0.0
 
 * Rename `WrappedTerm` to `RuleTerm`
@@ -60,7 +64,7 @@
 
 ## 1.2.0.0
 
-* Add `Pretty` instance for `PTerm` 
+* Add `Pretty` instance for `PTerm`
 * Replace `ValidationResult` with `Evidenced ValidationTrace`
 * Move `ValidatorStageSimple` and `showSimple` to `Codec.CBOR.Cuddle.CBOR.Validator.Trace`
 * Add `Codec.CBOR.Cuddle.CBOR.Validator.Trace`
@@ -70,11 +74,11 @@
 * Removed `Codec.CBOR.Cuddle.Huddle.HuddleM`
 * Add `format-cbor` subcommand
 * Changed `--cbor` option of `validate` to a proper argument
-* Added `binary` and `hex` output formats. Providing an output file argument to 
+* Added `binary` and `hex` output formats. Providing an output file argument to
   `gen` no longer affects the output format.
 * Add `format-cbor` subcommand
 * Changed `--cbor` option of `validate` to a proper argument
-* Added `binary` and `hex` output formats. Providing an output file argument to 
+* Added `binary` and `hex` output formats. Providing an output file argument to
   `gen` no longer affects the output format.
 * Add `seed` and `size` options to `generate` subcommand
 * Replace `generateCBORTerm` with `generateFromName`
@@ -107,7 +111,7 @@
 * Changed `T2Ref` to take a `Rule` instead of `Named Type0`
 * Add `GroupDef`, `HIGroup` constructor now expects a `GroupDef` instead of `Named Group`
 * Changed the following type synonyms to proper datatypes:
-  - `GRuleDef` 
+  - `GRuleDef`
   - `GRuleCall`
 * Removed `Codec.CBOR.Cuddle.Huddle.Optics`
 * Changed the `comment` to take a `Comment` argument instead of `Text`
@@ -137,9 +141,9 @@
 * Move `PTerm` to `Codec.CBOR.Cuddle.CDDL.CTree`
 * Remove `CTreeRoot'`
 * Changed the type in `CTreeRoot` to a map of resolved `CTree`s
-* Changed the type of the first argument for `generateCBORTerm` and 
+* Changed the type of the first argument for `generateCBORTerm` and
   `generateCBORTerm'` to `CTreeRoot`
-* Removed all exports in `Codec.CBOR.Cuddle.CBOR.Validator` except for 
+* Removed all exports in `Codec.CBOR.Cuddle.CBOR.Validator` except for
   `validateCBOR`, `validateCBOR'`, `CBORTermResult` and `CDDLResult`
 
 ## 1.0.0.0

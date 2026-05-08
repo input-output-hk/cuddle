@@ -12,6 +12,7 @@ import Codec.CBOR.Cuddle.Comments (Comment)
 import Codec.CBOR.Cuddle.Huddle
 import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
 import Codec.CBOR.Cuddle.Parser
+import Data.List.NonEmpty (NonEmpty ((:|)))
 import Data.Text qualified as T
 import Data.Void (Void)
 import GHC.Generics (Generic)
@@ -77,6 +78,7 @@ huddleSpec = describe "huddle" $ do
   nestedSpec
   genericSpec
   constraintSpec
+  choiceSpec
   Pretty.spec
 
 basicAssign :: Spec
@@ -200,6 +202,18 @@ constraintSpec =
       let b = "b" =:= (16 :: Integer)
        in toSortedCDDL (collectFrom [HIRule $ "b" =:= (16 :: Integer), HIRule $ "c" =:= int 0 ... b])
             `shouldMatchParseCDDL` "b = 16\n c = 0 .. b"
+
+choiceSpec :: Spec
+choiceSpec =
+  describe "Choice" $ do
+    describe "choiceFromList" $ do
+      it "produces expected CDDL for 3-element list" $
+        toSortedCDDL ["foo" =:= choiceFromList (int 1 :| [int 2, int 3])]
+          `shouldMatchParseCDDL` "foo = 1 / 2 / 3"
+
+      it "singleton is equivalent to direct assignment" $
+        toSortedCDDL ["foo" =:= choiceFromList (int 1 :| [])]
+          `shouldMatchParseCDDL` "foo = 1"
 
 --------------------------------------------------------------------------------
 -- Helper functions

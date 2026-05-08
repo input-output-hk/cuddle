@@ -57,6 +57,7 @@ module Codec.CBOR.Cuddle.Huddle (
   opt,
 
   -- * Choices
+  choiceFromList,
   (/),
   seal,
   sarr,
@@ -937,6 +938,15 @@ x / b = go (toChoice x) (toChoice b)
     go (ChoiceOf x' b') c = ChoiceOf x' (go b' c)
 
 infixl 9 /
+
+-- | Takes a `NonEmpty` list of Huddle choosable terms and folds over them with
+-- '(/)' to create a 'Choice'.
+--
+-- @
+--   choiceFromList $ NE.fromList $ [tag t (arr $ fromList [0 <+ a x]) | t <- [121 .. 127]]
+-- @
+choiceFromList :: IsChoosable a b => NE.NonEmpty a -> Choice b
+choiceFromList terms = foldl1 (/) $ fmap toChoice terms
 
 -- Choices within maps or arrays
 --
