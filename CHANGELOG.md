@@ -2,6 +2,7 @@
 
 ## 1.8.0.0
 
+* Export `IsChoosable (toChoice)`
 * Add `choiceFromList` to fold a `NonEmpty` list into a `Choice` using `(/)`
 
 ## 1.7.0.0

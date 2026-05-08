@@ -57,6 +57,7 @@ module Codec.CBOR.Cuddle.Huddle (
   opt,
 
   -- * Choices
+  IsChoosable (toChoice),
   choiceFromList,
   (/),
   seal,
