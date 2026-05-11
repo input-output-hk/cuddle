@@ -1,4 +1,5 @@
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE OverloadedStrings #-}
 
@@ -12,6 +13,8 @@ module Test.Codec.CBOR.Cuddle.CDDL.Validator (
 
 import Codec.CBOR.Cuddle.CBOR.Gen (generateFromName)
 import Codec.CBOR.Cuddle.CBOR.Validator (
+  ValidatorInputError,
+  displayValidatorInputError,
   validateCBOR,
  )
 import Codec.CBOR.Cuddle.CBOR.Validator.Trace (
@@ -260,7 +263,7 @@ validateHuddle ::
   Huddle ->
   Name ->
   Term ->
-  Evidenced ValidationTrace
+  Either ValidatorInputError (Evidenced ValidationTrace)
 validateHuddle huddle name term = do
   let
     resolvedCddl = case fullResolveCDDL . mapCDDLDropExt $ toCDDL huddle of
@@ -269,19 +272,32 @@ validateHuddle huddle name term = do
     bs = toStrictByteString $ encodeTerm term
   validateCBOR bs name (mapIndex resolvedCddl)
 
-expectValid :: Evidenced ValidationTrace -> Expectation
-expectValid (Evidenced SValid _) = pure ()
-expectValid (Evidenced SInvalid t) =
-  expectationFailure . T.unpack $
-    "Expected a success, got failure:\n"
-      <> renderStrict (layoutPretty defaultLayoutOptions $ prettyValidationTrace defaultTraceOptions t)
+-- | Unwrap a 'validateCBOR' result, failing the test if the input could not
+-- even be decoded or referenced an unknown rule.
+unwrapValidatorInput ::
+  Either ValidatorInputError (Evidenced ValidationTrace) ->
+  IO (Evidenced ValidationTrace)
+unwrapValidatorInput (Right ev) = pure ev
+unwrapValidatorInput (Left err) =
+  expectationFailure (displayValidatorInputError err) >> error "unreachable"
 
-expectInvalid :: Evidenced ValidationTrace -> Expectation
-expectInvalid (Evidenced SValid t) =
-  expectationFailure . T.unpack $
-    "Expected a failure, but got success:\n"
-      <> renderStrict (layoutPretty defaultLayoutOptions $ prettyValidationTrace defaultTraceOptions t)
-expectInvalid _ = pure ()
+expectValid :: Either ValidatorInputError (Evidenced ValidationTrace) -> Expectation
+expectValid r =
+  unwrapValidatorInput r >>= \case
+    Evidenced SValid _ -> pure ()
+    Evidenced SInvalid t ->
+      expectationFailure . T.unpack $
+        "Expected a success, got failure:\n"
+          <> renderStrict (layoutPretty defaultLayoutOptions $ prettyValidationTrace defaultTraceOptions t)
+
+expectInvalid :: Either ValidatorInputError (Evidenced ValidationTrace) -> Expectation
+expectInvalid r =
+  unwrapValidatorInput r >>= \case
+    Evidenced SValid t ->
+      expectationFailure . T.unpack $
+        "Expected a failure, but got success:\n"
+          <> renderStrict (layoutPretty defaultLayoutOptions $ prettyValidationTrace defaultTraceOptions t)
+    Evidenced SInvalid _ -> pure ()
 
 stringValidator :: TermValidator
 stringValidator (SingleTerm (TString _)) = pure ()

@@ -3,7 +3,7 @@
 
 module Test.Codec.CBOR.Cuddle.CDDL.Validator.Golden (spec) where
 
-import Codec.CBOR.Cuddle.CBOR.Validator (validateCBOR)
+import Codec.CBOR.Cuddle.CBOR.Validator (displayValidatorInputError, validateCBOR)
 import Codec.CBOR.Cuddle.CBOR.Validator.Trace (
   defaultTraceOptions,
   foldEvidenced,
@@ -111,12 +111,13 @@ validatorPrettyGolden testName huddle n term =
     treeRoot =
       fromRight (error "Failed to resolve CDDL") . fullResolveCDDL . mapCDDLDropExt $
         toCDDL huddle
-    str =
-      Ansi.renderStrict
-        . layoutPretty defaultLayoutOptions
-        . foldEvidenced (prettyValidationTrace defaultTraceOptions)
-        . validateCBOR bs n
-        $ mapIndex treeRoot
+    str = case validateCBOR bs n (mapIndex treeRoot) of
+      Left err -> T.pack $ displayValidatorInputError err
+      Right ev ->
+        Ansi.renderStrict
+          . layoutPretty defaultLayoutOptions
+          . foldEvidenced (prettyValidationTrace defaultTraceOptions)
+          $ ev
 
 spec :: Spec
 spec = describe "golden" $ do

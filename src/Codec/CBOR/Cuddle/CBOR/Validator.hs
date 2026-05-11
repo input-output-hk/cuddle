@@ -8,6 +8,8 @@ module Codec.CBOR.Cuddle.CBOR.Validator (
   validateFromName,
   validateFromGRef,
   ValidatorPhase,
+  ValidatorInputError (..),
+  displayValidatorInputError,
 ) where
 
 import Codec.CBOR.Cuddle.CBOR.Validator.Trace (
@@ -37,7 +39,7 @@ import Codec.CBOR.Cuddle.CDDL.Custom.Validator (
  )
 import Codec.CBOR.Cuddle.CDDL.Resolve (showSimple)
 import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
-import Codec.CBOR.Read
+import Codec.CBOR.Read (DeserialiseFailure, deserialiseFromBytes)
 import Codec.CBOR.Term
 import Control.Monad.Reader (asks)
 import Data.Bifunctor (Bifunctor (..))
@@ -62,18 +64,38 @@ import Text.Regex.TDFA
 --------------------------------------------------------------------------------
 -- Main entry point
 
+-- | Errors that prevent validation from running at all: the input could not be
+-- decoded as CBOR, decoded successfully but had trailing garbage, or the
+-- caller asked us to validate against a top-level rule name not defined in the
+-- CDDL. These are distinct from schema-level mismatches, which are reported
+-- through 'Evidenced' 'ValidationTrace'.
+data ValidatorInputError
+  = CBORDecodeFailure DeserialiseFailure
+  | LeftoverBytesAfterTerm BS.ByteString
+  | UnknownTopLevelRule Name
+  deriving (Show)
+
+-- | Human-readable rendering of a 'ValidatorInputError'.
+displayValidatorInputError :: ValidatorInputError -> String
+displayValidatorInputError = \case
+  CBORDecodeFailure e -> "Could not decode input as CBOR: " <> show e
+  LeftoverBytesAfterTerm rest -> "Leftover bytes after CBOR term: " <> show rest
+  UnknownTopLevelRule (Name n) -> "No such top-level rule in the CDDL: " <> T.unpack n
+
 validateCBOR ::
-  HasCallStack =>
   BS.ByteString ->
   Name ->
   CTreeRoot ValidatorPhase ->
-  Evidenced ValidationTrace
+  Either ValidatorInputError (Evidenced ValidationTrace)
 validateCBOR bs rule cddl@(CTreeRoot tree) =
   case deserialiseFromBytes decodeTerm (BSL.fromStrict bs) of
-    Left e -> error $ show e
-    Right (rest, term)
-      | BSL.null rest -> validateTerm cddl term (tree Map.! rule)
-      | otherwise -> error $ "Leftover bytes in CBOR: " <> show rest
+    Left e -> Left $ CBORDecodeFailure e
+    Right (rest, _)
+      | not (BSL.null rest) -> Left . LeftoverBytesAfterTerm $ BSL.toStrict rest
+    Right (_, term) ->
+      case Map.lookup rule tree of
+        Nothing -> Left $ UnknownTopLevelRule rule
+        Just r -> Right $ validateTerm cddl term r
 
 -- | Validate a CBOR 'Term' against a top-level rule from inside a custom
 -- validator.
