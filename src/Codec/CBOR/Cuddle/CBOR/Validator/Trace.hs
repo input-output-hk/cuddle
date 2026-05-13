@@ -10,8 +10,6 @@
 {-# LANGUAGE UndecidableInstances #-}
 
 module Codec.CBOR.Cuddle.CBOR.Validator.Trace (
-  ValidatorPhaseSimple,
-  XXCTree (..),
   SValidity (..),
   Validity (..),
   ValidationTrace (..),
@@ -34,10 +32,10 @@ module Codec.CBOR.Cuddle.CBOR.Validator.Trace (
 ) where
 
 import Codec.CBOR.Cuddle.CDDL (Name (..))
-import Codec.CBOR.Cuddle.CDDL.CTree (CTree (..), CTreeRoot (..), Node, XXCTree, foldCTree)
+import Codec.CBOR.Cuddle.CDDL.CTree (CTree (..))
 import Codec.CBOR.Cuddle.CDDL.CtlOp (CtlOp)
 import Codec.CBOR.Cuddle.CDDL.Custom.Validator (ValidatorPhase)
-import Codec.CBOR.Cuddle.CDDL.Resolve (XXCTree (..))
+import Codec.CBOR.Cuddle.CDDL.Resolve (MonoSimplePhase)
 import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
 import Codec.CBOR.Term (Term)
 import Data.Foldable (Foldable (..))
@@ -63,37 +61,14 @@ import Prettyprinter.Render.Terminal (AnsiStyle, Color (..), color, italicized)
 import Prettyprinter.Render.Terminal qualified as Ansi
 
 --------------------------------------------------------------------------------
--- ValidatorPhase
-
-type data ValidatorPhaseSimple
-
-newtype instance XXCTree ValidatorPhaseSimple = VRuleRefSimple Name
-
-instance Pretty (XXCTree ValidatorPhaseSimple) where
-  pretty (VRuleRefSimple n) = pretty n
-
-instance IndexMappable CTreeRoot ValidatorPhase ValidatorPhaseSimple where
-  mapIndex (CTreeRoot m) = CTreeRoot $ mapIndex <$> m
-
-instance IndexMappable CTree ValidatorPhase ValidatorPhaseSimple where
-  mapIndex = foldCTree mapExt mapIndex
-    where
-      mapExt (VRuleRef n) = CTreeE $ VRuleRefSimple n
-      mapExt (VValidator _ x) = mapIndex x
+-- Validation result
 
 showSimple ::
-  ( IndexMappable a ValidatorPhase ValidatorPhaseSimple
-  , Show (a ValidatorPhaseSimple)
+  ( IndexMappable a ValidatorPhase MonoSimplePhase
+  , Show (a MonoSimplePhase)
   ) =>
   a ValidatorPhase -> String
-showSimple = show . mapIndex @_ @_ @ValidatorPhaseSimple
-
-deriving instance Eq (Node ValidatorPhaseSimple)
-
-deriving instance Show (Node ValidatorPhaseSimple)
-
---------------------------------------------------------------------------------
--- Validation result
+showSimple = show . mapIndex @_ @_ @MonoSimplePhase
 
 type data Validity
   = IsValid
@@ -116,7 +91,7 @@ instance TestEquality SValidity where
 
 data ControlInfo = ControlInfo
   { ciOp :: CtlOp
-  , ciRule :: CTree ValidatorPhaseSimple
+  , ciRule :: CTree MonoSimplePhase
   }
   deriving (Show)
 
@@ -124,13 +99,13 @@ instance Pretty ControlInfo where
   pretty ControlInfo {..} = pretty ciOp <+> pretty ciRule
 
 data ValidationTrace (v :: Validity) where
-  UnapplicableRule :: CTree ValidatorPhaseSimple -> ValidationTrace IsInvalid
-  TerminalRule :: CTree ValidatorPhaseSimple -> ValidationTrace IsValid
+  UnapplicableRule :: CTree MonoSimplePhase -> ValidationTrace IsInvalid
+  TerminalRule :: CTree MonoSimplePhase -> ValidationTrace IsValid
   ControlTrace :: ControlInfo -> ValidationTrace IsValid -> ValidationTrace IsValid
   ReferenceRule :: Name -> ValidationTrace v -> ValidationTrace v
   CustomFailure :: Text -> ValidationTrace IsInvalid
   CustomSuccess :: ValidationTrace IsValid
-  UnsatisfiedControl :: CtlOp -> CTree ValidatorPhaseSimple -> ValidationTrace IsInvalid
+  UnsatisfiedControl :: CtlOp -> CTree MonoSimplePhase -> ValidationTrace IsInvalid
   ChoiceBranch :: Int -> ValidationTrace IsValid -> ValidationTrace IsValid
   ListTrace :: ListValidationTrace v -> ValidationTrace v
   MapTrace :: MapValidationTrace v -> ValidationTrace v
@@ -143,18 +118,18 @@ data ListValidationTrace (v :: Validity) where
   ListValidationDone :: ListValidationTrace IsValid
   ListValidationLeftoverTerms ::
     NonEmpty Term ->
-    Maybe (CTree ValidatorPhaseSimple, ValidationTrace IsInvalid) ->
+    Maybe (CTree MonoSimplePhase, ValidationTrace IsInvalid) ->
     ListValidationTrace IsInvalid
   ListValidationUnappliedRule ::
-    CTree ValidatorPhaseSimple ->
+    CTree MonoSimplePhase ->
     ListValidationTrace IsInvalid
   ListValidationConsume ::
-    CTree ValidatorPhaseSimple ->
+    CTree MonoSimplePhase ->
     ValidationTrace IsValid ->
     ListValidationTrace v ->
     ListValidationTrace v
   ListValidationMissingRequired ::
-    CTree ValidatorPhaseSimple ->
+    CTree MonoSimplePhase ->
     ValidationTrace IsInvalid ->
     ListValidationTrace IsInvalid
   ListValidationConsumeGroup ::
@@ -173,16 +148,16 @@ data MapValidationTrace (v :: Validity) where
   MapValidationDone :: MapValidationTrace IsValid
   MapValidationLeftoverKVs ::
     (Term, Term) ->
-    Maybe (CTree ValidatorPhaseSimple, MapValidationTrace IsInvalid) ->
+    Maybe (CTree MonoSimplePhase, MapValidationTrace IsInvalid) ->
     MapValidationTrace IsInvalid
-  MapValidationUnappliedRules :: NonEmpty (CTree ValidatorPhaseSimple) -> MapValidationTrace IsInvalid
+  MapValidationUnappliedRules :: NonEmpty (CTree MonoSimplePhase) -> MapValidationTrace IsInvalid
   MapValidationInvalidValue ::
-    CTree ValidatorPhaseSimple ->
+    CTree MonoSimplePhase ->
     ValidationTrace IsValid ->
     ValidationTrace IsInvalid ->
     MapValidationTrace IsInvalid
   MapValidationConsume ::
-    CTree ValidatorPhaseSimple ->
+    CTree MonoSimplePhase ->
     ValidationTrace IsValid ->
     ValidationTrace IsValid ->
     MapValidationTrace v ->

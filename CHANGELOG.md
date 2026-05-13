@@ -2,6 +2,8 @@
 
 ## 1.8.0.0
 
+* Rename `MonoSimple` to `MonoSimplePhase`
+* Remove `GenSimple` and `ValidatorPhaseSimple`; use `MonoSimplePhase` instead
 * Export `IsChoosable (toChoice)`
 * Add `choiceFromList` to fold a `NonEmpty` list into a `Choice` using `(/)`
 

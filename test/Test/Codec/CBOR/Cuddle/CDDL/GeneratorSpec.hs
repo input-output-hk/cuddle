@@ -9,7 +9,7 @@ import Codec.CBOR.Cuddle.CBOR.Validator (validateCBOR)
 import Codec.CBOR.Cuddle.CDDL (Name)
 import Codec.CBOR.Cuddle.CDDL.CTree (CTreeRoot (..))
 import Codec.CBOR.Cuddle.CDDL.Custom.Generator (GenConfig (..), runCBORGen)
-import Codec.CBOR.Cuddle.CDDL.Resolve (MonoReferenced, MonoSimple, fullResolveCDDL)
+import Codec.CBOR.Cuddle.CDDL.Resolve (MonoReferenced, MonoSimplePhase, fullResolveCDDL)
 import Codec.CBOR.Cuddle.Huddle (Huddle, toCDDL)
 import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..), mapCDDLDropExt)
 import Codec.CBOR.Pretty (prettyHexEnc)
@@ -80,7 +80,7 @@ expectZapInvalidates cddl name = property $ do
 zapInvalidatesHuddle :: String -> Huddle -> Spec
 zapInvalidatesHuddle n huddle = do
   cddl <- tryResolveHuddle huddle
-  prop n . counterexample (TL.unpack . pShow $ mapIndex @_ @_ @MonoSimple cddl) $
+  prop n . counterexample (TL.unpack . pShow $ mapIndex @_ @_ @MonoSimplePhase cddl) $
     expectZapInvalidates cddl "root"
 
 -- | Test that generated values are valid for a Huddle schema

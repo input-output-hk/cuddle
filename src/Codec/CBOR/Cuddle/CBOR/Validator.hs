@@ -18,7 +18,6 @@ import Codec.CBOR.Cuddle.CBOR.Validator.Trace (
   MapValidationTrace (..),
   SValidity (..),
   ValidationTrace (..),
-  XXCTree (..),
   evidence,
   isValid,
   mapTrace,
@@ -34,6 +33,7 @@ import Codec.CBOR.Cuddle.CDDL.Custom.Validator (
   ValidateEnv (..),
   Validator,
   ValidatorPhase,
+  XXCTree (..),
   runValidator,
  )
 import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))

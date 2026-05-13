@@ -35,7 +35,7 @@ module Codec.CBOR.Cuddle.CDDL.Resolve (
   fullResolveCDDL,
   NameResolutionFailure (..),
   MonoReferenced,
-  MonoSimple,
+  MonoSimplePhase,
   XXCTree (..),
 )
 where
@@ -479,20 +479,45 @@ type MonoEnv = BindingEnv DistReferenced MonoReferenced
 -- | We introduce additional bindings in the state
 type MonoState = Map.Map Name (CTree MonoReferenced)
 
-type data MonoSimple
+-- | A simplified phase reachable from any of the function-bearing post-mono
+-- phases ('MonoReferenced', 'GenPhase', 'ValidatorPhase'). It strips the
+-- generator/validator extensions so the tree can be `Show`n, `Eq`-compared,
+-- and pretty-printed for debug output.
+type data MonoSimplePhase
 
-instance IndexMappable CTree MonoReferenced MonoSimple where
+newtype instance XXCTree MonoSimplePhase = MSimpleRef Name
+  deriving (Generic, Show, Eq)
+
+instance Pretty (XXCTree MonoSimplePhase) where
+  pretty (MSimpleRef n) = pretty n
+
+instance IndexMappable CTree MonoReferenced MonoSimplePhase where
   mapIndex = foldCTree mapExt mapIndex
     where
       mapExt (MRuleRef n) = CTreeE $ MSimpleRef n
       mapExt (MGenerator _ x) = mapIndex x
       mapExt (MValidator _ x) = mapIndex x
 
-instance IndexMappable CTreeRoot MonoReferenced MonoSimple where
+instance IndexMappable CTreeRoot MonoReferenced MonoSimplePhase where
   mapIndex (CTreeRoot m) = CTreeRoot $ mapIndex <$> m
 
-newtype instance XXCTree MonoSimple = MSimpleRef Name
-  deriving (Generic, Show, Eq)
+instance IndexMappable CTree GenPhase MonoSimplePhase where
+  mapIndex = foldCTree mapExt mapIndex
+    where
+      mapExt (GenRef n) = CTreeE $ MSimpleRef n
+      mapExt (GenGenerator _ x) = mapIndex x
+
+instance IndexMappable CTreeRoot GenPhase MonoSimplePhase where
+  mapIndex (CTreeRoot m) = CTreeRoot $ mapIndex <$> m
+
+instance IndexMappable CTree ValidatorPhase MonoSimplePhase where
+  mapIndex = foldCTree mapExt mapIndex
+    where
+      mapExt (VRuleRef n) = CTreeE $ MSimpleRef n
+      mapExt (VValidator _ x) = mapIndex x
+
+instance IndexMappable CTreeRoot ValidatorPhase MonoSimplePhase where
+  mapIndex (CTreeRoot m) = CTreeRoot $ mapIndex <$> m
 
 -- | Monad to run the monomorphisation process. We need some additional
 -- capabilities for this, so 'Either' doesn't fully cut it anymore.
