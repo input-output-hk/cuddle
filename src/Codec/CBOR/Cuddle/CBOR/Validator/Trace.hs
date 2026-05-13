@@ -21,7 +21,6 @@ module Codec.CBOR.Cuddle.CBOR.Validator.Trace (
   TraceOptions (..),
   Progress (..),
   defaultTraceOptions,
-  showSimple,
   isValid,
   prettyValidationTrace,
   showValidationTrace,
@@ -34,9 +33,7 @@ module Codec.CBOR.Cuddle.CBOR.Validator.Trace (
 import Codec.CBOR.Cuddle.CDDL (Name (..))
 import Codec.CBOR.Cuddle.CDDL.CTree (CTree (..))
 import Codec.CBOR.Cuddle.CDDL.CtlOp (CtlOp)
-import Codec.CBOR.Cuddle.CDDL.Custom.Validator (ValidatorPhase)
 import Codec.CBOR.Cuddle.CDDL.Resolve (MonoSimplePhase)
-import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
 import Codec.CBOR.Term (Term)
 import Data.Foldable (Foldable (..))
 import Data.Function (on)
@@ -62,13 +59,6 @@ import Prettyprinter.Render.Terminal qualified as Ansi
 
 --------------------------------------------------------------------------------
 -- Validation result
-
-showSimple ::
-  ( IndexMappable a ValidatorPhase MonoSimplePhase
-  , Show (a MonoSimplePhase)
-  ) =>
-  a ValidatorPhase -> String
-showSimple = show . mapIndex @_ @_ @MonoSimplePhase
 
 type data Validity
   = IsValid

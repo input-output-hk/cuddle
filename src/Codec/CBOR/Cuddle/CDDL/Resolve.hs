@@ -36,6 +36,7 @@ module Codec.CBOR.Cuddle.CDDL.Resolve (
   NameResolutionFailure (..),
   MonoReferenced,
   MonoSimplePhase,
+  showSimple,
   XXCTree (..),
 )
 where
@@ -518,6 +519,16 @@ instance IndexMappable CTree ValidatorPhase MonoSimplePhase where
 
 instance IndexMappable CTreeRoot ValidatorPhase MonoSimplePhase where
   mapIndex (CTreeRoot m) = CTreeRoot $ mapIndex <$> m
+
+-- | Project any phase that maps to 'MonoSimplePhase' down to a `Show`able
+-- representation. Used for debug output by `Gen`, `Validator`, etc.
+showSimple ::
+  forall a phase.
+  ( IndexMappable a phase MonoSimplePhase
+  , Show (a MonoSimplePhase)
+  ) =>
+  a phase -> String
+showSimple = show . mapIndex @_ @_ @MonoSimplePhase
 
 -- | Monad to run the monomorphisation process. We need some additional
 -- capabilities for this, so 'Either' doesn't fully cut it anymore.

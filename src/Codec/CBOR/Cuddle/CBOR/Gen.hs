@@ -49,8 +49,7 @@ import Codec.CBOR.Cuddle.CDDL.Custom.Generator (
   liftAntiGen,
   withAntiGen,
  )
-import Codec.CBOR.Cuddle.CDDL.Resolve (MonoSimplePhase, XXCTree (..))
-import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
+import Codec.CBOR.Cuddle.CDDL.Resolve (XXCTree (..), showSimple)
 import Codec.CBOR.Term (Term (..))
 import Codec.CBOR.Term qualified as CBOR
 import Codec.CBOR.Write qualified as CBOR
@@ -281,9 +280,6 @@ singleTermList [] = Just []
 singleTermList (SingleTerm x : xs) = (x :) <$> singleTermList xs
 singleTermList (PairTerm _ y : xs) = (y :) <$> singleTermList xs
 singleTermList _ = Nothing
-
-showSimple :: CTree GenPhase -> String
-showSimple = show . mapIndex @_ @_ @MonoSimplePhase
 
 -- | Remove all negative generators from the `AntiGen`.
 dropNegativeGen :: AntiGen a -> AntiGen a
