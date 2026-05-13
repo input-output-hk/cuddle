@@ -560,14 +560,12 @@ validateSimple ::
 validateSimple i (CTreeE (VRuleRef n)) =
   dereferenceAndValidate n $ validateSimple i
 validateSimple i (CTreeE (VValidator v _)) = runCustomValidator (SingleTerm $ TSimple i) v
-validateSimple 23 rule =
+validateSimple n rule =
   case rule of
     Postlude PTAny -> pure $ terminal rule
-    Postlude PTUndefined -> pure $ terminal rule
-    Choice opts -> validateChoice (validateSimple 23) opts
+    Postlude PTUndefined | n == 23 -> pure $ terminal rule
+    Choice opts -> validateChoice (validateSimple n) opts
     _ -> pure $ unapplicable rule
-validateSimple n _ =
-  error $ "Found simple different to 23! please report this somewhere! Found: " <> show n
 
 --------------------------------------------------------------------------------
 -- Null/nil
