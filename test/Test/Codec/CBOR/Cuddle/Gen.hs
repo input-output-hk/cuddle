@@ -4,7 +4,7 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 -- | Hedgehog generators for CDDL
-module Test.Codec.CBOR.Cuddle.CDDL.Gen () where
+module Test.Codec.CBOR.Cuddle.Gen () where
 
 import Codec.CBOR.Cuddle.CDDL
 import Codec.CBOR.Cuddle.CDDL.CtlOp

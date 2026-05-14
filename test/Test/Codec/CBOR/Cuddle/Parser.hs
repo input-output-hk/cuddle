@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Test.Codec.CBOR.Cuddle.CDDL.Parser where
+module Test.Codec.CBOR.Cuddle.Parser where
 
 import Codec.CBOR.Cuddle.CDDL
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
@@ -14,8 +14,8 @@ import Data.TreeDiff (ToExpr (..), ansiWlBgEditExprCompact, exprDiff)
 import Prettyprinter (Pretty, defaultLayoutOptions, layoutPretty, pretty)
 import Prettyprinter.Render.String (renderString)
 import Prettyprinter.Render.Text (renderStrict)
-import Test.Codec.CBOR.Cuddle.CDDL.Gen qualified as Gen ()
-import Test.Codec.CBOR.Cuddle.CDDL.TreeDiff ()
+import Test.Codec.CBOR.Cuddle.TreeDiff ()
+import Test.Codec.CBOR.Cuddle.Gen qualified as Gen ()
 import Test.Hspec
 import Test.Hspec.Megaparsec
 import Test.QuickCheck

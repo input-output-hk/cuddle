@@ -2,7 +2,7 @@
 {-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Test.Codec.CBOR.Cuddle.CDDL.Validator (
+module Test.Codec.CBOR.Cuddle.Validator (
   spec,
   expectValid,
   expectInvalid,
@@ -10,25 +10,13 @@ module Test.Codec.CBOR.Cuddle.CDDL.Validator (
   genAndValidateRule,
 ) where
 
-import Codec.CBOR.Cuddle.CBOR.Gen (generateFromName)
-import Codec.CBOR.Cuddle.CBOR.Validator (
-  validateCBOR,
- )
-import Codec.CBOR.Cuddle.CBOR.Validator.Trace (
-  Evidenced (..),
-  SValidity (..),
-  ValidationTrace,
-  defaultTraceOptions,
-  prettyValidationTrace,
- )
 import Codec.CBOR.Cuddle.CDDL (Name (..))
 import Codec.CBOR.Cuddle.CDDL.CTree (CTreeRoot (..))
 import Codec.CBOR.Cuddle.CDDL.CTree qualified as CTree
 import Codec.CBOR.Cuddle.CDDL.Custom.Core (RuleTerm (..))
-import Codec.CBOR.Cuddle.CDDL.Custom.Generator (GenConfig (..), runCBORGen)
-import Codec.CBOR.Cuddle.CDDL.Custom.Validator (TermValidator)
 import Codec.CBOR.Cuddle.CDDL.Postlude (appendPostlude)
 import Codec.CBOR.Cuddle.CDDL.Resolve (MonoReferenced, fullResolveCDDL)
+import Codec.CBOR.Cuddle.Generator (GenConfig (..), generateFromName, runCBORGen)
 import Codec.CBOR.Cuddle.Huddle (
   Huddle,
   HuddleItem (..),
@@ -44,6 +32,15 @@ import Codec.CBOR.Cuddle.Huddle (
 import Codec.CBOR.Cuddle.Huddle qualified as H
 import Codec.CBOR.Cuddle.IndexMappable (mapCDDLDropExt, mapIndex)
 import Codec.CBOR.Cuddle.Parser (pCDDL)
+import Codec.CBOR.Cuddle.Validator (validateCBOR)
+import Codec.CBOR.Cuddle.Validator.Core (TermValidator)
+import Codec.CBOR.Cuddle.Validator.Trace (
+  Evidenced (..),
+  SValidity (..),
+  ValidationTrace,
+  defaultTraceOptions,
+  prettyValidationTrace,
+ )
 import Codec.CBOR.Pretty (prettyHexEnc)
 import Codec.CBOR.Term (Term (..), encodeTerm)
 import Codec.CBOR.Write (toStrictByteString)
@@ -62,7 +59,7 @@ import Paths_cuddle (getDataFileName)
 import Prettyprinter (defaultLayoutOptions, layoutPretty)
 import Prettyprinter.Render.Terminal (renderStrict)
 import Test.AntiGen (runAntiGen)
-import Test.Codec.CBOR.Cuddle.CDDL.Examples.Huddle (
+import Test.Codec.CBOR.Cuddle.Examples.Huddle (
   huddleArray,
   huddleMap,
   huddleRangeArray,

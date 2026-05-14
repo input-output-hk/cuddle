@@ -2,16 +2,15 @@
 {-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Test.Codec.CBOR.Cuddle.CDDL.GeneratorSpec (spec) where
+module Test.Codec.CBOR.Cuddle.GeneratorSpec (spec) where
 
-import Codec.CBOR.Cuddle.CBOR.Gen (GenPhase, generateFromName)
-import Codec.CBOR.Cuddle.CBOR.Validator (validateCBOR)
 import Codec.CBOR.Cuddle.CDDL (Name)
 import Codec.CBOR.Cuddle.CDDL.CTree (CTreeRoot (..))
-import Codec.CBOR.Cuddle.CDDL.Custom.Generator (GenConfig (..), runCBORGen)
 import Codec.CBOR.Cuddle.CDDL.Resolve (MonoReferenced, MonoSimplePhase, fullResolveCDDL)
+import Codec.CBOR.Cuddle.Generator (GenConfig (..), GenPhase, generateFromName, runCBORGen)
 import Codec.CBOR.Cuddle.Huddle (Huddle, toCDDL)
 import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..), mapCDDLDropExt)
+import Codec.CBOR.Cuddle.Validator (validateCBOR)
 import Codec.CBOR.Pretty (prettyHexEnc)
 import Codec.CBOR.Read (deserialiseFromBytes)
 import Codec.CBOR.Term (Term (..), decodeTerm, encodeTerm)
@@ -20,7 +19,7 @@ import Data.ByteString.Lazy qualified as LBS
 import Data.Text qualified as T
 import Data.Text.Lazy qualified as TL
 import Test.AntiGen (ZapResult (..), prettyZapResult, runAntiGen, zapAntiGenResult)
-import Test.Codec.CBOR.Cuddle.CDDL.Examples.Huddle (
+import Test.Codec.CBOR.Cuddle.Examples.Huddle (
   bytesExample,
   customGenExample,
   opCertExample,
@@ -33,7 +32,7 @@ import Test.Codec.CBOR.Cuddle.CDDL.Examples.Huddle (
   tagRangeExample,
   taggedUintExample,
  )
-import Test.Codec.CBOR.Cuddle.CDDL.Validator (expectInvalid, genAndValidateRule)
+import Test.Codec.CBOR.Cuddle.Validator (expectInvalid, genAndValidateRule)
 import Test.Hspec (HasCallStack, Spec, describe, runIO, shouldSatisfy, xdescribe)
 import Test.Hspec.Core.Spec (SpecM)
 import Test.Hspec.QuickCheck (prop)

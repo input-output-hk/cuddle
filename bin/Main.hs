@@ -6,24 +6,23 @@
 
 module Main (main) where
 
-import Codec.CBOR.Cuddle.CBOR.Gen (generateFromName)
-import Codec.CBOR.Cuddle.CBOR.Validator
-import Codec.CBOR.Cuddle.CBOR.Validator.Trace (
+import Codec.CBOR.Cuddle.CDDL (CDDL, Name (..), fromRules, sortCDDL)
+import Codec.CBOR.Cuddle.CDDL.CTree (CTreeRoot)
+import Codec.CBOR.Cuddle.CDDL.Postlude (appendPostlude)
+import Codec.CBOR.Cuddle.CDDL.Resolve (
+  fullResolveCDDL,
+ )
+import Codec.CBOR.Cuddle.Generator (GenConfig (..), generateFromName, runCBORGen)
+import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..), mapCDDLDropExt)
+import Codec.CBOR.Cuddle.Parser (ParserStage, pCDDL)
+import Codec.CBOR.Cuddle.Pretty (PrettyStage, renderCDDL)
+import Codec.CBOR.Cuddle.Validator (ValidatorPhase, validateCBOR)
+import Codec.CBOR.Cuddle.Validator.Trace (
   Evidenced (..),
   SValidity (..),
   TraceOptions (..),
   prettyValidationTrace,
  )
-import Codec.CBOR.Cuddle.CDDL (CDDL, Name (..), fromRules, sortCDDL)
-import Codec.CBOR.Cuddle.CDDL.CTree (CTreeRoot)
-import Codec.CBOR.Cuddle.CDDL.Custom.Generator (GenConfig (..), runCBORGen)
-import Codec.CBOR.Cuddle.CDDL.Postlude (appendPostlude)
-import Codec.CBOR.Cuddle.CDDL.Resolve (
-  fullResolveCDDL,
- )
-import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..), mapCDDLDropExt)
-import Codec.CBOR.Cuddle.Parser (ParserStage, pCDDL)
-import Codec.CBOR.Cuddle.Pretty (PrettyStage, renderCDDL)
 import Codec.CBOR.FlatTerm (toFlatTerm)
 import Codec.CBOR.Pretty (prettyHexEnc)
 import Codec.CBOR.Read (deserialiseFromBytes)

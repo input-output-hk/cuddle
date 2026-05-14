@@ -2,7 +2,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 
-module Test.Codec.CBOR.Cuddle.CDDL.Pretty (
+module Test.Codec.CBOR.Cuddle.Pretty (
   spec,
   roundtripSpec,
 ) where
@@ -36,8 +36,8 @@ import Data.TreeDiff (ToExpr (..), prettyExpr)
 import Paths_cuddle (getDataFileName)
 import Prettyprinter (Pretty (..), defaultLayoutOptions, layoutPretty)
 import Prettyprinter.Render.String (renderString)
-import Test.Codec.CBOR.Cuddle.CDDL.Gen ()
-import Test.Codec.CBOR.Cuddle.CDDL.TreeDiff ()
+import Test.Codec.CBOR.Cuddle.TreeDiff ()
+import Test.Codec.CBOR.Cuddle.Gen ()
 import Test.HUnit (assertEqual)
 import Test.Hspec (Expectation, Spec, describe, it, runIO, shouldBe, xit)
 import Test.Hspec.QuickCheck (xprop)

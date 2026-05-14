@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Test.Codec.CBOR.Cuddle.CDDL.Examples (spec) where
+module Test.Codec.CBOR.Cuddle.Examples (spec) where
 
 import Codec.CBOR.Cuddle.CDDL (Value (..), ValueVariant (..))
 import Codec.CBOR.Cuddle.CDDL.CTree (CTree (..), CTreeRoot, PTerm (..))

@@ -14,11 +14,13 @@
 {-# LANGUAGE ViewPatterns #-}
 
 -- | Generate example CBOR given a CDDL specification
-module Codec.CBOR.Cuddle.CBOR.Gen (
+module Codec.CBOR.Cuddle.Generator (
   generateFromName,
   generateFromGRef,
   GenPhase,
   XXCTree (..),
+  GenConfig (..),
+  runCBORGen,
 ) where
 
 #if MIN_VERSION_random(1,3,0)
@@ -40,21 +42,21 @@ import Codec.CBOR.Cuddle.CDDL.CTree (
 import Codec.CBOR.Cuddle.CDDL.CTree qualified as CTree
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
 import Codec.CBOR.Cuddle.CDDL.Custom.Core (MonadCddl (..), RuleTerm (..))
-import Codec.CBOR.Cuddle.CDDL.Custom.Generator (
+import Codec.CBOR.Cuddle.CDDL.Resolve (XXCTree (..), showSimple)
+import Codec.CBOR.Cuddle.Generator.Core (
   CBORGen,
   GenConfig (..),
-  GenEnv (..),
   GenPhase,
+  askTwiddle,
   disableTwiddle,
   liftAntiGen,
+  runCBORGen,
   withAntiGen,
  )
-import Codec.CBOR.Cuddle.CDDL.Resolve (XXCTree (..), showSimple)
 import Codec.CBOR.Term (Term (..))
 import Codec.CBOR.Term qualified as CBOR
 import Codec.CBOR.Write qualified as CBOR
 import Control.Monad (zipWithM, (<=<))
-import Control.Monad.Reader (asks)
 import Data.ByteString (ByteString)
 import Data.ByteString.Lazy qualified as LBS
 import Data.Char (chr)
@@ -143,28 +145,28 @@ genHalf = do
 
 twiddleString :: Text -> CBORGen Term
 twiddleString t = do
-  twiddle <- asks (gcTwiddle . geConfig)
+  twiddle <- askTwiddle
   if twiddle
     then ($ t) <$> elements [TString, TStringI . TL.fromStrict]
     else pure $ TString t
 
 twiddleList :: [Term] -> CBORGen Term
 twiddleList t = do
-  twiddle <- asks (gcTwiddle . geConfig)
+  twiddle <- askTwiddle
   if twiddle
     then ($ t) <$> elements [TList, TListI]
     else pure $ TList t
 
 twiddleBytes :: ByteString -> CBORGen Term
 twiddleBytes t = do
-  twiddle <- asks (gcTwiddle . geConfig)
+  twiddle <- askTwiddle
   if twiddle
     then ($ t) <$> elements [TBytes, TBytesI . LBS.fromStrict]
     else pure $ TBytes t
 
 twiddleMap :: [(Term, Term)] -> CBORGen Term
 twiddleMap t = do
-  twiddle <- asks (gcTwiddle . geConfig)
+  twiddle <- askTwiddle
   if twiddle
     then ($ t) <$> elements [TMap, TMapI]
     else pure $ TMap t

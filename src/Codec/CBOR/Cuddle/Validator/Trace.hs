@@ -9,7 +9,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Codec.CBOR.Cuddle.CBOR.Validator.Trace (
+module Codec.CBOR.Cuddle.Validator.Trace (
   SValidity (..),
   Validity (..),
   ValidationTrace (..),

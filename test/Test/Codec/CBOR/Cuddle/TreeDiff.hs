@@ -1,7 +1,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module Test.Codec.CBOR.Cuddle.CDDL.TreeDiff () where
+module Test.Codec.CBOR.Cuddle.TreeDiff () where
 
 import Codec.CBOR.Cuddle.CDDL (
   Assign,

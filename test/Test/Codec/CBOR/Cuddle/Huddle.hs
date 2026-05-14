@@ -16,7 +16,7 @@ import Data.List.NonEmpty (NonEmpty ((:|)))
 import Data.Text qualified as T
 import Data.Void (Void)
 import GHC.Generics (Generic)
-import Test.Codec.CBOR.Cuddle.CDDL.Pretty qualified as Pretty
+import Test.Codec.CBOR.Cuddle.Pretty qualified as Pretty
 import Test.Hspec
 import Test.Hspec.Megaparsec
 import Text.Megaparsec

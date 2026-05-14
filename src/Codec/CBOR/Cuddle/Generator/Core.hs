@@ -1,19 +1,22 @@
 {-# LANGUAGE TypeData #-}
 {-# LANGUAGE TypeFamilies #-}
 
-module Codec.CBOR.Cuddle.CDDL.Custom.Generator (
+module Codec.CBOR.Cuddle.Generator.Core (
   GenPhase,
-  CBORGen,
-  XXCTree (..),
-  HasGenerator (..),
   GenConfig (..),
-  GenEnv (..),
+  CBORGen,
+  HasGenerator (..),
+  XXCTree (..),
   liftAntiGen,
   runCBORGen,
   withAntiGen,
   withLocalGenBindings,
+
+  -- * Twiddling
+  withTwiddle,
   disableTwiddle,
   enableTwiddle,
+  askTwiddle,
 ) where
 
 import Codec.CBOR.Cuddle.CDDL (GRef (..), Name (..))
@@ -101,3 +104,6 @@ data instance XXCTree GenPhase
 
 class HasGenerator a where
   generatorL :: Lens' a (Maybe (CBORGen RuleTerm))
+
+askTwiddle :: CBORGen Bool
+askTwiddle = asks $ gcTwiddle . geConfig
