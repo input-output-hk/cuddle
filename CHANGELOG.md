@@ -2,6 +2,9 @@
 
 ## 1.8.0.0
 
+* Rename `MonoSimple` to `MonoSimplePhase`
+* Remove `GenSimple` and `ValidatorPhaseSimple`; use `MonoSimplePhase` instead
+* Unify `showSimple` into a single polymorphic helper in `Codec.CBOR.Cuddle.CDDL.Resolve`
 * Export `IsChoosable (toChoice)`
 * Add `choiceFromList` to fold a `NonEmpty` list into a `Choice` using `(/)`
 

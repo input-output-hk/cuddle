@@ -8,7 +8,7 @@ module Main (main) where
 import Codec.CBOR.Cuddle.CBOR.Gen (generateFromName)
 import Codec.CBOR.Cuddle.CDDL (Name (..))
 import Codec.CBOR.Cuddle.CDDL.Custom.Generator (GenConfig (..), runCBORGen)
-import Codec.CBOR.Cuddle.CDDL.Resolve (MonoSimple, fullResolveCDDL)
+import Codec.CBOR.Cuddle.CDDL.Resolve (MonoSimplePhase, fullResolveCDDL)
 import Codec.CBOR.Cuddle.Huddle (toCDDL)
 import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..), mapCDDLDropExt)
 import Codec.CBOR.Cuddle.Parser (pCDDL)
@@ -38,7 +38,7 @@ main = do
           putStrLn "--------------------------------------------------------------------------------"
           case fullResolveCDDL (mapCDDLDropExt res) of
             Left nre -> putStrLn $ "Resolution error: " <> show nre
-            Right resolved -> print (mapIndex @_ @_ @MonoSimple resolved)
+            Right resolved -> print (mapIndex @_ @_ @MonoSimplePhase resolved)
     [fn, name] -> do
       putStrLn "--------------------------------------------------------------------------------"
       putStrLn " Generating a term"

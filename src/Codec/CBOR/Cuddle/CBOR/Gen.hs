@@ -18,7 +18,6 @@ module Codec.CBOR.Cuddle.CBOR.Gen (
   generateFromName,
   generateFromGRef,
   GenPhase,
-  GenSimple,
   XXCTree (..),
 ) where
 
@@ -35,7 +34,6 @@ import Codec.CBOR.Cuddle.CDDL (
 import Codec.CBOR.Cuddle.CDDL.CTree (
   CTree (..),
   PTerm (..),
-  foldCTree,
   nintMin,
   uintMax,
  )
@@ -51,8 +49,7 @@ import Codec.CBOR.Cuddle.CDDL.Custom.Generator (
   liftAntiGen,
   withAntiGen,
  )
-import Codec.CBOR.Cuddle.CDDL.Resolve (XXCTree (..))
-import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
+import Codec.CBOR.Cuddle.CDDL.Resolve (XXCTree (..), showSimple)
 import Codec.CBOR.Term (Term (..))
 import Codec.CBOR.Term qualified as CBOR
 import Codec.CBOR.Write qualified as CBOR
@@ -121,21 +118,6 @@ arbitrary = liftGen QC.arbitrary
 
 scale :: MonadGen m => (Int -> Int) -> m a -> m a
 scale f m = sized $ \n -> resize (f n) m
-
---------------------------------------------------------------------------------
--- MonoSimple
---------------------------------------------------------------------------------
-
-type data GenSimple
-
-newtype instance XXCTree GenSimple = GenSimpleRef Name
-  deriving (Show)
-
-instance IndexMappable CTree GenPhase GenSimple where
-  mapIndex = foldCTree mapExt mapIndex
-    where
-      mapExt (GenRef n) = CTreeE $ GenSimpleRef n
-      mapExt (GenGenerator _ x) = mapIndex x
 
 --------------------------------------------------------------------------------
 -- Generator infrastructure
@@ -298,9 +280,6 @@ singleTermList [] = Just []
 singleTermList (SingleTerm x : xs) = (x :) <$> singleTermList xs
 singleTermList (PairTerm _ y : xs) = (y :) <$> singleTermList xs
 singleTermList _ = Nothing
-
-showSimple :: CTree GenPhase -> String
-showSimple = show . mapIndex @_ @_ @GenSimple
 
 -- | Remove all negative generators from the `AntiGen`.
 dropNegativeGen :: AntiGen a -> AntiGen a
