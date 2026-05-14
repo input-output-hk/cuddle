@@ -3,7 +3,6 @@
 
 module Test.Codec.CBOR.Cuddle.CDDL.Validator.Golden (spec) where
 
-import Codec.CBOR.Cuddle.CBOR.Validator (validateCBOR)
 import Codec.CBOR.Cuddle.CBOR.Validator.Trace (
   defaultTraceOptions,
   foldEvidenced,
@@ -38,6 +37,7 @@ import Test.Codec.CBOR.Cuddle.CDDL.Examples.Huddle (
   mapNoMatchingKeyExample,
   refTermExample,
  )
+import Test.Codec.CBOR.Cuddle.CDDL.Validator (validateCBOR_)
 import Test.Hspec (Spec, describe, it)
 import Test.Hspec.Golden (Golden (..))
 
@@ -115,7 +115,7 @@ validatorPrettyGolden testName huddle n term =
       Ansi.renderStrict
         . layoutPretty defaultLayoutOptions
         . foldEvidenced (prettyValidationTrace defaultTraceOptions)
-        . validateCBOR bs n
+        . validateCBOR_ bs n
         $ mapIndex treeRoot
 
 spec :: Spec

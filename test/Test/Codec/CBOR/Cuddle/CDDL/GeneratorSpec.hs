@@ -5,7 +5,6 @@
 module Test.Codec.CBOR.Cuddle.CDDL.GeneratorSpec (spec) where
 
 import Codec.CBOR.Cuddle.CBOR.Gen (GenPhase, generateFromName)
-import Codec.CBOR.Cuddle.CBOR.Validator (validateCBOR)
 import Codec.CBOR.Cuddle.CDDL (Name)
 import Codec.CBOR.Cuddle.CDDL.CTree (CTreeRoot (..))
 import Codec.CBOR.Cuddle.CDDL.Custom.Generator (GenConfig (..), runCBORGen)
@@ -33,7 +32,7 @@ import Test.Codec.CBOR.Cuddle.CDDL.Examples.Huddle (
   tagRangeExample,
   taggedUintExample,
  )
-import Test.Codec.CBOR.Cuddle.CDDL.Validator (expectInvalid, genAndValidateRule)
+import Test.Codec.CBOR.Cuddle.CDDL.Validator (expectInvalid, genAndValidateRule, validateCBOR_)
 import Test.Hspec (HasCallStack, Spec, describe, runIO, shouldSatisfy, xdescribe)
 import Test.Hspec.Core.Spec (SpecM)
 import Test.Hspec.QuickCheck (prop)
@@ -66,7 +65,7 @@ expectZapInvalidates cddl name = property $ do
   res@ZapResult {zrValue} <- zapAntiGenResult 1 . runCBORGen cfg $ generateFromName name
   let
     bs = toStrictByteString $ encodeTerm zrValue
-    validationRes = validateCBOR bs name $ mapIndex cddl
+    validationRes = validateCBOR_ bs name $ mapIndex cddl
     failMsg =
       unlines
         [ case deserialiseFromBytes decodeTerm (LBS.fromStrict bs) of
@@ -184,4 +183,4 @@ spec = do
         . classify tagChanged "tag changed"
         . classify innerValueZapped "inner value zapped"
         $ expectInvalid
-          (validateCBOR (toStrictByteString $ encodeTerm zrValue) "root" $ mapIndex taggedBytesCddl)
+          (validateCBOR_ (toStrictByteString $ encodeTerm zrValue) "root" $ mapIndex taggedBytesCddl)

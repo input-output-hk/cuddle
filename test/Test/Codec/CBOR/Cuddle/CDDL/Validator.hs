@@ -8,10 +8,12 @@ module Test.Codec.CBOR.Cuddle.CDDL.Validator (
   expectInvalid,
   genAndValidateCddl,
   genAndValidateRule,
+  validateCBOR_,
 ) where
 
 import Codec.CBOR.Cuddle.CBOR.Gen (generateFromName)
 import Codec.CBOR.Cuddle.CBOR.Validator (
+  ValidatorPhase,
   validateCBOR,
  )
 import Codec.CBOR.Cuddle.CBOR.Validator.Trace (
@@ -96,6 +98,14 @@ import Test.QuickCheck (
  )
 import Text.Megaparsec (runParser)
 
+validateCBOR_ ::
+  HasCallStack =>
+  BS.ByteString ->
+  Name ->
+  CTreeRoot ValidatorPhase ->
+  Evidenced ValidationTrace
+validateCBOR_ bs n cddl = either (\e -> error $ "validateCBOR failed:\n" <> show e) id $ validateCBOR bs n cddl
+
 -- | Test that a specific rule in a resolved CDDL generates valid values
 genAndValidateRule :: String -> Name -> CTreeRoot MonoReferenced -> Spec
 genAndValidateRule description name resolvedCddl =
@@ -109,7 +119,7 @@ genAndValidateRule description name resolvedCddl =
     cborTerm <- runAntiGen . runCBORGen genCfg $ generateFromName name
     let
       generatedCbor = toStrictByteString $ encodeTerm cborTerm
-      res = validateCBOR generatedCbor name (mapIndex resolvedCddl)
+      res = validateCBOR_ generatedCbor name (mapIndex resolvedCddl)
       extraInfo =
         unlines
           [ "CBOR term:"
@@ -267,7 +277,7 @@ validateHuddle huddle name term = do
       Right root -> root
       Left err -> error $ show err
     bs = toStrictByteString $ encodeTerm term
-  validateCBOR bs name (mapIndex resolvedCddl)
+  validateCBOR_ bs name (mapIndex resolvedCddl)
 
 expectValid :: Evidenced ValidationTrace -> Expectation
 expectValid (Evidenced SValid _) = pure ()
@@ -340,19 +350,19 @@ spec = describe "Validator" $ do
            in either (error . show) id . fullResolveCDDL . appendPostlude $ mapCDDLDropExt cddl
       it "Validates a bignum >= 2^64 against biguint" $
         expectValid $
-          validateCBOR bignumCBOR "a" (mapIndex $ resolveCDDL "a = biguint")
+          validateCBOR_ bignumCBOR "a" (mapIndex $ resolveCDDL "a = biguint")
       it "Validates a bignum >= 2^64 against bigint" $
         expectValid $
-          validateCBOR bignumCBOR "a" (mapIndex $ resolveCDDL "a = bigint")
+          validateCBOR_ bignumCBOR "a" (mapIndex $ resolveCDDL "a = bigint")
       it "Validates a bignum >= 2^64 against integer" $
         expectValid $
-          validateCBOR bignumCBOR "a" (mapIndex $ resolveCDDL "a = integer")
+          validateCBOR_ bignumCBOR "a" (mapIndex $ resolveCDDL "a = integer")
       it "Rejects a bignum >= 2^64 against int" $
         expectInvalid $
-          validateCBOR bignumCBOR "a" (mapIndex $ resolveCDDL "a = int")
+          validateCBOR_ bignumCBOR "a" (mapIndex $ resolveCDDL "a = int")
       it "Rejects a bignum >= 2^64 against uint" $
         expectInvalid $
-          validateCBOR bignumCBOR "a" (mapIndex $ resolveCDDL "a = uint")
+          validateCBOR_ bignumCBOR "a" (mapIndex $ resolveCDDL "a = uint")
 
   describe "Custom validator" $ do
     describe "Positive" $ do
