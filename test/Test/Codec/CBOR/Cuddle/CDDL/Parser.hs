@@ -15,6 +15,7 @@ import Prettyprinter (Pretty, defaultLayoutOptions, layoutPretty, pretty)
 import Prettyprinter.Render.String (renderString)
 import Prettyprinter.Render.Text (renderStrict)
 import Test.Codec.CBOR.Cuddle.CDDL.Gen qualified as Gen ()
+import Test.Codec.CBOR.Cuddle.CDDL.TreeDiff ()
 import Test.Hspec
 import Test.Hspec.Megaparsec
 import Test.QuickCheck

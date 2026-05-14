@@ -2,6 +2,7 @@
 
 ## 1.8.0.0
 
+* Remove `ToExpr` instances from all types
 * Rename `MonoSimple` to `MonoSimplePhase`
 * Remove `GenSimple` and `ValidatorPhaseSimple`; use `MonoSimplePhase` instead
 * Unify `showSimple` into a single polymorphic helper in `Codec.CBOR.Cuddle.CDDL.Resolve`
