@@ -44,30 +44,30 @@ import Text.Megaparsec.Char hiding (space)
 import Text.Megaparsec.Char qualified as C
 import Text.Megaparsec.Char.Lexer qualified as L
 
-type data ParserStage
+type data ParserPhase
 
-newtype instance XXTopLevel ParserStage = ParserXXTopLevel Comment
+newtype instance XXTopLevel ParserPhase = ParserXXTopLevel Comment
   deriving (Generic, Show, Eq)
 
-newtype instance XXType2 ParserStage = ParserXXType2 Void
+newtype instance XXType2 ParserPhase = ParserXXType2 Void
   deriving (Generic, Show, Eq)
 
-newtype instance XTerm ParserStage = ParserXTerm {unParserXTerm :: Comment}
+newtype instance XTerm ParserPhase = ParserXTerm {unParserXTerm :: Comment}
   deriving (Generic, Semigroup, Monoid, Show, Eq)
 
-newtype instance XRule ParserStage = ParserXRule {unParserXRule :: Comment}
+newtype instance XRule ParserPhase = ParserXRule {unParserXRule :: Comment}
   deriving (Generic, Semigroup, Monoid, Show, Eq)
 
-newtype instance XCddl ParserStage = ParserXCddl [Comment]
+newtype instance XCddl ParserPhase = ParserXCddl [Comment]
   deriving (Generic, Semigroup, Monoid, Show, Eq)
 
-instance HasComment (XTerm ParserStage) where
+instance HasComment (XTerm ParserPhase) where
   commentL = #unParserXTerm
 
-instance HasComment (XRule ParserStage) where
+instance HasComment (XRule ParserPhase) where
   commentL = #unParserXRule
 
-pCDDL :: Parser (CDDL ParserStage)
+pCDDL :: Parser (CDDL ParserPhase)
 pCDDL = do
   initialComments <- many (try $ C.space *> pCommentBlock <* notFollowedBy pRule)
   initialRuleComment <- C.space *> optional pCommentBlock
@@ -79,7 +79,7 @@ pCDDL = do
       cddlTail
       (ParserXXTopLevel <$> initialComments)
 
-pTopLevel :: Parser (TopLevel ParserStage)
+pTopLevel :: Parser (TopLevel ParserPhase)
 pTopLevel = try tlRule <|> tlComment
   where
     tlRule = do
@@ -88,7 +88,7 @@ pTopLevel = try tlRule <|> tlComment
       pure . TopLevelRule $ appendComment rule (fold mCmt)
     tlComment = XXTopLevel . ParserXXTopLevel <$> pCommentBlock
 
-pRule :: Parser (Rule ParserStage)
+pRule :: Parser (Rule ParserPhase)
 pRule = do
   name <- pName
   genericParam <- optcomp pGenericParameters
@@ -132,23 +132,23 @@ pAssignG =
     , AssignExt <$ "//="
     ]
 
-pGenericParameter :: Parser (GenericParameter ParserStage)
+pGenericParameter :: Parser (GenericParameter ParserPhase)
 pGenericParameter = GenericParameter <$> pName <*> pure mempty
 
-pGenericParameters :: Parser (GenericParameters ParserStage)
+pGenericParameters :: Parser (GenericParameters ParserPhase)
 pGenericParameters =
   GenericParameters
     <$> between "<" ">" (NE.sepBy1 (space !*> pGenericParameter <*! space) ",")
 
-pGenericArg :: Parser (GenericArg ParserStage)
+pGenericArg :: Parser (GenericArg ParserPhase)
 pGenericArg =
   GenericArg
     <$> between "<" ">" (NE.sepBy1 (space !*> pType1 <*! space) ",")
 
-pType0 :: Parser (Type0 ParserStage)
+pType0 :: Parser (Type0 ParserPhase)
 pType0 = Type0 <$> sepBy1' (space !*> pType1 <*! trailingSpace) (try "/")
 
-pType1 :: Parser (Type1 ParserStage)
+pType1 :: Parser (Type1 ParserPhase)
 pType1 = do
   v <- pType2
   rest <- optional $ do
@@ -164,7 +164,7 @@ pType1 = do
       pure $ Type1 v (Just (tyOp, w)) . ParserXTerm $ cmtFst <> cmtSnd
     Nothing -> pure $ Type1 v Nothing mempty
 
-pType2 :: Parser (Type2 ParserStage)
+pType2 :: Parser (Type2 ParserPhase)
 pType2 =
   choice
     [ T2Value <$> pValue
@@ -228,13 +228,13 @@ pCtlOp =
                 ]
         )
 
-pGroup :: Parser (Group ParserStage)
+pGroup :: Parser (Group ParserPhase)
 pGroup = Group <$> NE.sepBy1 (space !*> pGrpChoice) "//"
 
-pGrpChoice :: Parser (GrpChoice ParserStage)
+pGrpChoice :: Parser (GrpChoice ParserPhase)
 pGrpChoice = GrpChoice <$> many (space !*> pGrpEntry <*! pOptCom) <*> mempty
 
-pGrpEntry :: Parser (GroupEntry ParserStage)
+pGrpEntry :: Parser (GroupEntry ParserPhase)
 pGrpEntry = do
   occur <- optcomp pOccur
   cmt <- space
@@ -249,7 +249,7 @@ pGrpEntry = do
       ]
   pure $ GroupEntry occur variant (ParserXTerm $ cmt <> cmt')
 
-pMemberKey :: Parser (WithComment (MemberKey ParserStage))
+pMemberKey :: Parser (WithComment (MemberKey ParserPhase))
 pMemberKey =
   choice
     [ try $ do

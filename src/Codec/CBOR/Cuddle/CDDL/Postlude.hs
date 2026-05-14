@@ -4,12 +4,12 @@ module Codec.CBOR.Cuddle.CDDL.Postlude where
 
 import Codec.CBOR.Cuddle.CDDL (CDDL (..), TopLevel (..), XRule, XTerm, XXType2, appendRules)
 import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
-import Codec.CBOR.Cuddle.Parser (ParserStage, pCDDL)
+import Codec.CBOR.Cuddle.Parser (ParserPhase, pCDDL)
 import Data.Maybe (mapMaybe)
 import Text.Megaparsec (errorBundlePretty, parse)
 
 -- TODO switch to quasiquotes
-cddlPostlude :: CDDL ParserStage
+cddlPostlude :: CDDL ParserPhase
 cddlPostlude =
   either (error . errorBundlePretty) id $
     parse
@@ -60,9 +60,9 @@ cddlPostlude =
       \ undefined = #7.23"
 
 appendPostlude ::
-  ( IndexMappable XXType2 ParserStage i
-  , IndexMappable XTerm ParserStage i
-  , IndexMappable XRule ParserStage i
+  ( IndexMappable XXType2 ParserPhase i
+  , IndexMappable XTerm ParserPhase i
+  , IndexMappable XRule ParserPhase i
   ) =>
   CDDL i -> CDDL i
 appendPostlude cddl = appendRules cddl $ mapIndex <$> (r : rs)

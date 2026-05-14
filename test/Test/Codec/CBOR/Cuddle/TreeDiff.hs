@@ -3,35 +3,10 @@
 
 module Test.Codec.CBOR.Cuddle.TreeDiff () where
 
-import Codec.CBOR.Cuddle.CDDL (
-  Assign,
-  CDDL,
-  ForAllExtensions,
-  GenericArg,
-  GenericParameter,
-  GenericParameters,
-  Group,
-  GroupEntry,
-  GroupEntryVariant,
-  GrpChoice,
-  MemberKey,
-  Name,
-  OccurrenceIndicator,
-  RangeBound,
-  Rule,
-  TopLevel,
-  TyOp,
-  Type0,
-  Type1,
-  Type2,
-  TypeOrGroup,
-  Value,
-  ValueVariant,
-  XCddl,
- )
+import Codec.CBOR.Cuddle.CDDL
 import Codec.CBOR.Cuddle.CDDL.CtlOp (CtlOp)
 import Codec.CBOR.Cuddle.Comments (Comment)
-import Codec.CBOR.Cuddle.Pretty (PrettyStage, XRule, XTerm, XXTopLevel, XXType2)
+import Codec.CBOR.Cuddle.Pretty (PrettyPhase)
 import Data.TreeDiff (ToExpr)
 
 instance ToExpr Name
@@ -82,12 +57,12 @@ instance ForAllExtensions p ToExpr => ToExpr (TopLevel p)
 
 instance ForAllExtensions p ToExpr => ToExpr (CDDL p)
 
-instance ToExpr (XCddl PrettyStage)
+instance ToExpr (XCddl PrettyPhase)
 
-instance ToExpr (XTerm PrettyStage)
+instance ToExpr (XTerm PrettyPhase)
 
-instance ToExpr (XRule PrettyStage)
+instance ToExpr (XRule PrettyPhase)
 
-instance ToExpr (XXTopLevel PrettyStage)
+instance ToExpr (XXTopLevel PrettyPhase)
 
-instance ToExpr (XXType2 PrettyStage)
+instance ToExpr (XXType2 PrettyPhase)

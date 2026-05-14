@@ -8,7 +8,7 @@ import Codec.CBOR.Cuddle.Huddle (HuddleItem (..), a, (=:=))
 import Codec.CBOR.Cuddle.Huddle qualified as H
 import Codec.CBOR.Cuddle.IndexMappable (mapIndex)
 import Codec.CBOR.Cuddle.Parser (pCDDL)
-import Codec.CBOR.Cuddle.Pretty (PrettyStage, renderCDDL)
+import Codec.CBOR.Cuddle.Pretty (PrettyPhase, renderCDDL)
 import Control.Monad ((<=<))
 import Data.Text (Text)
 import Data.Text.IO qualified as T
@@ -43,14 +43,14 @@ prettyPrintGolden testName cddlPath = do
   it testName $
     mkGolden testName $
       renderCDDL defaultLayoutOptions $
-        mapIndex @_ @_ @PrettyStage cddl
+        mapIndex @_ @_ @PrettyPhase cddl
 
 huddleGolden :: String -> [HuddleItem] -> Spec
 huddleGolden testName items =
   it testName $
     mkGolden testName $
       renderCDDL defaultLayoutOptions $
-        mapIndex @_ @_ @PrettyStage $
+        mapIndex @_ @_ @PrettyPhase $
           H.toCDDLNoRoot $
             H.collectFrom items
 

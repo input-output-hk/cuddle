@@ -9,8 +9,8 @@ module Test.Codec.CBOR.Cuddle.Gen () where
 import Codec.CBOR.Cuddle.CDDL
 import Codec.CBOR.Cuddle.CDDL.CtlOp
 import Codec.CBOR.Cuddle.Comments (Comment, toComment)
-import Codec.CBOR.Cuddle.Parser (ParserStage, XTerm (..))
-import Codec.CBOR.Cuddle.Pretty (PrettyStage, XRule (..), XTerm (..), XXTopLevel (..))
+import Codec.CBOR.Cuddle.Parser (ParserPhase, XTerm (..))
+import Codec.CBOR.Cuddle.Pretty (PrettyPhase, XRule (..), XTerm (..), XXTopLevel (..))
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
 import Data.List.NonEmpty qualified as NE
@@ -19,17 +19,17 @@ import Data.Text qualified as T
 import Test.QuickCheck
 import Test.QuickCheck qualified as Gen
 
-instance Arbitrary (CDDL PrettyStage) where
+instance Arbitrary (CDDL PrettyPhase) where
   arbitrary = CDDL <$> arbitrary <*> arbitrary <*> arbitrary
   shrink = genericShrink
 
-deriving newtype instance Arbitrary (XXTopLevel PrettyStage)
+deriving newtype instance Arbitrary (XXTopLevel PrettyPhase)
 
-deriving newtype instance Arbitrary (XTerm PrettyStage)
+deriving newtype instance Arbitrary (XTerm PrettyPhase)
 
-deriving newtype instance Arbitrary (XRule PrettyStage)
+deriving newtype instance Arbitrary (XRule PrettyPhase)
 
-instance Arbitrary (TopLevel PrettyStage) where
+instance Arbitrary (TopLevel PrettyPhase) where
   arbitrary =
     Gen.oneof
       [ XXTopLevel <$> arbitrary
@@ -37,7 +37,7 @@ instance Arbitrary (TopLevel PrettyStage) where
       ]
   shrink = genericShrink
 
-deriving newtype instance Arbitrary (XTerm ParserStage)
+deriving newtype instance Arbitrary (XTerm ParserPhase)
 
 instance Arbitrary T.Text where
   arbitrary = T.pack <$> arbitrary

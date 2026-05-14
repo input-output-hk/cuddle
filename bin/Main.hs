@@ -14,8 +14,8 @@ import Codec.CBOR.Cuddle.CDDL.Resolve (
  )
 import Codec.CBOR.Cuddle.Generator (GenConfig (..), generateFromName, runCBORGen)
 import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..), mapCDDLDropExt)
-import Codec.CBOR.Cuddle.Parser (ParserStage, pCDDL)
-import Codec.CBOR.Cuddle.Pretty (PrettyStage, renderCDDL)
+import Codec.CBOR.Cuddle.Parser (ParserPhase, pCDDL)
+import Codec.CBOR.Cuddle.Pretty (PrettyPhase, renderCDDL)
 import Codec.CBOR.Cuddle.Validator (ValidatorPhase, validateCBOR)
 import Codec.CBOR.Cuddle.Validator.Trace (
   Evidenced (..),
@@ -333,7 +333,7 @@ main = do
         )
   run options
 
-tryParseFromFile :: FilePath -> IO (CDDL ParserStage)
+tryParseFromFile :: FilePath -> IO (CDDL ParserPhase)
 tryParseFromFile cddlFile =
   parseFromFile pCDDL cddlFile >>= \case
     Left err -> do
@@ -370,7 +370,7 @@ run = \case
         | sort fOpts = fromRules $ sortCDDL res
         | otherwise = res
       layoutOptions = defaultLayoutOptions {layoutPageWidth = AvailablePerLine 80 1}
-      formattedText = renderCDDL layoutOptions $ mapIndex @_ @_ @PrettyStage defs
+      formattedText = renderCDDL layoutOptions $ mapIndex @_ @_ @PrettyPhase defs
     T.putStr formattedText
   Validate vOpts cddlFile -> do
     res <- tryParseFromFile cddlFile

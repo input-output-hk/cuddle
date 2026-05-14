@@ -11,7 +11,7 @@ import Codec.CBOR.Cuddle.Generator (GenConfig (..), generateFromName, runCBORGen
 import Codec.CBOR.Cuddle.Huddle (toCDDL)
 import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..), mapCDDLDropExt)
 import Codec.CBOR.Cuddle.Parser (pCDDL)
-import Codec.CBOR.Cuddle.Pretty (PrettyStage)
+import Codec.CBOR.Cuddle.Pretty (PrettyPhase)
 import Conway (conway)
 import Data.Text qualified as T
 import Data.Text.IO qualified as T
@@ -30,7 +30,7 @@ main = do
       parseFromFile pCDDL fn >>= \case
         Left err -> putStrLn $ errorBundlePretty err
         Right res -> do
-          putDocW 80 $ pretty (mapIndex @_ @_ @PrettyStage res)
+          putDocW 80 $ pretty (mapIndex @_ @_ @PrettyPhase res)
           putStrLn "\n"
           putStrLn "--------------------------------------------------------------------------------"
           putStrLn " Resolving"
@@ -53,7 +53,7 @@ main = do
               print term
     [] -> do
       let cw = toCDDL conway
-      putDocW 80 $ pretty (mapIndex @_ @_ @PrettyStage cw)
+      putDocW 80 $ pretty (mapIndex @_ @_ @PrettyPhase cw)
     _ -> putStrLn "Expected filename"
 
 parseFromFile ::

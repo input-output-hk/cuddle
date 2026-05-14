@@ -10,7 +10,7 @@
 
 module Codec.CBOR.Cuddle.Pretty (
   CommentRender (..),
-  PrettyStage,
+  PrettyPhase,
   XXTopLevel (..),
   XXType2 (..),
   XTerm (..),
@@ -51,34 +51,34 @@ import Optics.Core ((^.))
 import Prettyprinter
 import Prettyprinter.Render.Text qualified as PT
 
-type data PrettyStage
+type data PrettyPhase
 
-newtype instance XXTopLevel PrettyStage = PrettyXXTopLevel Comment
+newtype instance XXTopLevel PrettyPhase = PrettyXXTopLevel Comment
   deriving (Generic, CollectComments, Show, Eq)
 
-newtype instance XXType2 PrettyStage = PrettyXXType2 Void
+newtype instance XXType2 PrettyPhase = PrettyXXType2 Void
   deriving (Generic, CollectComments, Show, Eq)
 
-newtype instance XTerm PrettyStage = PrettyXTerm {unPrettyXTerm :: Comment}
+newtype instance XTerm PrettyPhase = PrettyXTerm {unPrettyXTerm :: Comment}
   deriving (Generic, CollectComments, Semigroup, Monoid, IsString, Show, Eq)
 
-newtype instance XCddl PrettyStage = PrettyXCddl [Comment]
+newtype instance XCddl PrettyPhase = PrettyXCddl [Comment]
   deriving (Generic, CollectComments, Show, Eq)
 
-newtype instance XRule PrettyStage = PrettyXRule {unPrettyXRule :: Comment}
+newtype instance XRule PrettyPhase = PrettyXRule {unPrettyXRule :: Comment}
   deriving (Generic, CollectComments, Show, Eq)
   deriving newtype (Default)
 
-instance HasComment (XTerm PrettyStage) where
+instance HasComment (XTerm PrettyPhase) where
   commentL = #unPrettyXTerm
 
-instance HasComment (XRule PrettyStage) where
+instance HasComment (XRule PrettyPhase) where
   commentL = #unPrettyXRule
 
-instance Pretty (CDDL PrettyStage) where
+instance Pretty (CDDL PrettyPhase) where
   pretty = vsep . fmap pretty . NE.toList . cddlTopLevel
 
-instance Pretty (TopLevel PrettyStage) where
+instance Pretty (TopLevel PrettyPhase) where
   pretty (XXTopLevel (PrettyXXTopLevel cmt)) = pretty cmt
   pretty (TopLevelRule x) = pretty x <> hardline
 
@@ -102,10 +102,10 @@ instance Pretty Comment where
     | c == mempty = mempty
     | otherwise = prettyCommentNoBreak c <> hardline
 
-type0Def :: Type0 PrettyStage -> Doc ann
+type0Def :: Type0 PrettyPhase -> Doc ann
 type0Def t = nest 2 $ line' <> pretty t
 
-instance Pretty (Rule PrettyStage) where
+instance Pretty (Rule PrettyPhase) where
   pretty (Rule n mgen assign tog cmt) =
     pretty (cmt ^. commentL)
       <> groupIfNoComments
@@ -122,18 +122,18 @@ instance Pretty (Rule PrettyStage) where
         AssignEq -> "="
         AssignExt -> "//="
 
-instance Pretty (GenericArg PrettyStage) where
+instance Pretty (GenericArg PrettyPhase) where
   pretty (GenericArg l) =
     "<" <> concatWith (\x y -> x <> "," <+> y) (pretty <$> NE.toList l) <> ">"
 
-instance Pretty (GenericParameter PrettyStage) where
+instance Pretty (GenericParameter PrettyPhase) where
   pretty (GenericParameter n (PrettyXTerm c)) = pretty n <> prettyCommentNoBreakWS c
 
-instance Pretty (GenericParameters PrettyStage) where
+instance Pretty (GenericParameters PrettyPhase) where
   pretty (GenericParameters l) =
     "<" <> concatWith (\x y -> x <> "," <+> y) (pretty <$> NE.toList l) <> ">"
 
-instance Pretty (Type0 PrettyStage) where
+instance Pretty (Type0 PrettyPhase) where
   pretty t0@(Type0 (NE.toList -> l)) =
     groupIfNoComments t0 $ columnarSepBy "/" . Columnar $ type1ToRow <$> l
     where
@@ -153,7 +153,7 @@ instance Pretty TyOp where
   pretty (RangeOp Closed) = ".."
   pretty (CtrlOp n) = "." <> pretty n
 
-instance Pretty (Type1 PrettyStage) where
+instance Pretty (Type1 PrettyPhase) where
   pretty (Type1 t2 Nothing (PrettyXTerm cmt)) = groupIfNoComments t2 (pretty t2) <> prettyCommentNoBreakWS cmt
   pretty (Type1 t2 (Just (tyop, t2')) (PrettyXTerm cmt)) =
     groupIfNoComments t2 (pretty t2)
@@ -161,7 +161,7 @@ instance Pretty (Type1 PrettyStage) where
       <+> groupIfNoComments t2' (pretty t2')
       <> prettyCommentNoBreakWS cmt
 
-instance Pretty (Type2 PrettyStage) where
+instance Pretty (Type2 PrettyPhase) where
   pretty (T2Value v) = pretty v
   pretty (T2Name n mg) = pretty n <> pretty mg
   pretty (T2Group g) = cEncloseSep "(" ")" mempty [pretty g]
@@ -215,7 +215,7 @@ groupIfNoComments x
   | not (any (mempty /=) $ collectComments x) = group
   | otherwise = id
 
-columnarGroupChoice :: GrpChoice PrettyStage -> Columnar ann
+columnarGroupChoice :: GrpChoice PrettyPhase -> Columnar ann
 columnarGroupChoice (GrpChoice ges _cmt) = Columnar grpEntryRows
   where
     groupEntryRow (GroupEntry oi gev (PrettyXTerm cmt)) =
@@ -229,7 +229,7 @@ columnarGroupChoice (GrpChoice ges _cmt) = Columnar grpEntryRows
     groupEntryVariantCells (GEGroup g) = [Cell (prettyGroup AsGroup g) LeftAlign, emptyCell]
     grpEntryRows = groupEntryRow <$> ges
 
-prettyGroup :: GroupRender -> Group PrettyStage -> Doc ann
+prettyGroup :: GroupRender -> Group PrettyPhase -> Doc ann
 prettyGroup gr g@(Group (toList -> xs)) =
   groupIfNoComments g . columnarListing (lEnc <> softspace) rEnc "// " . Columnar $
     (\x -> singletonRow . groupIfNoComments x . columnarSepBy "," $ columnarGroupChoice x) <$> xs
@@ -239,10 +239,10 @@ prettyGroup gr g@(Group (toList -> xs)) =
       AsArray -> ("[", "]")
       AsGroup -> ("(", ")")
 
-instance Pretty (GroupEntry PrettyStage) where
+instance Pretty (GroupEntry PrettyPhase) where
   pretty ge = prettyColumnar . columnarGroupChoice $ GrpChoice [ge] mempty
 
-instance Pretty (MemberKey PrettyStage) where
+instance Pretty (MemberKey PrettyPhase) where
   pretty (MKType t1) = pretty t1
   pretty (MKBareword n) = pretty n
   pretty (MKValue v) = pretty v
@@ -278,7 +278,7 @@ instance Pretty PTerm where
     PTUndefined -> "undefined"
 
 -- | Render a pretty-stage CDDL to 'Text', removing trailing whitespace.
-renderCDDL :: LayoutOptions -> CDDL PrettyStage -> Text
+renderCDDL :: LayoutOptions -> CDDL PrettyPhase -> Text
 renderCDDL opts =
   PT.renderStrict . removeTrailingWhitespace . layoutPretty opts . pretty
 

@@ -7,7 +7,7 @@ import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
 import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
 import Codec.CBOR.Cuddle.Parser
 import Codec.CBOR.Cuddle.Parser.Lexer (Parser)
-import Codec.CBOR.Cuddle.Pretty (PrettyStage)
+import Codec.CBOR.Cuddle.Pretty (PrettyPhase)
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Text qualified as T
 import Data.TreeDiff (ToExpr (..), ansiWlBgEditExprCompact, exprDiff)
@@ -62,15 +62,15 @@ roundtripSpec = describe "Roundtripping should be id" $ do
             $ printed `shouldBe` printText parsed
     tripIndexed ::
       forall a.
-      ( IndexMappable a ParserStage PrettyStage
-      , Eq (a PrettyStage)
-      , ToExpr (a PrettyStage)
-      , Show (a PrettyStage)
-      , Pretty (a PrettyStage)
-      , Arbitrary (a PrettyStage)
+      ( IndexMappable a ParserPhase PrettyPhase
+      , Eq (a PrettyPhase)
+      , ToExpr (a PrettyPhase)
+      , Show (a PrettyPhase)
+      , Pretty (a PrettyPhase)
+      , Arbitrary (a PrettyPhase)
       ) =>
-      Parser (a ParserStage) -> Property
-    tripIndexed = trip . fmap (mapIndex @a @ParserStage @PrettyStage)
+      Parser (a ParserPhase) -> Property
+    tripIndexed = trip . fmap (mapIndex @a @ParserPhase @PrettyPhase)
     printText :: Pretty a => a -> T.Text
     printText = renderStrict . layoutPretty defaultLayoutOptions . pretty
 
