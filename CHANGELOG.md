@@ -7,6 +7,9 @@
 * Unify `showSimple` into a single polymorphic helper in `Codec.CBOR.Cuddle.CDDL.Resolve`
 * Export `IsChoosable (toChoice)`
 * Add `choiceFromList` to fold a `NonEmpty` list into a `Choice` using `(/)`
+* `validateCBOR` returns `Either ValidatorInputError (Evidenced ValidationTrace)`
+* Add `ValidatorInputError`
+* Add `displayValidatorInputError`
 
 ## 1.7.0.0
 
