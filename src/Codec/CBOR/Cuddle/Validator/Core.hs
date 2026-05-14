@@ -15,7 +15,7 @@ module Codec.CBOR.Cuddle.Validator.Core (
 
 import Codec.CBOR.Cuddle.CDDL (GRef (..), Name (..))
 import Codec.CBOR.Cuddle.CDDL.CTree (CTree, CTreeRoot (..), XXCTree)
-import Codec.CBOR.Cuddle.CDDL.Custom.Core (MonadCddl (..), RuleTerm)
+import Codec.CBOR.Cuddle.Core (MonadCddl (..), RuleTerm)
 import Control.Monad.Reader (MonadReader (..), ReaderT (..), asks)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map

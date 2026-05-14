@@ -13,9 +13,9 @@ module Test.Codec.CBOR.Cuddle.Validator (
 import Codec.CBOR.Cuddle.CDDL (Name (..))
 import Codec.CBOR.Cuddle.CDDL.CTree (CTreeRoot (..))
 import Codec.CBOR.Cuddle.CDDL.CTree qualified as CTree
-import Codec.CBOR.Cuddle.CDDL.Custom.Core (RuleTerm (..))
 import Codec.CBOR.Cuddle.CDDL.Postlude (appendPostlude)
 import Codec.CBOR.Cuddle.CDDL.Resolve (MonoReferenced, fullResolveCDDL)
+import Codec.CBOR.Cuddle.Core (RuleTerm (..))
 import Codec.CBOR.Cuddle.Generator (GenConfig (..), generateFromName, runCBORGen)
 import Codec.CBOR.Cuddle.Huddle (
   Huddle,

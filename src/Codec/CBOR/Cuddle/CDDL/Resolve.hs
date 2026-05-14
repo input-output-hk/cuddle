@@ -67,7 +67,7 @@ import Data.Hashable
 import Data.List (foldl')
 #endif
 import Codec.CBOR.Cuddle.CDDL.CTreePhase (CTreePhase, XRule (..))
-import Codec.CBOR.Cuddle.CDDL.Custom.Core (RuleTerm)
+import Codec.CBOR.Cuddle.Core (RuleTerm)
 import Codec.CBOR.Cuddle.Generator.Core (CBORGen, GenPhase, XXCTree (..), withLocalGenBindings)
 import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
 import Codec.CBOR.Cuddle.Validator.Core (

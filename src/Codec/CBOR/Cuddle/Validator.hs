@@ -13,8 +13,8 @@ module Codec.CBOR.Cuddle.Validator (
 import Codec.CBOR.Cuddle.CDDL hiding (CDDL, Group, Rule)
 import Codec.CBOR.Cuddle.CDDL.CTree
 import Codec.CBOR.Cuddle.CDDL.CtlOp
-import Codec.CBOR.Cuddle.CDDL.Custom.Core (MonadCddl (..), RuleTerm (..))
 import Codec.CBOR.Cuddle.CDDL.Resolve (XXCTree (..), showSimple)
+import Codec.CBOR.Cuddle.Core (MonadCddl (..), RuleTerm (..))
 import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
 import Codec.CBOR.Cuddle.Validator.Core (
   CustomValidatorResult (..),

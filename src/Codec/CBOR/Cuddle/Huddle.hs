@@ -119,9 +119,9 @@ import Codec.CBOR.Cuddle.CDDL (
  )
 import Codec.CBOR.Cuddle.CDDL qualified as C
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
-import Codec.CBOR.Cuddle.CDDL.Custom.Core (RuleTerm)
 import Codec.CBOR.Cuddle.Comments (Comment, HasComment (..))
 import Codec.CBOR.Cuddle.Comments qualified as C
+import Codec.CBOR.Cuddle.Core (RuleTerm)
 import Codec.CBOR.Cuddle.Generator.Core (CBORGen, HasGenerator (..))
 import Codec.CBOR.Cuddle.Validator.Core (HasValidator (..), TermValidator)
 import Control.Monad (when)

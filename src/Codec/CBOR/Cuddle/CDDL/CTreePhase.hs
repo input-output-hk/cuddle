@@ -12,7 +12,7 @@ module Codec.CBOR.Cuddle.CDDL.CTreePhase (
 ) where
 
 import Codec.CBOR.Cuddle.CDDL (XCddl, XRule, XTerm, XXTopLevel, XXType2)
-import Codec.CBOR.Cuddle.CDDL.Custom.Core (RuleTerm)
+import Codec.CBOR.Cuddle.Core (RuleTerm)
 import Codec.CBOR.Cuddle.Generator.Core (CBORGen)
 import Codec.CBOR.Cuddle.Validator.Core (TermValidator)
 import Data.Default.Class (Default)

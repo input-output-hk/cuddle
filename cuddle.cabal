@@ -38,24 +38,27 @@ common warnings
 library
   import: warnings
   exposed-modules:
+    Codec.CBOR.Cuddle
+    Codec.CBOR.Cuddle.Generator
+    Codec.CBOR.Cuddle.Huddle
+    Codec.CBOR.Cuddle.Parser
+    Codec.CBOR.Cuddle.Validator
+
+  other-modules:
     Codec.CBOR.Cuddle.CDDL
     Codec.CBOR.Cuddle.CDDL.CTree
     Codec.CBOR.Cuddle.CDDL.CTreePhase
     Codec.CBOR.Cuddle.CDDL.CtlOp
-    Codec.CBOR.Cuddle.CDDL.Custom.Core
     Codec.CBOR.Cuddle.CDDL.Postlude
     Codec.CBOR.Cuddle.CDDL.Resolve
     Codec.CBOR.Cuddle.Comments
-    Codec.CBOR.Cuddle.Generator
+    Codec.CBOR.Cuddle.Core
     Codec.CBOR.Cuddle.Generator.Core
-    Codec.CBOR.Cuddle.Huddle
     Codec.CBOR.Cuddle.IndexMappable
-    Codec.CBOR.Cuddle.Parser
     Codec.CBOR.Cuddle.Parser.Lexer
     Codec.CBOR.Cuddle.Pretty
     Codec.CBOR.Cuddle.Pretty.Columnar
     Codec.CBOR.Cuddle.Pretty.Utils
-    Codec.CBOR.Cuddle.Validator
     Codec.CBOR.Cuddle.Validator.Core
     Codec.CBOR.Cuddle.Validator.Trace
 
