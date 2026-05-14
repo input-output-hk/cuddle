@@ -36,6 +36,7 @@ module Codec.CBOR.Cuddle.CDDL.Resolve (
   NameResolutionFailure (..),
   MonoReferenced,
   MonoSimplePhase,
+  DistRef (..),
   showSimple,
   XXCTree (..),
 )
@@ -404,21 +405,15 @@ deriving instance Show (CTree.Node i) => Show (DistRef i)
 
 instance Hashable (CTree.Node i) => Hashable (DistRef i)
 
-instance Pretty (XXCTree i) => Pretty (DistRef i) where
-  pretty (GenericRef n) = pretty n
-  pretty (RuleRef rule []) = pretty rule
-  pretty (RuleRef rule args) = pretty rule <> encloseSep "<" ">" "," (pretty <$> args)
-
 data instance XXCTree DistReferenced
   = DRef (DistRef DistReferenced)
   | DGenerator (CBORGen RuleTerm) (CTree DistReferenced)
   | DValidator TermValidator (CTree DistReferenced)
 
-type data DistReferencedNoGen
+type data DistReferencedSimplePhase
 
-newtype instance XXCTree DistReferencedNoGen = DHRef (DistRef DistReferencedNoGen)
+newtype instance XXCTree DistReferencedSimplePhase = DHRef (DistRef DistReferencedSimplePhase)
   deriving (Eq, Hashable, Show)
-  deriving newtype (Pretty)
 
 resolveRef ::
   BindingEnv OrReferenced OrReferenced ->
@@ -593,7 +588,7 @@ throwNR = throw @"nameResolution"
 -- | Synthesize a monomorphic rule definition, returning the name
 synthMono :: Name -> [CTree DistReferenced] -> MonoM Name
 synthMono origName args =
-  let dropGenerator = fmap $ mapIndex @_ @DistReferenced @DistReferencedNoGen
+  let dropGenerator = fmap $ mapIndex @_ @DistReferenced @DistReferencedSimplePhase
       argsName = Name (T.intercalate "," $ renderStrict . layoutCompact . pretty <$> dropGenerator args)
       -- We use % to mark a monomorphised generic rule, '%' is not allowed in
       -- CDDL names, so there should be no conflicts
@@ -678,13 +673,13 @@ fullResolveCDDL cddl = do
   rCTree <- buildResolvedCTree refCTree
   buildMonoCTree rCTree
 
-instance IndexMappable CTree DistReferenced DistReferencedNoGen where
+instance IndexMappable CTree DistReferenced DistReferencedSimplePhase where
   mapIndex = foldCTree mapExt mapIndex
     where
       mapExt (DRef x) = CTreeE . DHRef $ mapIndex x
       mapExt (DGenerator _ x) = mapIndex x
       mapExt (DValidator _ x) = mapIndex x
 
-instance IndexMappable DistRef DistReferenced DistReferencedNoGen where
+instance IndexMappable DistRef DistReferenced DistReferencedSimplePhase where
   mapIndex (GenericRef n) = GenericRef n
   mapIndex (RuleRef n args) = RuleRef n $ mapIndex <$> args

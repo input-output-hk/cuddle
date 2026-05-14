@@ -24,6 +24,23 @@ import Codec.CBOR.Cuddle.CDDL.CTree (CTree, PTerm (..), XXCTree)
 import Codec.CBOR.Cuddle.CDDL.CTree qualified as CT
 import Codec.CBOR.Cuddle.CDDL.CtlOp (CtlOp)
 import Codec.CBOR.Cuddle.Comments (CollectComments (..), Comment, HasComment (..), unComment)
+import Codec.CBOR.Cuddle.Huddle (
+  HuddlePhase,
+  XCddl (..),
+  XRule (..),
+  XTerm (..),
+  XXTopLevel (..),
+  XXType2 (..),
+ )
+import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
+import Codec.CBOR.Cuddle.Parser (
+  ParserPhase,
+  XCddl (..),
+  XRule (..),
+  XTerm (..),
+  XXTopLevel (..),
+  XXType2 (..),
+ )
 import Codec.CBOR.Cuddle.Pretty.Columnar (
   Cell (..),
   CellAlign (..),
@@ -75,15 +92,12 @@ instance HasComment (XTerm PrettyPhase) where
 instance HasComment (XRule PrettyPhase) where
   commentL = #unPrettyXRule
 
-instance Pretty (CDDL PrettyPhase) where
-  pretty = vsep . fmap pretty . NE.toList . cddlTopLevel
+prettyCDDL :: CDDL PrettyPhase -> Doc ann
+prettyCDDL = vsep . fmap pretty . NE.toList . cddlTopLevel
 
 instance Pretty (TopLevel PrettyPhase) where
   pretty (XXTopLevel (PrettyXXTopLevel cmt)) = pretty cmt
   pretty (TopLevelRule x) = pretty x <> hardline
-
-instance Pretty Name where
-  pretty (Name name) = pretty name
 
 data CommentRender
   = PreComment
@@ -304,3 +318,67 @@ instance Pretty (XXCTree p) => Pretty (CTree p) where
     CT.Enum e -> "&" <> pretty e
     CT.Unwrap x -> "~" <> pretty x
     CT.Tag t x -> "#6." <> pretty t <> "(" <> pretty x <> ")"
+
+instance
+  ( IndexMappable XCddl p PrettyPhase
+  , IndexMappable XXTopLevel p PrettyPhase
+  , IndexMappable XXType2 p PrettyPhase
+  , IndexMappable XTerm p PrettyPhase
+  , IndexMappable XRule p PrettyPhase
+  ) =>
+  Pretty (CDDL p)
+  where
+  pretty = prettyCDDL . mapIndex
+
+instance Pretty (XXCTree i) => Pretty (DistRef i) where
+  pretty (GenericRef n) = pretty n
+  pretty (RuleRef rule []) = pretty rule
+  pretty (RuleRef rule args) = pretty rule <> encloseSep "<" ">" "," (pretty <$> args)
+
+-- * IndexMappable
+
+-- ParserPhase -> PrettyPhase
+
+instance IndexMappable XCddl ParserPhase PrettyPhase where
+  mapIndex (ParserXCddl c) = PrettyXCddl c
+
+instance IndexMappable XTerm ParserPhase PrettyPhase where
+  mapIndex (ParserXTerm c) = PrettyXTerm c
+
+instance IndexMappable XRule ParserPhase PrettyPhase where
+  mapIndex (ParserXRule c) = PrettyXRule c
+
+instance IndexMappable XXType2 ParserPhase PrettyPhase where
+  mapIndex (ParserXXType2 v) = absurd v
+
+instance IndexMappable XXTopLevel ParserPhase PrettyPhase where
+  mapIndex (ParserXXTopLevel c) = PrettyXXTopLevel c
+
+-- HuddlePhase -> PrettyPhase
+
+instance IndexMappable XCddl HuddlePhase PrettyPhase where
+  mapIndex (HuddleXCddl c) = PrettyXCddl c
+
+instance IndexMappable XXTopLevel HuddlePhase PrettyPhase where
+  mapIndex (HuddleXXTopLevel c) = PrettyXXTopLevel c
+
+instance IndexMappable XXType2 HuddlePhase PrettyPhase where
+  mapIndex (HuddleXXType2 c) = absurd c
+
+instance IndexMappable XTerm HuddlePhase PrettyPhase where
+  mapIndex (HuddleXTerm c) = PrettyXTerm c
+
+instance IndexMappable XRule HuddlePhase PrettyPhase where
+  mapIndex (HuddleXRule c _ _) = PrettyXRule c
+
+-- PettyPhase ~ PrettyPhase
+
+instance IndexMappable XCddl PrettyPhase PrettyPhase
+
+instance IndexMappable XXTopLevel PrettyPhase PrettyPhase
+
+instance IndexMappable XXType2 PrettyPhase PrettyPhase
+
+instance IndexMappable XTerm PrettyPhase PrettyPhase
+
+instance IndexMappable XRule PrettyPhase PrettyPhase

@@ -64,6 +64,7 @@ import Data.Word (Word64, Word8)
 import GHC.Base (Constraint, Type)
 import GHC.Generics (Generic)
 import Optics.Core ((%), (%~), (&))
+import Prettyprinter (Pretty (..))
 
 data family XXTopLevel i
 
@@ -156,6 +157,9 @@ newtype Name = Name {unName :: T.Text}
   deriving (Generic)
   deriving (Eq, Ord, Show)
   deriving newtype (Semigroup, Monoid)
+
+instance Pretty Name where
+  pretty (Name name) = pretty name
 
 -- | A reference to a generic parameter inside the body of a generic rule.
 newtype GRef = GRef T.Text

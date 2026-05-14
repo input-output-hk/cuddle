@@ -41,15 +41,12 @@ import Codec.CBOR.Cuddle.Huddle (
 import Codec.CBOR.Cuddle.Parser (
   ParserPhase,
   XCddl (..),
-  XRule (..),
   XTerm (..),
   XXTopLevel (..),
   XXType2 (..),
  )
-import Codec.CBOR.Cuddle.Pretty (PrettyPhase, XCddl (..), XRule (..), XTerm (..), XXTopLevel (..))
 import Data.Bifunctor (Bifunctor (..))
 import Data.Coerce (Coercible, coerce)
-import Data.Void (absurd)
 
 class IndexMappable f i j where
   mapIndex :: f i -> f j
@@ -201,23 +198,6 @@ instance
   where
   mapIndex (GrpChoice gs e) = GrpChoice (mapIndex <$> gs) $ mapIndex e
 
--- ParserPhase ~ PrettyPhase
-
-instance IndexMappable XCddl ParserPhase PrettyPhase where
-  mapIndex (ParserXCddl c) = PrettyXCddl c
-
-instance IndexMappable XTerm ParserPhase PrettyPhase where
-  mapIndex (ParserXTerm c) = PrettyXTerm c
-
-instance IndexMappable XRule ParserPhase PrettyPhase where
-  mapIndex (ParserXRule c) = PrettyXRule c
-
-instance IndexMappable XXType2 ParserPhase PrettyPhase where
-  mapIndex (ParserXXType2 v) = absurd v
-
-instance IndexMappable XXTopLevel ParserPhase PrettyPhase where
-  mapIndex (ParserXXTopLevel c) = PrettyXXTopLevel c
-
 -- ParserPhase -> CTreePhase
 
 instance IndexMappable XCddl ParserPhase CTreePhase where
@@ -259,23 +239,6 @@ instance IndexMappable XTerm HuddlePhase CTreePhase where
 
 instance IndexMappable XRule HuddlePhase CTreePhase where
   mapIndex (HuddleXRule _ g v) = CTreeXRule g v
-
--- HuddlePhase -> PrettyPhase
-
-instance IndexMappable XCddl HuddlePhase PrettyPhase where
-  mapIndex (HuddleXCddl c) = PrettyXCddl c
-
-instance IndexMappable XXTopLevel HuddlePhase PrettyPhase where
-  mapIndex (HuddleXXTopLevel c) = PrettyXXTopLevel c
-
-instance IndexMappable XXType2 HuddlePhase PrettyPhase where
-  mapIndex (HuddleXXType2 c) = absurd c
-
-instance IndexMappable XTerm HuddlePhase PrettyPhase where
-  mapIndex (HuddleXTerm c) = PrettyXTerm c
-
-instance IndexMappable XRule HuddlePhase PrettyPhase where
-  mapIndex (HuddleXRule c _ _) = PrettyXRule c
 
 -- ParserPhase ~ ParserPhase
 
