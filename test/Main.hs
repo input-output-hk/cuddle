@@ -1,14 +1,14 @@
 module Main (main) where
 
 import System.IO (BufferMode (..), hSetBuffering, hSetEncoding, stdout, utf8)
-import Test.Codec.CBOR.Cuddle.CDDL.Examples qualified as Examples
-import Test.Codec.CBOR.Cuddle.CDDL.GeneratorSpec qualified as Generator
-import Test.Codec.CBOR.Cuddle.CDDL.Parser (parserSpec)
-import Test.Codec.CBOR.Cuddle.CDDL.Pretty (roundtripSpec)
-import Test.Codec.CBOR.Cuddle.CDDL.Pretty.Golden qualified as PrettyGolden
-import Test.Codec.CBOR.Cuddle.CDDL.Validator qualified as Validator
-import Test.Codec.CBOR.Cuddle.CDDL.Validator.Golden qualified as ValidatorGolden
+import Test.Codec.CBOR.Cuddle.Examples qualified as Examples
+import Test.Codec.CBOR.Cuddle.GeneratorSpec qualified as Generator
 import Test.Codec.CBOR.Cuddle.Huddle (huddleSpec)
+import Test.Codec.CBOR.Cuddle.Parser (parserSpec)
+import Test.Codec.CBOR.Cuddle.Pretty (roundtripSpec)
+import Test.Codec.CBOR.Cuddle.Pretty.Golden qualified as PrettyGolden
+import Test.Codec.CBOR.Cuddle.Validator qualified as Validator
+import Test.Codec.CBOR.Cuddle.Validator.Golden qualified as ValidatorGolden
 import Test.Hspec
 import Test.Hspec.Runner
 

@@ -39,7 +39,6 @@ module Codec.CBOR.Cuddle.CDDL (
   unwrap,
   compareRuleName,
   HasName (..),
-  GRef (..),
   -- Extension
   ForAllExtensions,
   XCddl,
@@ -51,6 +50,7 @@ module Codec.CBOR.Cuddle.CDDL (
 
 import Codec.CBOR.Cuddle.CDDL.CtlOp (CtlOp)
 import Codec.CBOR.Cuddle.Comments (CollectComments (..), Comment, HasComment (..))
+import Codec.CBOR.Cuddle.Core (Name (..))
 import Data.ByteString qualified as B
 import Data.Default.Class (Default (..))
 import Data.Function (on)
@@ -58,7 +58,6 @@ import Data.Hashable (Hashable)
 import Data.List.NonEmpty (NonEmpty (..), prependList)
 import Data.List.NonEmpty qualified as NE
 import Data.Maybe (mapMaybe)
-import Data.String (IsString (..))
 import Data.Text qualified as T
 import Data.Word (Word64, Word8)
 import GHC.Base (Constraint, Type)
@@ -106,7 +105,7 @@ ruleTopLevel _ = Nothing
 
 -- | Sort the CDDL Rules on the basis of their names
 sortCDDL :: CDDL i -> NonEmpty (Rule i)
-sortCDDL (CDDL r rs _) = NE.sortBy (compare `on` unName . ruleName) $ r :| mapMaybe ruleTopLevel rs
+sortCDDL (CDDL r rs _) = NE.sortBy (compare `on` ruleName) $ r :| mapMaybe ruleTopLevel rs
 
 fromRules :: Monoid (XCddl i) => NonEmpty (Rule i) -> CDDL i
 fromRules (x :| xs) = CDDL x (TopLevelRule <$> xs) mempty
@@ -128,46 +127,6 @@ data TopLevel i
 deriving instance ForAllExtensions i Eq => Eq (TopLevel i)
 
 deriving instance ForAllExtensions i Show => Show (TopLevel i)
-
--- |
---  A name can consist of any of the characters from the set {"A" to
---  "Z", "a" to "z", "0" to "9", "_", "-", "@", ".", "$"}, starting
---  with an alphabetic character (including "@", "_", "$") and ending
---  in such a character or a digit.
---
---  *  Names are case sensitive.
---
---  *  It is preferred style to start a name with a lowercase letter.
---
---  *  The hyphen is preferred over the underscore (except in a
---      "bareword" (Section 3.5.1), where the semantics may actually
---      require an underscore).
---
---  *  The period may be useful for larger specifications, to express
---      some module structure (as in "tcp.throughput" vs.
---      "udp.throughput").
---
---  *  A number of names are predefined in the CDDL prelude, as listed
---      in Appendix D.
---
---  *  Rule names (types or groups) do not appear in the actual CBOR
---      encoding, but names used as "barewords" in member keys do.
-newtype Name = Name {unName :: T.Text}
-  deriving (Generic)
-  deriving (Eq, Ord, Show)
-  deriving newtype (Semigroup, Monoid)
-
--- | A reference to a generic parameter inside the body of a generic rule.
-newtype GRef = GRef T.Text
-  deriving (Show)
-
-instance IsString Name where
-  fromString = Name . T.pack
-
-instance CollectComments Name where
-  collectComments _ = []
-
-instance Hashable Name
 
 class HasName a where
   getName :: a -> Name

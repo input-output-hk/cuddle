@@ -16,57 +16,57 @@ import Data.List.NonEmpty (NonEmpty ((:|)))
 import Data.Text qualified as T
 import Data.Void (Void)
 import GHC.Generics (Generic)
-import Test.Codec.CBOR.Cuddle.CDDL.Pretty qualified as Pretty
+import Test.Codec.CBOR.Cuddle.Pretty qualified as Pretty
 import Test.Hspec
 import Test.Hspec.Megaparsec
 import Text.Megaparsec
 import Prelude hiding ((/))
 
-type data TestStage
+type data TestPhase
 
-newtype instance XCddl TestStage = TestXCddl [Comment]
+newtype instance XCddl TestPhase = TestXCddl [Comment]
   deriving (Generic, Show, Eq)
 
-instance IndexMappable XCddl ParserStage TestStage where
+instance IndexMappable XCddl ParserPhase TestPhase where
   mapIndex (ParserXCddl x) = TestXCddl x
 
-instance IndexMappable XCddl HuddleStage TestStage where
+instance IndexMappable XCddl HuddlePhase TestPhase where
   mapIndex (HuddleXCddl x) = TestXCddl x
 
-newtype instance XTerm TestStage = TestXTerm Comment
+newtype instance XTerm TestPhase = TestXTerm Comment
   deriving (Generic, Show, Eq)
 
-instance IndexMappable XTerm ParserStage TestStage where
+instance IndexMappable XTerm ParserPhase TestPhase where
   mapIndex (ParserXTerm x) = TestXTerm x
 
-instance IndexMappable XTerm HuddleStage TestStage where
+instance IndexMappable XTerm HuddlePhase TestPhase where
   mapIndex (HuddleXTerm x) = TestXTerm x
 
-newtype instance XRule TestStage = TestXRule Comment
+newtype instance XRule TestPhase = TestXRule Comment
   deriving (Generic, Show, Eq)
 
-instance IndexMappable XRule ParserStage TestStage where
+instance IndexMappable XRule ParserPhase TestPhase where
   mapIndex (ParserXRule x) = TestXRule x
 
-instance IndexMappable XRule HuddleStage TestStage where
+instance IndexMappable XRule HuddlePhase TestPhase where
   mapIndex (HuddleXRule x _ _) = TestXRule x
 
-newtype instance XXTopLevel TestStage = TestXXTopLevel Comment
+newtype instance XXTopLevel TestPhase = TestXXTopLevel Comment
   deriving (Generic, Show, Eq)
 
-instance IndexMappable XXTopLevel ParserStage TestStage where
+instance IndexMappable XXTopLevel ParserPhase TestPhase where
   mapIndex (ParserXXTopLevel x) = TestXXTopLevel x
 
-instance IndexMappable XXTopLevel HuddleStage TestStage where
+instance IndexMappable XXTopLevel HuddlePhase TestPhase where
   mapIndex (HuddleXXTopLevel x) = TestXXTopLevel x
 
-newtype instance XXType2 TestStage = TestXXType2 Void
+newtype instance XXType2 TestPhase = TestXXType2 Void
   deriving (Generic, Show, Eq)
 
-instance IndexMappable XXType2 ParserStage TestStage where
+instance IndexMappable XXType2 ParserPhase TestPhase where
   mapIndex (ParserXXType2 x) = TestXXType2 x
 
-instance IndexMappable XXType2 HuddleStage TestStage where
+instance IndexMappable XXType2 HuddlePhase TestPhase where
   mapIndex (HuddleXXType2 x) = TestXXType2 x
 
 huddleSpec :: Spec
@@ -228,10 +228,10 @@ shouldMatchParse ::
 shouldMatchParse x parseFun input = parse parseFun "" (T.pack input) `shouldParse` x
 
 shouldMatchParseCDDL ::
-  CDDL TestStage ->
+  CDDL TestPhase ->
   String ->
   Expectation
 shouldMatchParseCDDL x = shouldMatchParse x . fmap mapIndex $ pCDDL
 
-toSortedCDDL :: Huddle -> CDDL TestStage
+toSortedCDDL :: Huddle -> CDDL TestPhase
 toSortedCDDL = mapIndex . fromRules . sortCDDL . toCDDLNoRoot

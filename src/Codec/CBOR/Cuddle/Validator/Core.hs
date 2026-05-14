@@ -1,22 +1,20 @@
 {-# LANGUAGE TypeData #-}
 {-# LANGUAGE TypeFamilies #-}
 
-module Codec.CBOR.Cuddle.CDDL.Custom.Validator (
-  TermValidator,
+module Codec.CBOR.Cuddle.Validator.Core (
   ValidatorPhase,
   Validator,
-  CustomValidatorResult (..),
-  XXCTree (..),
+  TermValidator,
   HasValidator (..),
-  ValidateEnv (..),
+  XXCTree (..),
+  CustomValidatorResult (..),
   withLocalValidateBindings,
   runValidator,
+  askCddl,
 ) where
 
-import Codec.CBOR.Cuddle.CDDL (GRef (..), Name (..))
-import Codec.CBOR.Cuddle.CDDL.CTree (CTree, CTreeRoot (..))
-import Codec.CBOR.Cuddle.CDDL.Custom.Core (MonadCddl (..), RuleTerm)
-import Codec.CBOR.Cuddle.CDDL.Custom.Generator (XXCTree)
+import Codec.CBOR.Cuddle.CDDL.CTree (CTree, CTreeRoot (..), MonadCddl (..), XXCTree)
+import Codec.CBOR.Cuddle.Core (GRef (..), Name (..), RuleTerm)
 import Control.Monad.Reader (MonadReader (..), ReaderT (..), asks)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
@@ -74,3 +72,6 @@ runValidator ::
 runValidator (Validator m) cddl =
   either CustomValidatorFailure (const CustomValidatorSuccess) $
     runReaderT m ValidateEnv {veRoot = cddl, veLocal = Map.empty}
+
+askCddl :: Validator (CTreeRoot ValidatorPhase)
+askCddl = asks veRoot

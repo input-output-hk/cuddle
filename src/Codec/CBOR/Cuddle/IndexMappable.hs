@@ -31,7 +31,7 @@ import Codec.CBOR.Cuddle.CDDL.CTreePhase (
   XTerm (..),
  )
 import Codec.CBOR.Cuddle.Huddle (
-  HuddleStage,
+  HuddlePhase,
   XCddl (..),
   XRule (..),
   XTerm (..),
@@ -39,17 +39,14 @@ import Codec.CBOR.Cuddle.Huddle (
   XXType2 (..),
  )
 import Codec.CBOR.Cuddle.Parser (
-  ParserStage,
+  ParserPhase,
   XCddl (..),
-  XRule (..),
   XTerm (..),
   XXTopLevel (..),
   XXType2 (..),
  )
-import Codec.CBOR.Cuddle.Pretty (PrettyStage, XCddl (..), XRule (..), XTerm (..), XXTopLevel (..))
 import Data.Bifunctor (Bifunctor (..))
 import Data.Coerce (Coercible, coerce)
-import Data.Void (absurd)
 
 class IndexMappable f i j where
   mapIndex :: f i -> f j
@@ -201,90 +198,56 @@ instance
   where
   mapIndex (GrpChoice gs e) = GrpChoice (mapIndex <$> gs) $ mapIndex e
 
--- ParserStage ~ PrettyStage
+-- ParserPhase -> CTreePhase
 
-instance IndexMappable XCddl ParserStage PrettyStage where
-  mapIndex (ParserXCddl c) = PrettyXCddl c
-
-instance IndexMappable XTerm ParserStage PrettyStage where
-  mapIndex (ParserXTerm c) = PrettyXTerm c
-
-instance IndexMappable XRule ParserStage PrettyStage where
-  mapIndex (ParserXRule c) = PrettyXRule c
-
-instance IndexMappable XXType2 ParserStage PrettyStage where
-  mapIndex (ParserXXType2 v) = absurd v
-
-instance IndexMappable XXTopLevel ParserStage PrettyStage where
-  mapIndex (ParserXXTopLevel c) = PrettyXXTopLevel c
-
--- ParserStage -> CTreePhase
-
-instance IndexMappable XCddl ParserStage CTreePhase where
+instance IndexMappable XCddl ParserPhase CTreePhase where
   mapIndex _ = CTreeXCddl
 
-instance IndexMappable XXType2 ParserStage CTreePhase where
+instance IndexMappable XXType2 ParserPhase CTreePhase where
   mapIndex (ParserXXType2 c) = case c of {}
 
-instance IndexMappable XTerm ParserStage CTreePhase where
+instance IndexMappable XTerm ParserPhase CTreePhase where
   mapIndex _ = CTreeXTerm
 
-instance IndexMappable XRule ParserStage CTreePhase where
+instance IndexMappable XRule ParserPhase CTreePhase where
   mapIndex _ = CTreeXRule Nothing Nothing
 
--- ParserStage -> HuddleStage
+-- ParserPhase -> HuddlePhase
 
-instance IndexMappable XCddl ParserStage HuddleStage where
+instance IndexMappable XCddl ParserPhase HuddlePhase where
   mapIndex (ParserXCddl c) = HuddleXCddl c
 
-instance IndexMappable XXTopLevel ParserStage HuddleStage where
+instance IndexMappable XXTopLevel ParserPhase HuddlePhase where
   mapIndex (ParserXXTopLevel c) = HuddleXXTopLevel c
 
-instance IndexMappable XXType2 ParserStage HuddleStage where
+instance IndexMappable XXType2 ParserPhase HuddlePhase where
   mapIndex (ParserXXType2 c) = HuddleXXType2 c
 
-instance IndexMappable XTerm ParserStage HuddleStage where
+instance IndexMappable XTerm ParserPhase HuddlePhase where
   mapIndex (ParserXTerm c) = HuddleXTerm c
 
--- HuddleStage -> CTreePhase
+-- HuddlePhase -> CTreePhase
 
-instance IndexMappable XCddl HuddleStage CTreePhase where
+instance IndexMappable XCddl HuddlePhase CTreePhase where
   mapIndex _ = CTreeXCddl
 
-instance IndexMappable XXType2 HuddleStage CTreePhase where
+instance IndexMappable XXType2 HuddlePhase CTreePhase where
   mapIndex (HuddleXXType2 c) = case c of {}
 
-instance IndexMappable XTerm HuddleStage CTreePhase where
+instance IndexMappable XTerm HuddlePhase CTreePhase where
   mapIndex _ = CTreeXTerm
 
-instance IndexMappable XRule HuddleStage CTreePhase where
+instance IndexMappable XRule HuddlePhase CTreePhase where
   mapIndex (HuddleXRule _ g v) = CTreeXRule g v
 
--- HuddleStage -> PrettyStage
+-- ParserPhase ~ ParserPhase
 
-instance IndexMappable XCddl HuddleStage PrettyStage where
-  mapIndex (HuddleXCddl c) = PrettyXCddl c
+instance IndexMappable XCddl ParserPhase ParserPhase
 
-instance IndexMappable XXTopLevel HuddleStage PrettyStage where
-  mapIndex (HuddleXXTopLevel c) = PrettyXXTopLevel c
+instance IndexMappable XXTopLevel ParserPhase ParserPhase
 
-instance IndexMappable XXType2 HuddleStage PrettyStage where
-  mapIndex (HuddleXXType2 c) = absurd c
+instance IndexMappable XXType2 ParserPhase ParserPhase
 
-instance IndexMappable XTerm HuddleStage PrettyStage where
-  mapIndex (HuddleXTerm c) = PrettyXTerm c
+instance IndexMappable XTerm ParserPhase ParserPhase
 
-instance IndexMappable XRule HuddleStage PrettyStage where
-  mapIndex (HuddleXRule c _ _) = PrettyXRule c
-
--- ParserStage ~ ParserStage
-
-instance IndexMappable XCddl ParserStage ParserStage
-
-instance IndexMappable XXTopLevel ParserStage ParserStage
-
-instance IndexMappable XXType2 ParserStage ParserStage
-
-instance IndexMappable XTerm ParserStage ParserStage
-
-instance IndexMappable XRule ParserStage ParserStage
+instance IndexMappable XRule ParserPhase ParserPhase

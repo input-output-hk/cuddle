@@ -38,26 +38,29 @@ common warnings
 library
   import: warnings
   exposed-modules:
-    Codec.CBOR.Cuddle.CBOR.Gen
-    Codec.CBOR.Cuddle.CBOR.Validator
-    Codec.CBOR.Cuddle.CBOR.Validator.Trace
+    Codec.CBOR.Cuddle
+    Codec.CBOR.Cuddle.Generator
+    Codec.CBOR.Cuddle.Huddle
+    Codec.CBOR.Cuddle.Parser
+    Codec.CBOR.Cuddle.Validator
+
+  other-modules:
     Codec.CBOR.Cuddle.CDDL
     Codec.CBOR.Cuddle.CDDL.CTree
     Codec.CBOR.Cuddle.CDDL.CTreePhase
     Codec.CBOR.Cuddle.CDDL.CtlOp
-    Codec.CBOR.Cuddle.CDDL.Custom.Core
-    Codec.CBOR.Cuddle.CDDL.Custom.Generator
-    Codec.CBOR.Cuddle.CDDL.Custom.Validator
     Codec.CBOR.Cuddle.CDDL.Postlude
     Codec.CBOR.Cuddle.CDDL.Resolve
     Codec.CBOR.Cuddle.Comments
-    Codec.CBOR.Cuddle.Huddle
+    Codec.CBOR.Cuddle.Core
+    Codec.CBOR.Cuddle.Generator.Core
     Codec.CBOR.Cuddle.IndexMappable
-    Codec.CBOR.Cuddle.Parser
     Codec.CBOR.Cuddle.Parser.Lexer
     Codec.CBOR.Cuddle.Pretty
     Codec.CBOR.Cuddle.Pretty.Columnar
     Codec.CBOR.Cuddle.Pretty.Utils
+    Codec.CBOR.Cuddle.Validator.Core
+    Codec.CBOR.Cuddle.Validator.Trace
 
   build-depends:
     QuickCheck >=2.14.3,
@@ -128,17 +131,17 @@ test-suite cuddle-test
 
   other-modules:
     Paths_cuddle
-    Test.Codec.CBOR.Cuddle.CDDL.Examples
-    Test.Codec.CBOR.Cuddle.CDDL.Examples.Huddle
-    Test.Codec.CBOR.Cuddle.CDDL.Gen
-    Test.Codec.CBOR.Cuddle.CDDL.GeneratorSpec
-    Test.Codec.CBOR.Cuddle.CDDL.Parser
-    Test.Codec.CBOR.Cuddle.CDDL.Pretty
-    Test.Codec.CBOR.Cuddle.CDDL.Pretty.Golden
-    Test.Codec.CBOR.Cuddle.CDDL.TreeDiff
-    Test.Codec.CBOR.Cuddle.CDDL.Validator
-    Test.Codec.CBOR.Cuddle.CDDL.Validator.Golden
+    Test.Codec.CBOR.Cuddle.Examples
+    Test.Codec.CBOR.Cuddle.Examples.Huddle
+    Test.Codec.CBOR.Cuddle.Gen
+    Test.Codec.CBOR.Cuddle.GeneratorSpec
+    Test.Codec.CBOR.Cuddle.TreeDiff
     Test.Codec.CBOR.Cuddle.Huddle
+    Test.Codec.CBOR.Cuddle.Parser
+    Test.Codec.CBOR.Cuddle.Pretty
+    Test.Codec.CBOR.Cuddle.Pretty.Golden
+    Test.Codec.CBOR.Cuddle.Validator
+    Test.Codec.CBOR.Cuddle.Validator.Golden
 
   type: exitcode-stdio-1.0
   hs-source-dirs: test

@@ -3,14 +3,28 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ViewPatterns #-}
 
-module Codec.CBOR.Cuddle.CBOR.Validator (
+module Codec.CBOR.Cuddle.Validator (
   validateCBOR,
   validateFromName,
   validateFromGRef,
   ValidatorPhase,
 ) where
 
-import Codec.CBOR.Cuddle.CBOR.Validator.Trace (
+import Codec.CBOR.Cuddle.CDDL hiding (CDDL, Group, Rule)
+import Codec.CBOR.Cuddle.CDDL.CTree
+import Codec.CBOR.Cuddle.CDDL.CtlOp
+import Codec.CBOR.Cuddle.CDDL.Resolve (XXCTree (..), showSimple)
+import Codec.CBOR.Cuddle.Core (MonadCddl (..), RuleTerm (..))
+import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
+import Codec.CBOR.Cuddle.Validator.Core (
+  CustomValidatorResult (..),
+  TermValidator,
+  Validator,
+  ValidatorPhase,
+  askCddl,
+  runValidator,
+ )
+import Codec.CBOR.Cuddle.Validator.Trace (
   ControlInfo (..),
   Evidenced (..),
   IsValidationTrace (..),
@@ -22,24 +36,8 @@ import Codec.CBOR.Cuddle.CBOR.Validator.Trace (
   isValid,
   mapTrace,
  )
-import Codec.CBOR.Cuddle.CDDL hiding (CDDL, Group, Rule)
-import Codec.CBOR.Cuddle.CDDL.CTree
-import Codec.CBOR.Cuddle.CDDL.CtlOp
-import Codec.CBOR.Cuddle.CDDL.Custom.Core (MonadCddl (..), RuleTerm (..))
-import Codec.CBOR.Cuddle.CDDL.Custom.Validator (
-  CustomValidatorResult (..),
-  TermValidator,
-  ValidateEnv (..),
-  Validator,
-  ValidatorPhase,
-  XXCTree (..),
-  runValidator,
- )
-import Codec.CBOR.Cuddle.CDDL.Resolve (showSimple)
-import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
 import Codec.CBOR.Read
 import Codec.CBOR.Term
-import Control.Monad.Reader (asks)
 import Data.Bifunctor (Bifunctor (..))
 import Data.Bits hiding (And)
 import Data.ByteString qualified as BS
@@ -98,7 +96,7 @@ validateFromGRef ref term = do
 
 validateAgainst :: Term -> CTree ValidatorPhase -> Validator ()
 validateAgainst term rule = do
-  cddl <- asks veRoot
+  cddl <- askCddl
   let res = validateTerm cddl term rule
   if isValid res
     then pure ()

@@ -2,7 +2,7 @@
 {-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Test.Codec.CBOR.Cuddle.CDDL.Examples.Huddle (
+module Test.Codec.CBOR.Cuddle.Examples.Huddle (
   huddleRangeArray,
   huddleArray,
   huddleMap,
@@ -31,10 +31,9 @@ module Test.Codec.CBOR.Cuddle.CDDL.Examples.Huddle (
   tagRangeExample,
 ) where
 
-import Codec.CBOR.Cuddle.CBOR.Gen (generateFromGRef)
-import Codec.CBOR.Cuddle.CBOR.Validator (validateFromGRef)
 import Codec.CBOR.Cuddle.CDDL (Name)
-import Codec.CBOR.Cuddle.CDDL.Custom.Core (RuleTerm (..))
+import Codec.CBOR.Cuddle.Core (RuleTerm (..))
+import Codec.CBOR.Cuddle.Generator (generateFromGRef)
 import Codec.CBOR.Cuddle.Huddle (
   CanQuantify (..),
   Huddle,
@@ -57,6 +56,7 @@ import Codec.CBOR.Cuddle.Huddle (
   (==>),
  )
 import Codec.CBOR.Cuddle.Huddle qualified as H
+import Codec.CBOR.Cuddle.Validator (validateFromGRef)
 import Codec.CBOR.Term qualified as C
 import Data.Word (Word64)
 import Test.QuickCheck.GenT (MonadGen (..), frequency)

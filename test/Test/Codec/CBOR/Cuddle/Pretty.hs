@@ -2,7 +2,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 
-module Test.Codec.CBOR.Cuddle.CDDL.Pretty (
+module Test.Codec.CBOR.Cuddle.Pretty (
   spec,
   roundtripSpec,
 ) where
@@ -27,7 +27,7 @@ import Codec.CBOR.Cuddle.Huddle (HuddleItem (..), a, bstr, (<+), (=:=), (=:~))
 import Codec.CBOR.Cuddle.Huddle qualified as H
 import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
 import Codec.CBOR.Cuddle.Parser (pCDDL)
-import Codec.CBOR.Cuddle.Pretty (PrettyStage, XRule (..), renderCDDL)
+import Codec.CBOR.Cuddle.Pretty (PrettyPhase, XRule (..), renderCDDL)
 import Data.Default.Class (Default (..))
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Text qualified as T
@@ -36,8 +36,8 @@ import Data.TreeDiff (ToExpr (..), prettyExpr)
 import Paths_cuddle (getDataFileName)
 import Prettyprinter (Pretty (..), defaultLayoutOptions, layoutPretty)
 import Prettyprinter.Render.String (renderString)
-import Test.Codec.CBOR.Cuddle.CDDL.Gen ()
-import Test.Codec.CBOR.Cuddle.CDDL.TreeDiff ()
+import Test.Codec.CBOR.Cuddle.TreeDiff ()
+import Test.Codec.CBOR.Cuddle.Gen ()
 import Test.HUnit (assertEqual)
 import Test.Hspec (Expectation, Spec, describe, it, runIO, shouldBe, xit)
 import Test.Hspec.QuickCheck (xprop)
@@ -51,13 +51,13 @@ prettyPrintsTo x s = assertEqual (show . prettyExpr $ toExpr x) s rendered
   where
     rendered = renderString (layoutPretty defaultLayoutOptions (pretty x))
 
-t2Name :: Type2 PrettyStage
+t2Name :: Type2 PrettyPhase
 t2Name = T2Name (Name "a") mempty
 
-t1Name :: Type1 PrettyStage
+t1Name :: Type1 PrettyPhase
 t1Name = Type1 t2Name Nothing mempty
 
-mkType0 :: Type2 PrettyStage -> Type0 PrettyStage
+mkType0 :: Type2 PrettyPhase -> Type0 PrettyPhase
 mkType0 t2 = Type0 $ Type1 t2 Nothing mempty :| []
 
 spec :: Spec
@@ -67,14 +67,14 @@ spec = describe "Pretty printer" $ do
 
 qcSpec :: Spec
 qcSpec = describe "QuickCheck" $ do
-  xprop "CDDL prettyprinter leaves no trailing spaces" $ \(cddl :: CDDL PrettyStage) -> do
+  xprop "CDDL prettyprinter leaves no trailing spaces" $ \(cddl :: CDDL PrettyPhase) -> do
     let
       prettyStr = T.pack . renderString . layoutPretty defaultLayoutOptions $ pretty cddl
       stripLines = T.unlines . fmap T.stripEnd . T.lines
     counterexample (show . prettyExpr $ toExpr cddl) $
       prettyStr `shouldBe` stripLines prettyStr
 
-drep :: Rule PrettyStage
+drep :: Rule PrettyPhase
 drep =
   Rule
     "drep"
@@ -139,7 +139,7 @@ unitSpec = describe "HUnit" $ do
     describe "Name" $ do
       it "names" $ Name "a" `prettyPrintsTo` "a"
     describe "Type0" $ do
-      it "name" $ Type0 @PrettyStage (t1Name :| []) `prettyPrintsTo` "a"
+      it "name" $ Type0 @PrettyPhase (t1Name :| []) `prettyPrintsTo` "a"
     describe "Type1" $ do
       it "name" $ t1Name `prettyPrintsTo` "a"
     describe "Type2" $ do
@@ -192,7 +192,7 @@ unitSpec = describe "HUnit" $ do
             `prettyPrintsTo` "[ 1 ;first\n    ;multiline comment\n, 2 ;second\n    ;multiline comment\n]"
     describe "Rule" $ do
       it "simple assignment" $
-        Rule @PrettyStage
+        Rule @PrettyPhase
           (Name "a")
           Nothing
           AssignEq
@@ -200,7 +200,7 @@ unitSpec = describe "HUnit" $ do
           def
           `prettyPrintsTo` "a = b"
       it "simple assignment with comment" $
-        Rule @PrettyStage
+        Rule @PrettyPhase
           (Name "a")
           Nothing
           AssignEq
@@ -213,7 +213,7 @@ unitSpec = describe "HUnit" $ do
   describe "Huddle" $ do
     let
       huddlePrettyPrintsTo rs str =
-        mapIndex @_ @_ @PrettyStage (H.toCDDLNoRoot $ H.collectFrom rs) `prettyPrintsTo` str
+        mapIndex @_ @_ @PrettyPhase (H.toCDDLNoRoot $ H.collectFrom rs) `prettyPrintsTo` str
     describe "Rule" $ do
       -- TODO get rid of trailing newline
       it "simple assignment" $
@@ -275,11 +275,11 @@ prettyRoundtrip testName cddlPath = do
       Right x -> pure x
   it testName $ do
     let
-      prettyStage1 = mapIndex @_ @_ @PrettyStage original
-      rendered = renderCDDL defaultLayoutOptions prettyStage1
+      prettyPhase1 = mapIndex @_ @_ @PrettyPhase original
+      rendered = renderCDDL defaultLayoutOptions prettyPhase1
     case parse pCDDL "" rendered of
       Left err ->
         fail $ "Failed to re-parse pretty-printed CDDL:\n" <> errorBundlePretty err
       Right reparsed ->
-        let prettyStage2 = mapIndex @_ @_ @PrettyStage reparsed
-         in prettyStage2 `shouldBe` prettyStage1
+        let prettyPhase2 = mapIndex @_ @_ @PrettyPhase reparsed
+         in prettyPhase2 `shouldBe` prettyPhase1

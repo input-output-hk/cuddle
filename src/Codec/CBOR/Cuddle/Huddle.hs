@@ -26,7 +26,7 @@ module Codec.CBOR.Cuddle.Huddle (
   Type0 (..),
 
   -- * AST extensions
-  HuddleStage,
+  HuddlePhase,
   C.XCddl (..),
   C.XTerm (..),
   C.XRule (..),
@@ -111,7 +111,6 @@ where
 
 import Codec.CBOR.Cuddle.CDDL (
   CDDL,
-  GRef (..),
   GenericParameter (..),
   HasName (..),
   Name (..),
@@ -119,11 +118,11 @@ import Codec.CBOR.Cuddle.CDDL (
  )
 import Codec.CBOR.Cuddle.CDDL qualified as C
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
-import Codec.CBOR.Cuddle.CDDL.Custom.Core (RuleTerm)
-import Codec.CBOR.Cuddle.CDDL.Custom.Generator (CBORGen, HasGenerator (..))
-import Codec.CBOR.Cuddle.CDDL.Custom.Validator (HasValidator (..), TermValidator)
 import Codec.CBOR.Cuddle.Comments (Comment, HasComment (..))
 import Codec.CBOR.Cuddle.Comments qualified as C
+import Codec.CBOR.Cuddle.Core (GRef (..), RuleTerm)
+import Codec.CBOR.Cuddle.Generator.Core (CBORGen, HasGenerator (..))
+import Codec.CBOR.Cuddle.Validator.Core (HasValidator (..), TermValidator)
 import Control.Monad (when)
 import Control.Monad.State (MonadState (get), State, execState, modify)
 import Data.ByteString (ByteString)
@@ -147,36 +146,36 @@ import Optics.Core (lens, view, (%), (%~), (&))
 import Optics.Core qualified as L
 import Prelude hiding ((/))
 
-type data HuddleStage
+type data HuddlePhase
 
-newtype instance C.XTerm HuddleStage = HuddleXTerm C.Comment
+newtype instance C.XTerm HuddlePhase = HuddleXTerm C.Comment
   deriving (Generic, Semigroup, Monoid, Show, Eq)
 
-newtype instance C.XCddl HuddleStage = HuddleXCddl [C.Comment]
+newtype instance C.XCddl HuddlePhase = HuddleXCddl [C.Comment]
   deriving (Generic, Semigroup, Monoid, Show, Eq)
 
-data instance C.XRule HuddleStage = HuddleXRule
+data instance C.XRule HuddlePhase = HuddleXRule
   { hxrComment :: C.Comment
   , hxrGenerator :: Maybe (CBORGen RuleTerm)
   , hxrValidator :: Maybe TermValidator
   }
   deriving (Generic)
 
-instance HasComment (C.XRule HuddleStage) where
+instance HasComment (C.XRule HuddlePhase) where
   commentL = #hxrComment
 
-instance HasValidator (C.XRule HuddleStage) where
+instance HasValidator (C.XRule HuddlePhase) where
   validatorL = #hxrValidator
 
-instance HasGenerator (C.XRule HuddleStage) where
+instance HasGenerator (C.XRule HuddlePhase) where
   generatorL = #hxrGenerator
 
-instance Default (XRule HuddleStage)
+instance Default (XRule HuddlePhase)
 
-newtype instance C.XXTopLevel HuddleStage = HuddleXXTopLevel C.Comment
+newtype instance C.XXTopLevel HuddlePhase = HuddleXXTopLevel C.Comment
   deriving (Generic, Semigroup, Monoid, Show, Eq)
 
-newtype instance C.XXType2 HuddleStage = HuddleXXType2 Void
+newtype instance C.XXType2 HuddlePhase = HuddleXXType2 Void
   deriving (Generic, Semigroup, Show, Eq)
 
 -- | Add a description to a rule or group entry, to be included as a comment.
@@ -186,7 +185,7 @@ comment desc n = n & commentL %~ (<> desc)
 data Rule = Rule
   { ruleName :: Name
   , ruleDefinition :: Type0
-  , ruleExtra :: XRule HuddleStage
+  , ruleExtra :: XRule HuddlePhase
   }
   deriving (Generic)
 
@@ -205,7 +204,7 @@ instance HasName Rule where
 data GroupDef = GroupDef
   { gdName :: Name
   , gdDefinition :: Group
-  , gdExt :: XRule HuddleStage
+  , gdExt :: XRule HuddlePhase
   }
   deriving (Generic)
 
@@ -527,7 +526,7 @@ unconstrained v = Constrained (CValue v) def []
 -- | A constraint on a 'Value' is something applied via CtlOp or RangeOp on a
 -- Type2, forming a Type1.
 data ValueConstraint a = ValueConstraint
-  { applyConstraint :: C.Type2 HuddleStage -> C.Type1 HuddleStage
+  { applyConstraint :: C.Type2 HuddlePhase -> C.Type1 HuddlePhase
   , showConstraint :: String
   }
 
@@ -554,7 +553,7 @@ instance IsSizeable CGRefType
 
 -- | Things which can be used on the RHS of the '.size' operator.
 class IsSize a where
-  sizeAsCDDL :: a -> C.Type2 HuddleStage
+  sizeAsCDDL :: a -> C.Type2 HuddlePhase
   sizeAsString :: a -> String
 
 instance IsSize Word where
@@ -1022,13 +1021,13 @@ data GRule a = GRule
 data GRuleCall = GRuleCall
   { grcName :: Name
   , grcBody :: GRule Type2
-  , grcExtra :: XRule HuddleStage
+  , grcExtra :: XRule HuddlePhase
   }
 
 data GRuleDef = GRuleDef
   { grdName :: Name
   , grdBody :: GRule GRef
-  , grdExtra :: XRule HuddleStage
+  , grdExtra :: XRule HuddlePhase
   }
 
 instance HasName GRuleDef where
@@ -1185,11 +1184,11 @@ defaultHuddleConfig =
     }
 
 -- | Convert from Huddle to CDDL, generating a top level root element.
-toCDDL :: Huddle -> CDDL HuddleStage
+toCDDL :: Huddle -> CDDL HuddlePhase
 toCDDL = toCDDL' defaultHuddleConfig
 
 -- | Convert from Huddle to CDDL, skipping a root element.
-toCDDLNoRoot :: Huddle -> CDDL HuddleStage
+toCDDLNoRoot :: Huddle -> CDDL HuddlePhase
 toCDDLNoRoot =
   toCDDL'
     defaultHuddleConfig
@@ -1197,7 +1196,7 @@ toCDDLNoRoot =
       }
 
 -- | Convert from Huddle to CDDL for the purpose of pretty-printing.
-toCDDL' :: HuddleConfig -> Huddle -> CDDL HuddleStage
+toCDDL' :: HuddleConfig -> Huddle -> CDDL HuddlePhase
 toCDDL' HuddleConfig {..} hdl =
   C.fromRules
     . failOnDuplicate
@@ -1222,12 +1221,12 @@ toCDDL' HuddleConfig {..} hdl =
     toCDDLItem (HIRule r) = toCDDLRule r
     toCDDLItem (HIGroup g) = toCDDLGroupDef g
     toCDDLItem (HIGRule g) = toGenRuleDef g
-    toTopLevelPseudoRoot :: [Rule] -> C.Rule HuddleStage
+    toTopLevelPseudoRoot :: [Rule] -> C.Rule HuddlePhase
     toTopLevelPseudoRoot topRs =
       toCDDLRule $
         comment "Pseudo-rule introduced by Cuddle to collect root elements" $
           "huddle_root_defs" =:= arr (fromList (fmap a topRs))
-    toCDDLRule :: Rule -> C.Rule HuddleStage
+    toCDDLRule :: Rule -> C.Rule HuddlePhase
     toCDDLRule (Rule n (Type0 t0) extra) =
       ( \x ->
           C.Rule n Nothing C.AssignEq x extra
@@ -1246,13 +1245,13 @@ toCDDL' HuddleConfig {..} hdl =
     toCDDLValue' (LBytes b) = C.VBytes b
     toCDDLValue' (LBool b) = C.VBool b
 
-    mapToCDDLGroup :: Map -> C.Group HuddleStage
+    mapToCDDLGroup :: Map -> C.Group HuddlePhase
     mapToCDDLGroup xs = C.Group $ mapChoiceToCDDL <$> choiceToNE xs
 
-    mapChoiceToCDDL :: MapChoice -> C.GrpChoice HuddleStage
+    mapChoiceToCDDL :: MapChoice -> C.GrpChoice HuddlePhase
     mapChoiceToCDDL (MapChoice entries) = C.GrpChoice (fmap mapEntryToCDDL entries) mempty
 
-    mapEntryToCDDL :: MapEntry -> C.GroupEntry HuddleStage
+    mapEntryToCDDL :: MapEntry -> C.GroupEntry HuddlePhase
     mapEntryToCDDL (MapEntry k v occ cmnt) =
       C.GroupEntry
         (toOccurrenceIndicator occ)
@@ -1266,7 +1265,7 @@ toCDDL' HuddleConfig {..} hdl =
     toOccurrenceIndicator (Occurs (Just 1) Nothing) = Just C.OIOneOrMore
     toOccurrenceIndicator (Occurs lb ub) = Just $ C.OIBounded lb ub
 
-    toCDDLType1 :: Type2 -> C.Type1 HuddleStage
+    toCDDLType1 :: Type2 -> C.Type1 HuddlePhase
     toCDDLType1 = \case
       T2Constrained (Constrained x constr _) ->
         -- TODO Need to handle choices at the top level
@@ -1285,21 +1284,21 @@ toCDDL' HuddleConfig {..} hdl =
       T2Generic g -> C.Type1 (toGenericCall g) Nothing mempty
       T2GenericRef (GRef n) -> C.Type1 (C.T2Name (C.Name n) Nothing) Nothing mempty
 
-    toMemberKey :: Key -> C.MemberKey HuddleStage
+    toMemberKey :: Key -> C.MemberKey HuddlePhase
     toMemberKey (LiteralKey (Literal (LText t) _)) = C.MKBareword (C.Name t)
     toMemberKey (LiteralKey v) = C.MKValue $ toCDDLValue v
     toMemberKey (TypeKey t) = C.MKType (toCDDLType1 t)
 
-    toCDDLType0 :: Type0 -> C.Type0 HuddleStage
+    toCDDLType0 :: Type0 -> C.Type0 HuddlePhase
     toCDDLType0 = C.Type0 . fmap toCDDLType1 . choiceToNE . unType0
 
-    arrayToCDDLGroup :: Array -> C.Group HuddleStage
+    arrayToCDDLGroup :: Array -> C.Group HuddlePhase
     arrayToCDDLGroup xs = C.Group $ arrayChoiceToCDDL <$> choiceToNE xs
 
-    arrayChoiceToCDDL :: ArrayChoice -> C.GrpChoice HuddleStage
+    arrayChoiceToCDDL :: ArrayChoice -> C.GrpChoice HuddlePhase
     arrayChoiceToCDDL (ArrayChoice entries cmt) = C.GrpChoice (fmap arrayEntryToCDDL entries) (HuddleXTerm cmt)
 
-    arrayEntryToCDDL :: ArrayEntry -> C.GroupEntry HuddleStage
+    arrayEntryToCDDL :: ArrayEntry -> C.GroupEntry HuddlePhase
     arrayEntryToCDDL (ArrayEntry k v occ cmnt) =
       C.GroupEntry
         (toOccurrenceIndicator occ)
@@ -1324,7 +1323,7 @@ toCDDL' HuddleConfig {..} hdl =
       CRef r -> getName r
       CGRef (GRef n) -> C.Name n
 
-    toCDDLRanged :: Ranged -> C.Type1 HuddleStage
+    toCDDLRanged :: Ranged -> C.Type1 HuddlePhase
     toCDDLRanged (Unranged x) =
       C.Type1 (C.T2Value $ toCDDLValue x) Nothing mempty
     toCDDLRanged (Ranged lb ub rop) =
@@ -1333,11 +1332,11 @@ toCDDL' HuddleConfig {..} hdl =
         (Just (C.RangeOp rop, toCDDLRangeBound ub))
         mempty
 
-    toCDDLRangeBound :: RangeBound -> C.Type2 HuddleStage
+    toCDDLRangeBound :: RangeBound -> C.Type2 HuddlePhase
     toCDDLRangeBound (RangeBoundLiteral l) = C.T2Value $ toCDDLValue l
     toCDDLRangeBound (RangeBoundRef n _) = C.T2Name n Nothing
 
-    toCDDLGroupDef :: GroupDef -> C.Rule HuddleStage
+    toCDDLGroupDef :: GroupDef -> C.Rule HuddlePhase
     toCDDLGroupDef (GroupDef n (Group t0s) extra) =
       C.Rule
         n
@@ -1355,13 +1354,13 @@ toCDDL' HuddleConfig {..} hdl =
         )
         extra
 
-    toGenericCall :: GRuleCall -> C.Type2 HuddleStage
+    toGenericCall :: GRuleCall -> C.Type2 HuddlePhase
     toGenericCall (GRuleCall n gr _) =
       C.T2Name
         n
         (Just . C.GenericArg $ fmap toCDDLType1 (args gr))
 
-    toGenRuleDef :: GRuleDef -> C.Rule HuddleStage
+    toGenRuleDef :: GRuleDef -> C.Rule HuddlePhase
     toGenRuleDef (GRuleDef n gr extra) =
       C.Rule
         n
