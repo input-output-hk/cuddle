@@ -45,7 +45,6 @@ import Data.List.NonEmpty qualified as NE
 import Data.String (IsString, fromString)
 import Data.Text (Text)
 import Data.Text qualified as T
-import Data.TreeDiff (ToExpr)
 import Data.Void (Void, absurd)
 import GHC.Generics (Generic)
 import Optics.Core ((^.))
@@ -55,19 +54,19 @@ import Prettyprinter.Render.Text qualified as PT
 type data PrettyStage
 
 newtype instance XXTopLevel PrettyStage = PrettyXXTopLevel Comment
-  deriving (Generic, CollectComments, ToExpr, Show, Eq)
+  deriving (Generic, CollectComments, Show, Eq)
 
 newtype instance XXType2 PrettyStage = PrettyXXType2 Void
-  deriving (Generic, CollectComments, ToExpr, Show, Eq)
+  deriving (Generic, CollectComments, Show, Eq)
 
 newtype instance XTerm PrettyStage = PrettyXTerm {unPrettyXTerm :: Comment}
-  deriving (Generic, CollectComments, Semigroup, Monoid, IsString, ToExpr, Show, Eq)
+  deriving (Generic, CollectComments, Semigroup, Monoid, IsString, Show, Eq)
 
 newtype instance XCddl PrettyStage = PrettyXCddl [Comment]
-  deriving (Generic, CollectComments, ToExpr, Show, Eq)
+  deriving (Generic, CollectComments, Show, Eq)
 
 newtype instance XRule PrettyStage = PrettyXRule {unPrettyXRule :: Comment}
-  deriving (Generic, CollectComments, ToExpr, Show, Eq)
+  deriving (Generic, CollectComments, Show, Eq)
   deriving newtype (Default)
 
 instance HasComment (XTerm PrettyStage) where

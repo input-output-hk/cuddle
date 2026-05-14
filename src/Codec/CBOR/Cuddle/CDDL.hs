@@ -60,7 +60,6 @@ import Data.List.NonEmpty qualified as NE
 import Data.Maybe (mapMaybe)
 import Data.String (IsString (..))
 import Data.Text qualified as T
-import Data.TreeDiff (ToExpr)
 import Data.Word (Word64, Word8)
 import GHC.Base (Constraint, Type)
 import GHC.Generics (Generic)
@@ -101,8 +100,6 @@ deriving instance ForAllExtensions i Eq => Eq (CDDL i)
 
 deriving instance ForAllExtensions i Show => Show (CDDL i)
 
-deriving instance ForAllExtensions i ToExpr => ToExpr (CDDL i)
-
 ruleTopLevel :: TopLevel i -> Maybe (Rule i)
 ruleTopLevel (TopLevelRule r) = Just r
 ruleTopLevel _ = Nothing
@@ -131,8 +128,6 @@ data TopLevel i
 deriving instance ForAllExtensions i Eq => Eq (TopLevel i)
 
 deriving instance ForAllExtensions i Show => Show (TopLevel i)
-
-deriving instance ForAllExtensions i ToExpr => ToExpr (TopLevel i)
 
 -- |
 --  A name can consist of any of the characters from the set {"A" to
@@ -166,8 +161,6 @@ newtype Name = Name {unName :: T.Text}
 newtype GRef = GRef T.Text
   deriving (Show)
 
-deriving anyclass instance ToExpr Name
-
 instance IsString Name where
   fromString = Name . T.pack
 
@@ -197,7 +190,6 @@ instance HasName Name where
 --   side the first entry in the choice being created.)
 data Assign = AssignEq | AssignExt
   deriving (Eq, Generic, Show)
-  deriving anyclass (ToExpr)
 
 -- |
 --  Generics
@@ -223,8 +215,6 @@ deriving instance Eq (XTerm i) => Eq (GenericParameters i)
 
 deriving instance Show (XTerm i) => Show (GenericParameters i)
 
-deriving anyclass instance ToExpr (XTerm i) => ToExpr (GenericParameters i)
-
 data GenericParameter i = GenericParameter
   { gpName :: Name
   , gpExt :: XTerm i
@@ -234,8 +224,6 @@ data GenericParameter i = GenericParameter
 deriving instance Eq (XTerm i) => Eq (GenericParameter i)
 
 deriving instance Show (XTerm i) => Show (GenericParameter i)
-
-deriving anyclass instance ToExpr (XTerm i) => ToExpr (GenericParameter i)
 
 instance CollectComments (XTerm i) => CollectComments (GenericParameter i)
 
@@ -249,8 +237,6 @@ newtype GenericArg i = GenericArg (NE.NonEmpty (Type1 i))
 deriving instance ForAllExtensions i Eq => Eq (GenericArg i)
 
 deriving instance ForAllExtensions i Show => Show (GenericArg i)
-
-deriving anyclass instance ForAllExtensions i ToExpr => ToExpr (GenericArg i)
 
 instance ForAllExtensions i CollectComments => CollectComments (GenericArg i)
 
@@ -290,8 +276,6 @@ deriving instance ForAllExtensions i Eq => Eq (Rule i)
 
 deriving instance ForAllExtensions i Show => Show (Rule i)
 
-deriving instance ForAllExtensions i ToExpr => ToExpr (Rule i)
-
 instance HasComment (XRule i) => HasComment (Rule i) where
   commentL = #ruleExt % commentL
 
@@ -306,13 +290,11 @@ compareRuleName = compare `on` ruleName
 --   included for ".." and excluded for "...".
 data RangeBound = ClOpen | Closed
   deriving (Eq, Generic, Show)
-  deriving anyclass (ToExpr)
 
 instance Hashable RangeBound
 
 data TyOp = RangeOp RangeBound | CtrlOp CtlOp
   deriving (Eq, Generic, Show)
-  deriving anyclass (ToExpr)
 
 data TypeOrGroup i = TOGType (Type0 i) | TOGGroup (GroupEntry i)
   deriving (Generic)
@@ -320,8 +302,6 @@ data TypeOrGroup i = TOGType (Type0 i) | TOGGroup (GroupEntry i)
 deriving instance ForAllExtensions i Eq => Eq (TypeOrGroup i)
 
 deriving instance ForAllExtensions i Show => Show (TypeOrGroup i)
-
-deriving instance ForAllExtensions i ToExpr => ToExpr (TypeOrGroup i)
 
 instance ForAllExtensions i CollectComments => CollectComments (TypeOrGroup i)
 
@@ -393,8 +373,6 @@ deriving instance ForAllExtensions i Eq => Eq (Type0 i)
 
 deriving instance ForAllExtensions i Show => Show (Type0 i)
 
-deriving anyclass instance ForAllExtensions i ToExpr => ToExpr (Type0 i)
-
 instance ForAllExtensions i CollectComments => CollectComments (Type0 i)
 
 -- |
@@ -409,8 +387,6 @@ data Type1 i = Type1
 deriving instance ForAllExtensions i Eq => Eq (Type1 i)
 
 deriving instance ForAllExtensions i Show => Show (Type1 i)
-
-deriving instance ForAllExtensions i ToExpr => ToExpr (Type1 i)
 
 instance HasComment (XTerm i) => HasComment (Type1 i) where
   commentL = #t1Comment % commentL
@@ -459,8 +435,6 @@ deriving instance ForAllExtensions i Eq => Eq (Type2 i)
 
 deriving instance ForAllExtensions i Show => Show (Type2 i)
 
-deriving instance ForAllExtensions i ToExpr => ToExpr (Type2 i)
-
 instance ForAllExtensions i CollectComments => CollectComments (Type2 i)
 
 -- |
@@ -483,7 +457,6 @@ data OccurrenceIndicator
   | OIOneOrMore
   | OIBounded (Maybe Word64) (Maybe Word64)
   deriving (Eq, Generic, Show)
-  deriving anyclass (ToExpr)
 
 instance Hashable OccurrenceIndicator
 
@@ -497,8 +470,6 @@ newtype Group i = Group {unGroup :: NE.NonEmpty (GrpChoice i)}
 deriving instance ForAllExtensions i Eq => Eq (Group i)
 
 deriving instance ForAllExtensions i Show => Show (Group i)
-
-deriving anyclass instance ForAllExtensions i ToExpr => ToExpr (Group i)
 
 instance HasComment (XTerm i) => HasComment (Group i) where
   commentL = #unGroup % commentL
@@ -515,8 +486,6 @@ data GrpChoice i = GrpChoice
 deriving instance ForAllExtensions i Eq => Eq (GrpChoice i)
 
 deriving instance ForAllExtensions i Show => Show (GrpChoice i)
-
-deriving instance ForAllExtensions i ToExpr => ToExpr (GrpChoice i)
 
 instance HasComment (XTerm i) => HasComment (GrpChoice i) where
   commentL = #gcComment % commentL
@@ -542,8 +511,6 @@ deriving instance ForAllExtensions i Eq => Eq (GroupEntry i)
 
 deriving instance ForAllExtensions i Show => Show (GroupEntry i)
 
-deriving instance ForAllExtensions i ToExpr => ToExpr (GroupEntry i)
-
 instance ForAllExtensions i CollectComments => CollectComments (GroupEntry i) where
   collectComments (GroupEntry _ c x) = collectComments c <> collectComments x
 
@@ -556,8 +523,6 @@ data GroupEntryVariant i
 deriving instance ForAllExtensions i Eq => Eq (GroupEntryVariant i)
 
 deriving instance ForAllExtensions i Show => Show (GroupEntryVariant i)
-
-deriving instance ForAllExtensions i ToExpr => ToExpr (GroupEntryVariant i)
 
 instance HasComment (XTerm i) => HasComment (GroupEntry i) where
   commentL = #geExt % commentL
@@ -585,11 +550,9 @@ deriving instance ForAllExtensions i Eq => Eq (MemberKey i)
 
 deriving instance ForAllExtensions i Show => Show (MemberKey i)
 
-deriving instance ForAllExtensions i ToExpr => ToExpr (MemberKey i)
-
 data Value = Value ValueVariant Comment
   deriving (Eq, Generic, Show, Default)
-  deriving anyclass (ToExpr, Hashable, CollectComments)
+  deriving anyclass (Hashable, CollectComments)
 
 value :: ValueVariant -> Value
 value x = Value x mempty
@@ -605,4 +568,4 @@ data ValueVariant
   | VBytes B.ByteString
   | VBool Bool
   deriving (Eq, Generic, Show, Default)
-  deriving anyclass (ToExpr, Hashable, CollectComments)
+  deriving anyclass (Hashable, CollectComments)

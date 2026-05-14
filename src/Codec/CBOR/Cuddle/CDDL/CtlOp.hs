@@ -4,7 +4,6 @@
 module Codec.CBOR.Cuddle.CDDL.CtlOp where
 
 import Data.Hashable (Hashable)
-import Data.TreeDiff (ToExpr)
 import GHC.Generics (Generic)
 
 -- | A _control_ allows relating a _target_ type with a _controller_ type
@@ -35,6 +34,5 @@ data CtlOp
   | Ne
   | Default
   deriving (Eq, Generic, Show)
-  deriving anyclass (ToExpr)
 
 instance Hashable CtlOp

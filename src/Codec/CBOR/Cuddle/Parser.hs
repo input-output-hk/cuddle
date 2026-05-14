@@ -35,7 +35,6 @@ import Data.Maybe (isJust)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Encoding (encodeUtf8)
-import Data.TreeDiff (ToExpr)
 import Data.Void (Void)
 import GHC.Generics (Generic)
 import GHC.Word (Word64, Word8)
@@ -48,19 +47,19 @@ import Text.Megaparsec.Char.Lexer qualified as L
 type data ParserStage
 
 newtype instance XXTopLevel ParserStage = ParserXXTopLevel Comment
-  deriving (Generic, Show, Eq, ToExpr)
+  deriving (Generic, Show, Eq)
 
 newtype instance XXType2 ParserStage = ParserXXType2 Void
-  deriving (Generic, Show, Eq, ToExpr)
+  deriving (Generic, Show, Eq)
 
 newtype instance XTerm ParserStage = ParserXTerm {unParserXTerm :: Comment}
-  deriving (Generic, Semigroup, Monoid, Show, Eq, ToExpr)
+  deriving (Generic, Semigroup, Monoid, Show, Eq)
 
 newtype instance XRule ParserStage = ParserXRule {unParserXRule :: Comment}
-  deriving (Generic, Semigroup, Monoid, Show, Eq, ToExpr)
+  deriving (Generic, Semigroup, Monoid, Show, Eq)
 
 newtype instance XCddl ParserStage = ParserXCddl [Comment]
-  deriving (Generic, Semigroup, Monoid, Show, Eq, ToExpr)
+  deriving (Generic, Semigroup, Monoid, Show, Eq)
 
 instance HasComment (XTerm ParserStage) where
   commentL = #unParserXTerm

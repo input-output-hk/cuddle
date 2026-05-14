@@ -28,7 +28,6 @@ import Data.Hashable (Hashable)
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.String (IsString (..))
 import Data.Text qualified as T
-import Data.TreeDiff (ToExpr)
 import Data.Void (Void, absurd)
 import Data.Word (Word16, Word32, Word64, Word8)
 import GHC.Generics (Generic (..), K1 (..), M1 (..), U1 (..), V1, (:*:) (..), (:+:) (..))
@@ -37,7 +36,7 @@ import Optics.Core (Lens', lens, view, (%~), (&), (.~), (^.))
 newtype Comment = Comment [T.Text]
   deriving (Eq, Ord, Generic, Show)
   deriving newtype (Semigroup, Monoid)
-  deriving anyclass (ToExpr, Hashable)
+  deriving anyclass (Hashable)
 
 unComment :: Comment -> [T.Text]
 unComment (Comment c) = c
