@@ -82,7 +82,7 @@ import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import GHC.Generics (Generic)
 import Optics.Core
-import Prettyprinter (Pretty (..), encloseSep, layoutCompact)
+import Prettyprinter (Pretty (..), layoutCompact)
 import Prettyprinter.Render.Text (renderStrict)
 
 data ProvidedParameters a = ProvidedParameters
@@ -589,7 +589,7 @@ throwNR = throw @"nameResolution"
 synthMono :: Name -> [CTree DistReferenced] -> MonoM Name
 synthMono origName args =
   let dropGenerator = fmap $ mapIndex @_ @DistReferenced @DistReferencedSimplePhase
-      argsName = Name (T.intercalate "," $ renderStrict . layoutCompact . pretty <$> dropGenerator args)
+      argsName = Name (T.intercalate "," $ renderStrict . layoutCompact . prettyCTree <$> dropGenerator args)
       -- We use % to mark a monomorphised generic rule, '%' is not allowed in
       -- CDDL names, so there should be no conflicts
       fresh = "%" <> origName <> "<" <> argsName <> ">"

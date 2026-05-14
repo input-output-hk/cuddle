@@ -23,6 +23,7 @@ import Codec.CBOR.Cuddle.CDDL
 import Codec.CBOR.Cuddle.CDDL.CTree (CTree, PTerm (..), XXCTree)
 import Codec.CBOR.Cuddle.CDDL.CTree qualified as CT
 import Codec.CBOR.Cuddle.CDDL.CtlOp (CtlOp)
+import Codec.CBOR.Cuddle.CDDL.Resolve (DistRef (..))
 import Codec.CBOR.Cuddle.Comments (CollectComments (..), Comment, HasComment (..), unComment)
 import Codec.CBOR.Cuddle.Huddle (
   HuddlePhase,

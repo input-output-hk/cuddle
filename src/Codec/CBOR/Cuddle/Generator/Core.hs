@@ -19,9 +19,8 @@ module Codec.CBOR.Cuddle.Generator.Core (
   askTwiddle,
 ) where
 
-import Codec.CBOR.Cuddle.CDDL (GRef (..), Name (..))
-import Codec.CBOR.Cuddle.CDDL.CTree (CTree, CTreeRoot (..), XXCTree)
-import Codec.CBOR.Cuddle.Core (MonadCddl (..), RuleTerm)
+import Codec.CBOR.Cuddle.CDDL.CTree (CTree, CTreeRoot (..), MonadCddl (..), XXCTree)
+import Codec.CBOR.Cuddle.Core (GRef (..), Name (..), RuleTerm)
 import Control.Monad.Reader (MonadReader (..), ReaderT (..), asks, mapReaderT)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map

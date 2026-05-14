@@ -1,19 +1,33 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module Codec.CBOR.Cuddle.CDDL.CTree where
 
-import Codec.CBOR.Cuddle.CDDL (Name, OccurrenceIndicator, RangeBound, Value)
+import Codec.CBOR.Cuddle.CDDL (
+  Name,
+  OccurrenceIndicator (..),
+  RangeBound (..),
+  Value (..),
+  ValueVariant (..),
+ )
 import Codec.CBOR.Cuddle.CDDL.CtlOp
+import Codec.CBOR.Cuddle.Core (GRef)
 import Control.Monad.Identity (Identity (..))
+import Data.Foldable (Foldable (..))
 import Data.Hashable (Hashable)
+import Data.Kind (Type)
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as Map
+import Data.Text (Text)
+import Data.Text qualified as T
 import Data.Word (Word64)
 import GHC.Generics (Generic)
 import Generic.Random (genericArbitraryU)
+import Prettyprinter (Doc, Pretty (..), encloseSep, group, list, punctuate, tupled, vsep, (<+>))
 import Test.QuickCheck (Arbitrary (..))
 
 --------------------------------------------------------------------------------
@@ -85,6 +99,23 @@ foldCTree ::
   CTree j
 foldCTree atExt atNode x = runIdentity $ traverseCTree (pure . atExt) (pure . atNode) x
 
+displayCanonicalCTree :: CTree p -> Text
+displayCanonicalCTree = \case
+  Literal (Value v _) -> displayCanonicalValueVariant v
+  Postlude _ -> _
+  Map _ -> _
+  Array _ -> _
+  Choice _ -> _
+  Group _ -> _
+  KV _ _ _ -> _
+  Occur _ _ -> _
+  Range _ _ _ -> _
+  Control _ _ _ -> _
+  Enum _ -> _
+  Unwrap _ -> _
+  Tag _ _ -> _
+  CTreeE _ -> _
+
 type Node i = XXCTree i
 
 newtype CTreeRoot i = CTreeRoot (Map.Map Name (CTree i))
@@ -146,10 +177,13 @@ instance Arbitrary PTerm where
 
 instance Hashable PTerm
 
--- Bounds
+class MonadCddl m where
+  type Phase m :: Type
 
-uintMax :: Integer
-uintMax = 2 ^ (64 :: Int) - 1
+  -- | Look up a top-level rule by name.
+  lookupCddl :: Name -> m (Maybe (CTree (Phase m)))
 
-nintMin :: Integer
-nintMin = -(2 ^ (64 :: Int))
+  -- | Look up the rule bound to a generic parameter at the enclosing rule.
+  -- Returns 'Nothing' outside of a custom generator/validator that was
+  -- attached to a generic rule.
+  lookupGRef :: GRef -> m (Maybe (CTree (Phase m)))
