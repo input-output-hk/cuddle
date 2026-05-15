@@ -2,6 +2,7 @@
 
 ## 1.8.0.0
 
+* Change `validateCBOR` return type to `Either ValidateCBORError (Evidenced ValidationTrace)`
 * Remove `ToExpr` instances from all types
 * Rename `MonoSimple` to `MonoSimplePhase`
 * Remove `GenSimple` and `ValidatorPhaseSimple`; use `MonoSimplePhase` instead

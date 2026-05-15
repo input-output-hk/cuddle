@@ -8,6 +8,7 @@ module Codec.CBOR.Cuddle.CBOR.Validator (
   validateFromName,
   validateFromGRef,
   ValidatorPhase,
+  ValidateCBORError (..),
 ) where
 
 import Codec.CBOR.Cuddle.CBOR.Validator.Trace (
@@ -59,21 +60,28 @@ import GHC.Float
 import GHC.Stack (HasCallStack)
 import Text.Regex.TDFA
 
+data ValidateCBORError
+  = DecodingFailed DeserialiseFailure
+  | LeftoverBytes BSL.ByteString
+  | RuleDoesNotExist Name
+  deriving (Show, Eq)
+
 --------------------------------------------------------------------------------
 -- Main entry point
-
 validateCBOR ::
   HasCallStack =>
   BS.ByteString ->
   Name ->
   CTreeRoot ValidatorPhase ->
-  Evidenced ValidationTrace
-validateCBOR bs rule cddl@(CTreeRoot tree) =
+  Either ValidateCBORError (Evidenced ValidationTrace)
+validateCBOR bs ruleName cddl@(CTreeRoot tree) =
   case deserialiseFromBytes decodeTerm (BSL.fromStrict bs) of
-    Left e -> error $ show e
+    Left e -> Left $ DecodingFailed e
     Right (rest, term)
-      | BSL.null rest -> validateTerm cddl term (tree Map.! rule)
-      | otherwise -> error $ "Leftover bytes in CBOR: " <> show rest
+      | BSL.null rest -> case tree Map.!? ruleName of
+          Just rule -> Right $ validateTerm cddl term rule
+          Nothing -> Left $ RuleDoesNotExist ruleName
+      | otherwise -> Left $ LeftoverBytes rest
 
 -- | Validate a CBOR 'Term' against a top-level rule from inside a custom
 -- validator.

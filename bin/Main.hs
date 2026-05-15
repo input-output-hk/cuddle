@@ -446,7 +446,10 @@ parseFromFile p file = runParser p file <$> T.readFile file
 runValidateCBOR :: BS.ByteString -> Name -> CTreeRoot ValidatorPhase -> TraceOptions -> IO ()
 runValidateCBOR bs rule cddl traceOpts =
   case validateCBOR bs rule cddl of
-    Evidenced validity trc -> do
+    Left err -> do
+      putStrLnErr $ "CBOR validation failed:\n" <> show err
+      exitFailure
+    Right (Evidenced validity trc) -> do
       T.putStrLn . Ansi.renderStrict . layoutPretty defaultLayoutOptions $
         prettyValidationTrace traceOpts trc
       putStrLn mempty
