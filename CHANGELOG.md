@@ -1,5 +1,9 @@
 # Changelog for `cuddle`
 
+## 1.8.1.0
+
+*
+
 ## 1.8.0.0
 
 * Change `validateCBOR` return type to `Either ValidateCBORError (Evidenced ValidationTrace)`
