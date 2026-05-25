@@ -1,4 +1,3 @@
-{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE LambdaCase #-}
 
 module Codec.CBOR.Cuddle.CBOR.Canonical (
@@ -12,7 +11,7 @@ module Codec.CBOR.Cuddle.CBOR.Canonical (
 ) where
 
 import Codec.CBOR.Term (Term (..))
-import Data.Bifunctor (Bifunctor (..))
+import Control.Monad (guard)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as BSL
@@ -47,32 +46,38 @@ toNInt x
 fromNInt :: NInt -> Integer
 fromNInt (NInt n) = nintMin + toInteger n
 
-toCanonical :: Term -> CanonicalTerm
+-- | Convert a `cborg` @Term@ to a @CanonicalTerm@.
+-- Will return `Nothing` if any map contains duplicate elements.
+toCanonical :: Term -> Maybe CanonicalTerm
 toCanonical = \case
-  TInt i -> integerToCanonical $ toInteger i
-  TInteger n -> integerToCanonical n
-  TBytes bs -> CTBytes bs
-  TBytesI bs -> CTBytes $ BSL.toStrict bs
-  TString s -> CTString s
-  TStringI s -> CTString $ TL.toStrict s
-  TList ts -> CTList $ toCanonical <$> ts
-  TListI ts -> CTList $ toCanonical <$> ts
+  TInt i -> pure . integerToCanonical $ toInteger i
+  TInteger n -> pure $ integerToCanonical n
+  TBytes bs -> pure $ CTBytes bs
+  TBytesI bs -> pure . CTBytes $ BSL.toStrict bs
+  TString s -> pure $ CTString s
+  TStringI s -> pure . CTString $ TL.toStrict s
+  TList ts -> mkList ts
+  TListI ts -> mkList ts
   TMap kvs -> mkMap kvs
   TMapI kvs -> mkMap kvs
   TTagged 2 inner
-    | Just bs <- tagBytes inner -> integerToCanonical $ bytesToUnsigned bs
+    | Just bs <- tagBytes inner -> pure . integerToCanonical $ bytesToUnsigned bs
   TTagged 3 inner
-    | Just bs <- tagBytes inner -> integerToCanonical $ -1 - bytesToUnsigned bs
-  TTagged w t -> CTTagged w $ toCanonical t
-  TBool False -> CTSimple 20
-  TBool True -> CTSimple 21
-  TNull -> CTSimple 22
-  TSimple w -> CTSimple w
-  THalf f -> CTHalf $ toHalf f
-  TFloat f -> CTFloat f
-  TDouble d -> CTDouble d
+    | Just bs <- tagBytes inner -> pure . integerToCanonical $ -1 - bytesToUnsigned bs
+  TTagged w t -> CTTagged w <$> toCanonical t
+  TBool False -> pure $ CTSimple 20
+  TBool True -> pure $ CTSimple 21
+  TNull -> pure $ CTSimple 22
+  TSimple w -> pure $ CTSimple w
+  THalf f -> pure . CTHalf $ toHalf f
+  TFloat f -> pure $ CTFloat f
+  TDouble d -> pure $ CTDouble d
   where
-    mkMap = CTMap . Map.fromList . fmap (bimap toCanonical toCanonical)
+    mkMap kvs = do
+      pairs <- traverse (\(k, v) -> (,) <$> toCanonical k <*> toCanonical v) kvs
+      let m = Map.fromList pairs
+      CTMap m <$ guard (Map.size m == length pairs)
+    mkList ts = CTList <$> traverse toCanonical ts
     tagBytes (TBytes bs) = Just bs
     tagBytes (TBytesI bs) = Just $ BSL.toStrict bs
     tagBytes _ = Nothing
@@ -110,7 +115,7 @@ unsignedToBytes = BS.pack . reverse . go
 --   'Codec.CBOR.Term.TStringI', 'Codec.CBOR.Term.TListI',
 --   'Codec.CBOR.Term.TMapI' represent.
 -- * Maps use 'Data.Map.Strict.Map' rather than a list of pairs, so
---   duplicate keys collapse and key order is irrelevant.
+--   key order is irrelevant.
 -- * 'TBool' and 'TNull' are folded into 'CTSimple' (values 20, 21, 22
 --   per RFC 8949 §3.3).
 -- * 'THalf', 'TFloat', 'TDouble' remain distinct constructors: the
