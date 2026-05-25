@@ -11,7 +11,7 @@ module Codec.CBOR.Cuddle.CBOR.Validator (
   ValidateCBORError (..),
 ) where
 
-import Codec.CBOR.Cuddle.CBOR.Canonical (nintMin, uintMax)
+import Codec.CBOR.Cuddle.CBOR.Canonical (CanonicalTerm, toCanonical)
 import Codec.CBOR.Cuddle.CBOR.Validator.Trace (
   ControlInfo (..),
   Evidenced (..),
@@ -53,6 +53,8 @@ import Data.List.NonEmpty (NonEmpty (..))
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as Map
 import Data.Maybe
+import Data.Set (Set)
+import Data.Set qualified as Set
 import Data.Text qualified as T
 import Data.Text.Encoding (encodeUtf8)
 import Data.Text.Lazy qualified as TL
@@ -914,14 +916,18 @@ validateMap cddl terms (CTreeE (VValidator v _)) = runCustomValidator cddl (Sing
 validateMap cddl terms rule =
   case rule of
     Postlude PTAny -> terminal rule
-    Map rules -> mapTrace MapTrace $ validate [] terms rules
+    Map rules -> mapTrace MapTrace $ validate [] terms rules mempty
     Choice opts -> validateChoice (validateMap cddl terms) opts
     _ -> unapplicable rule
   where
     validate ::
-      [CTree ValidatorPhase] -> [(Term, Term)] -> [CTree ValidatorPhase] -> Evidenced MapValidationTrace
-    validate _ [] [] = evidence MapValidationDone
-    validate exhausted (kv : _) [] =
+      [CTree ValidatorPhase] ->
+      [(Term, Term)] ->
+      [CTree ValidatorPhase] ->
+      Set CanonicalTerm ->
+      Evidenced MapValidationTrace
+    validate _ [] [] _ = evidence MapValidationDone
+    validate exhausted (kv : _) [] _ =
       let
         unwrapOccur (Occur ct _) = ct
         unwrapOccur ct = ct
@@ -938,20 +944,25 @@ validateMap cddl terms rule =
           _ -> Just $ maximumBy (compare `on` (measureProgress . snd)) attempts
        in
         evidence $ MapValidationLeftoverKVs kv bestAttempt
-    validate [] [] rs =
+    validate [] [] rs _ =
       case NE.nonEmpty $ filter (not . isOptional) rs of
         Nothing -> evidence MapValidationDone
         Just requiredRules -> evidence $ MapValidationUnappliedRules (mapIndex <$> requiredRules)
-    validate exhausted kvs (r : rs) =
+    validate exhausted kvs (r : rs) seen =
       let
         consume (KV k v _) f = case kvs of
           ((tk, tv) : leftover) ->
-            case validateTerm cddl tk k of
-              Evidenced SValid kTrc ->
-                case validateTerm cddl tv v of
-                  Evidenced SValid vTrc -> mapTrace (MapValidationConsume (mapIndex r) kTrc vTrc) $ f leftover
-                  Evidenced SInvalid vTrc -> evidence $ MapValidationInvalidValue (mapIndex r) kTrc vTrc
-              Evidenced SInvalid _ -> evidence $ MapValidationUnappliedRules (NE.singleton $ mapIndex r)
+            let
+              cKey = toCanonical tk
+             in
+              case validateTerm cddl tk k of
+                Evidenced SValid kTrc
+                  | cKey `Set.notMember` seen ->
+                      case validateTerm cddl tv v of
+                        Evidenced SValid vTrc -> mapTrace (MapValidationConsume (mapIndex r) kTrc vTrc) $ f leftover (Set.insert cKey seen)
+                        Evidenced SInvalid vTrc -> evidence $ MapValidationInvalidValue (mapIndex r) kTrc vTrc
+                  | otherwise -> evidence $ MapValidationDuplicateKeys (mapIndex r) cKey kTrc
+                Evidenced SInvalid _ -> evidence $ MapValidationUnappliedRules (NE.singleton $ mapIndex r)
           [] -> error "No remaining KV pairs"
         consume x _ = error $ "Unexpected value in map: " <> showSimple x
         postponeRule l = validate (r : exhausted) l rs
@@ -963,20 +974,20 @@ validateMap cddl terms rule =
           Occur ct oi ->
             case oi of
               OIOptional ->
-                consume ct resetDropRule <> postponeRule kvs
+                consume ct resetDropRule <> postponeRule kvs seen
               OIZeroOrMore ->
-                consume ct (rewriteRule r) <> postponeRule kvs
+                consume ct (rewriteRule r) <> postponeRule kvs seen
               OIOneOrMore ->
-                consume ct (rewriteRule (Occur ct OIZeroOrMore)) <> postponeRule kvs
+                consume ct (rewriteRule (Occur ct OIZeroOrMore)) <> postponeRule kvs seen
               OIBounded mlb mub
                 | Just lb <- mlb, Just ub <- mub, lb > ub -> error "Unsatisfiable range encountered"
                 | otherwise -> case compare 0 <$> mub of
-                    Just EQ -> dropRule kvs
+                    Just EQ -> dropRule kvs seen
                     Just GT -> error "Unsatisfiable range encountered"
                     _ ->
                       consume ct (rewriteRule (Occur ct $ decrementBounds (mlb, mub)))
-                        <> postponeRule kvs
-          _ -> consume r resetDropRule <> postponeRule kvs
+                        <> postponeRule kvs seen
+          _ -> consume r resetDropRule <> postponeRule kvs seen
 
 --------------------------------------------------------------------------------
 -- Choices

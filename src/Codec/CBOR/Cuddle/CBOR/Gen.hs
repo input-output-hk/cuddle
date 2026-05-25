@@ -370,7 +370,7 @@ genMap nodes = do
         go !n
           | n > 0 = do
               k <- unS <$> scale (`div` 2) (withAntiGen (withAnnotation "key") $ genForCTree kNode)
-              if toCanonical k `elem` (toCanonical <$> Map.keys m)
+              if toCanonical k `notElem` (toCanonical <$> Map.keys m)
                 then do
                   v <- unS <$> scale (`div` 2) (withAntiGen (withAnnotation "value") $ genForCTree vNode)
                   pure $ Just (k, v)

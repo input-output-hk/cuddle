@@ -1,6 +1,7 @@
 module Main (main) where
 
 import System.IO (BufferMode (..), hSetBuffering, hSetEncoding, stdout, utf8)
+import Test.Codec.CBOR.Cuddle.CBOR.Canonical qualified as Canonical
 import Test.Codec.CBOR.Cuddle.CDDL.Examples qualified as Examples
 import Test.Codec.CBOR.Cuddle.CDDL.GeneratorSpec qualified as Generator
 import Test.Codec.CBOR.Cuddle.CDDL.Parser (parserSpec)
@@ -23,6 +24,7 @@ main = do
   hSetBuffering stdout LineBuffering
   hSetEncoding stdout utf8
   hspecWith hspecConfig $ do
+    describe "Canonical" Canonical.spec
     describe "Parser" parserSpec
     describe "Huddle" huddleSpec
     describe "Examples" Examples.spec

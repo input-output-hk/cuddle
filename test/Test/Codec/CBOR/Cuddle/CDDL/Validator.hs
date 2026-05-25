@@ -11,6 +11,7 @@ module Test.Codec.CBOR.Cuddle.CDDL.Validator (
   validateCBOR_,
 ) where
 
+import Codec.CBOR.Cuddle.CBOR.Canonical (toCanonical)
 import Codec.CBOR.Cuddle.CBOR.Gen (generateFromName)
 import Codec.CBOR.Cuddle.CBOR.Validator (
   ValidatorPhase,
@@ -53,7 +54,7 @@ import Control.Monad (forM_)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
-import Data.Containers.ListUtils (nubOrd, nubOrdOn)
+import Data.Containers.ListUtils (nubOrdOn)
 import Data.Either (fromRight)
 import Data.Map qualified as Map
 import Data.Text (Text)
@@ -149,14 +150,15 @@ genAndValidateFromFile path = do
         mapCDDLDropExt cddl
   genAndValidateCddl path resolvedCddl
 
-genInfiniteUniqueList :: Ord a => Gen a -> Gen [a]
-genInfiniteUniqueList = fmap nubOrd . infiniteListOf
+genInfiniteUniqueListOn :: Ord b => (a -> b) -> Gen a -> Gen [a]
+genInfiniteUniqueListOn f = fmap (nubOrdOn f) . infiniteListOf
 
 genHuddleRangeMap :: (Int, Int) -> Gen Term
 genHuddleRangeMap rng@(lo, hi) = do
   n <- choose rng
   let genKV = (,) <$> fmap TInt arbitrary <*> fmap TBool arbitrary
-  genMapTerm . take n =<< scale (const $ max lo hi) (genInfiniteUniqueList genKV)
+  genMapTerm . take n
+    =<< scale (const $ max lo hi) (genInfiniteUniqueListOn (toCanonical . fst) genKV)
 
 genHuddleArrayRequiredTerms :: Gen [Term]
 genHuddleArrayRequiredTerms = do
@@ -249,9 +251,10 @@ genFullMap = do
       , pure []
       ]
   strFields <-
-    nubOrdOn fst <$> listOf ((,) <$> (genStringTerm . T.pack =<< arbitrary) <*> (TInt <$> arbitrary))
+    nubOrdOn (toCanonical . fst)
+      <$> listOf ((,) <$> (genStringTerm . T.pack =<< arbitrary) <*> (TInt <$> arbitrary))
   bytesFields <-
-    nubOrdOn fst
+    nubOrdOn (toCanonical . fst)
       <$> listOf1 ((,) <$> (genBytesTerm =<< arbitraryByteString) <*> arbitraryTerm)
   allFields <- shuffle $ field1 : lField2 <> strFields <> bytesFields
   genMapTerm allFields

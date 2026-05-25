@@ -4,7 +4,6 @@ module Test.Codec.CBOR.Cuddle.CBOR.Canonical (spec) where
 
 import Codec.CBOR.Cuddle.CBOR.Canonical (
   CanonicalTerm (..),
-  NInt,
   fromNInt,
   nintMin,
   toCanonical,
