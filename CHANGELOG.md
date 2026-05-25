@@ -1,6 +1,6 @@
 # Changelog for `cuddle`
 
-## 1.8.1.0
+## 1.9.0.0
 
 *
 
