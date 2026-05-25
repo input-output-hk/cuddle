@@ -23,6 +23,7 @@ module Codec.CBOR.Cuddle.CBOR.Gen (
 
 #if MIN_VERSION_random(1,3,0)
 #endif
+import Codec.CBOR.Cuddle.CBOR.Canonical (nintMin, toCanonical, uintMax)
 import Codec.CBOR.Cuddle.CDDL (
   GRef (..),
   Name (..),
@@ -34,8 +35,6 @@ import Codec.CBOR.Cuddle.CDDL (
 import Codec.CBOR.Cuddle.CDDL.CTree (
   CTree (..),
   PTerm (..),
-  nintMin,
-  uintMax,
  )
 import Codec.CBOR.Cuddle.CDDL.CTree qualified as CTree
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
@@ -371,7 +370,7 @@ genMap nodes = do
         go !n
           | n > 0 = do
               k <- unS <$> scale (`div` 2) (withAntiGen (withAnnotation "key") $ genForCTree kNode)
-              if Map.notMember k m
+              if toCanonical k `elem` (toCanonical <$> Map.keys m)
                 then do
                   v <- unS <$> scale (`div` 2) (withAntiGen (withAnnotation "value") $ genForCTree vNode)
                   pure $ Just (k, v)

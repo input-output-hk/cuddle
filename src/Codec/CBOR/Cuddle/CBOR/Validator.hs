@@ -11,6 +11,7 @@ module Codec.CBOR.Cuddle.CBOR.Validator (
   ValidateCBORError (..),
 ) where
 
+import Codec.CBOR.Cuddle.CBOR.Canonical (nintMin, uintMax)
 import Codec.CBOR.Cuddle.CBOR.Validator.Trace (
   ControlInfo (..),
   Evidenced (..),
