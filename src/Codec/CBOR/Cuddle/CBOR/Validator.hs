@@ -953,10 +953,7 @@ validateMap cddl terms rule =
         consume (KV k v _) f = case kvs of
           ((tk, tv) : leftover) ->
             let
-              cKey =
-                fromMaybe
-                  (error "IMPOSSIBLE: key validated but failed to canonicalize\nPlease make a bug report")
-                  (toCanonical tk)
+              cKey = toCanonical tk
              in
               case validateTerm cddl tk k of
                 Evidenced SValid kTrc

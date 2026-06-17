@@ -56,7 +56,7 @@ spec = do
 
       it "bignum with leading zeros canonicalizes" $
         toCanonical (TTagged 2 (TBytes (BS.pack [0, 0, 5])))
-          `shouldBe` Just (CTInt 5)
+          `shouldBe` CTInt 5
 
       prop "bignum from TBytesI matches TBytes" $ \(w :: Word64) ->
         let bs = unsignedBE (toInteger w)
@@ -66,12 +66,12 @@ spec = do
       it "true bignum (above uintMax) stays tagged" $
         let n = uintMax + 1
          in toCanonical (TInteger n)
-              `shouldBe` Just (CTTagged 2 (CTBytes (unsignedBE n)))
+              `shouldBe` CTTagged 2 (CTBytes (unsignedBE n))
 
       it "true bignum (below nintMin) stays tagged" $
         let n = nintMin - 1
          in toCanonical (TInteger n)
-              `shouldBe` Just (CTTagged 3 (CTBytes (unsignedBE (-1 - n))))
+              `shouldBe` CTTagged 3 (CTBytes (unsignedBE (-1 - n)))
 
     describe "definite/indefinite variants merge" $ do
       it "TBytes ≡ TBytesI" $

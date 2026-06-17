@@ -11,8 +11,7 @@ module Codec.CBOR.Cuddle.CBOR.Canonical (
 ) where
 
 import Codec.CBOR.Term (Term (..))
-import Control.Monad (guard)
-import Data.Bitraversable (Bitraversable (..))
+import Data.Bifunctor (bimap)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as BSL
@@ -48,37 +47,48 @@ fromNInt :: NInt -> Integer
 fromNInt (NInt n) = nintMin + toInteger n
 
 -- | Convert a `cborg` @Term@ to a @CanonicalTerm@.
--- Will return `Nothing` if any map contains duplicate elements.
-toCanonical :: Term -> Maybe CanonicalTerm
+--
+-- A CBOR map with duplicate keys is well-formed but invalid (RFC 8949 §5.6).
+-- Canonicalizing such a map is not currently supported and raises an 'error'.
+-- This only arises in the niche case of a duplicate-keyed map nested in a
+-- position the validator does not otherwise reject (e.g. a map used as a map
+-- key). If you hit this, please open an issue.
+toCanonical :: Term -> CanonicalTerm
 toCanonical = \case
-  TInt i -> pure . integerToCanonical $ toInteger i
-  TInteger n -> pure $ integerToCanonical n
-  TBytes bs -> pure $ CTBytes bs
-  TBytesI bs -> pure . CTBytes $ BSL.toStrict bs
-  TString s -> pure $ CTString s
-  TStringI s -> pure . CTString $ TL.toStrict s
+  TInt i -> integerToCanonical $ toInteger i
+  TInteger n -> integerToCanonical n
+  TBytes bs -> CTBytes bs
+  TBytesI bs -> CTBytes $ BSL.toStrict bs
+  TString s -> CTString s
+  TStringI s -> CTString $ TL.toStrict s
   TList ts -> mkList ts
   TListI ts -> mkList ts
   TMap kvs -> mkMap kvs
   TMapI kvs -> mkMap kvs
   TTagged 2 inner
-    | Just bs <- tagBytes inner -> pure . integerToCanonical $ bytesToUnsigned bs
+    | Just bs <- tagBytes inner -> integerToCanonical $ bytesToUnsigned bs
   TTagged 3 inner
-    | Just bs <- tagBytes inner -> pure . integerToCanonical $ -1 - bytesToUnsigned bs
-  TTagged w t -> CTTagged w <$> toCanonical t
-  TBool False -> pure $ CTSimple 20
-  TBool True -> pure $ CTSimple 21
-  TNull -> pure $ CTSimple 22
-  TSimple w -> pure $ CTSimple w
-  THalf f -> pure . CTHalf $ toHalf f
-  TFloat f -> pure $ CTFloat f
-  TDouble d -> pure $ CTDouble d
+    | Just bs <- tagBytes inner -> integerToCanonical $ -1 - bytesToUnsigned bs
+  TTagged w t -> CTTagged w $ toCanonical t
+  TBool False -> CTSimple 20
+  TBool True -> CTSimple 21
+  TNull -> CTSimple 22
+  TSimple w -> CTSimple w
+  THalf f -> CTHalf $ toHalf f
+  TFloat f -> CTFloat f
+  TDouble d -> CTDouble d
   where
-    mkMap kvs = do
-      pairs <- traverse (bitraverse toCanonical toCanonical) kvs
-      let m = Map.fromList pairs
-      CTMap m <$ guard (Map.size m == length pairs)
-    mkList ts = CTList <$> traverse toCanonical ts
+    mkMap kvs =
+      let pairs = bimap toCanonical toCanonical <$> kvs
+          m = Map.fromList pairs
+       in if Map.size m == length pairs
+            then CTMap m
+            else
+              error
+                "toCanonical: encountered a map with duplicate keys, which is \
+                \not currently supported. Please open an issue at \
+                \https://github.com/input-output-hk/cuddle/issues"
+    mkList ts = CTList $ toCanonical <$> ts
     tagBytes (TBytes bs) = Just bs
     tagBytes (TBytesI bs) = Just $ BSL.toStrict bs
     tagBytes _ = Nothing
