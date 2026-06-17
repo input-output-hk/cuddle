@@ -26,8 +26,8 @@ spec = do
       toNInt 0 `shouldBe` Nothing
       toNInt 1 `shouldBe` Nothing
       toNInt (nintMin - 1) `shouldBe` Nothing
-      toNInt nintMin `shouldSatisfy` (/= Nothing)
-      toNInt (-1) `shouldSatisfy` (/= Nothing)
+      toNInt nintMin `shouldNotBe` Nothing
+      toNInt (-1) `shouldNotBe` Nothing
 
     prop "toNInt . fromNInt = Just" $ \n ->
       toNInt (fromNInt n) === Just n
