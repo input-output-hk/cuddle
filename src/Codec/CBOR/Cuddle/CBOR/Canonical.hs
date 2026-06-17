@@ -96,7 +96,7 @@ unsignedToBytes :: Integer -> ByteString
 unsignedToBytes = BS.pack . reverse . go
   where
     go 0 = []
-    go n = fromInteger (n `mod` 256) : go (n `div` 256)
+    go n = let (d, r) = divMod n 256 in fromInteger r : go d
 
 -- | A canonical representation of CBOR data items. Two 'CanonicalTerm's
 -- compare equal exactly when the underlying CBOR items are equivalent
