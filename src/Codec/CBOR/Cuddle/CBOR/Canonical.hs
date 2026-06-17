@@ -12,6 +12,7 @@ module Codec.CBOR.Cuddle.CBOR.Canonical (
 
 import Codec.CBOR.Term (Term (..))
 import Control.Monad (guard)
+import Data.Bitraversable (Bitraversable (..))
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as BSL
@@ -74,7 +75,7 @@ toCanonical = \case
   TDouble d -> pure $ CTDouble d
   where
     mkMap kvs = do
-      pairs <- traverse (\(k, v) -> (,) <$> toCanonical k <*> toCanonical v) kvs
+      pairs <- traverse (bitraverse toCanonical toCanonical) kvs
       let m = Map.fromList pairs
       CTMap m <$ guard (Map.size m == length pairs)
     mkList ts = CTList <$> traverse toCanonical ts
