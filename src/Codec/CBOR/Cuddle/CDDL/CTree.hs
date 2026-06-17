@@ -3,7 +3,17 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module Codec.CBOR.Cuddle.CDDL.CTree where
+module Codec.CBOR.Cuddle.CDDL.CTree (
+  XXCTree,
+  CTree (..),
+  traverseCTree,
+  foldCTree,
+  Node,
+  CTreeRoot (..),
+  PTerm (..),
+  uintMax,
+  nintMin,
+) where
 
 import Codec.CBOR.Cuddle.CDDL (Name, OccurrenceIndicator, RangeBound, Value)
 import Codec.CBOR.Cuddle.CDDL.CtlOp
