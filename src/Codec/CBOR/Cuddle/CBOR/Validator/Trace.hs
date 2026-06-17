@@ -30,6 +30,7 @@ module Codec.CBOR.Cuddle.CBOR.Validator.Trace (
   foldEvidenced,
 ) where
 
+import Codec.CBOR.Cuddle.CBOR.Canonical (CanonicalTerm)
 import Codec.CBOR.Cuddle.CDDL (Name (..))
 import Codec.CBOR.Cuddle.CDDL.CTree (CTree (..))
 import Codec.CBOR.Cuddle.CDDL.CtlOp (CtlOp)
@@ -152,6 +153,11 @@ data MapValidationTrace (v :: Validity) where
     ValidationTrace IsValid ->
     MapValidationTrace v ->
     MapValidationTrace v
+  MapValidationDuplicateKeys ::
+    CTree MonoSimplePhase ->
+    CanonicalTerm ->
+    ValidationTrace IsValid ->
+    MapValidationTrace IsInvalid
 
 deriving instance Show (MapValidationTrace v)
 
@@ -255,6 +261,7 @@ instance IsValidationTrace MapValidationTrace where
     MapValidationLeftoverKVs _ _ -> SInvalid
     MapValidationUnappliedRules _ -> SInvalid
     MapValidationInvalidValue {} -> SInvalid
+    MapValidationDuplicateKeys {} -> SInvalid
     MapValidationConsume _ _ _ x -> traceValidity x
 
   measureProgress = \case
@@ -266,6 +273,7 @@ instance IsValidationTrace MapValidationTrace where
       measureProgress kTrc <> measureProgress vTrc <> measureProgress x
     MapValidationInvalidValue _ kTrc vTrc ->
       measureProgress kTrc <> measureProgress vTrc
+    MapValidationDuplicateKeys _ _ trc -> measureProgress trc
 
 evidence :: (Show (t v), IsValidationTrace t) => t v -> Evidenced t
 evidence x = Evidenced (traceValidity x) x
@@ -380,6 +388,11 @@ prettyMapValidationResult opts@TraceOptions {..} = \case
       , nestContainer $ prettyValidationTrace opts k
       , "value:" <+> annotate (color Red) "(fail)"
       , nestContainer $ prettyValidationTrace opts v
+      ]
+  MapValidationDuplicateKeys _ _ trc ->
+    vsep
+      [ "key: " <> annotate (color Red) "(duplicate)"
+      , nestContainer $ prettyValidationTrace opts trc
       ]
   where
     foldValid !n (MapValidationConsume _ _ _ c) = foldValid (n + 1) c

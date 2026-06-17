@@ -15,6 +15,7 @@ module Codec.CBOR.Cuddle.CDDL.CTree (
   nintMin,
 ) where
 
+import Codec.CBOR.Cuddle.CBOR.Canonical (nintMin, uintMax)
 import Codec.CBOR.Cuddle.CDDL (Name, OccurrenceIndicator, RangeBound, Value)
 import Codec.CBOR.Cuddle.CDDL.CtlOp
 import Control.Monad.Identity (Identity (..))
@@ -155,11 +156,3 @@ instance Arbitrary PTerm where
   arbitrary = genericArbitraryU
 
 instance Hashable PTerm
-
--- Bounds
-
-uintMax :: Integer
-uintMax = 2 ^ (64 :: Int) - 1
-
-nintMin :: Integer
-nintMin = -(2 ^ (64 :: Int))

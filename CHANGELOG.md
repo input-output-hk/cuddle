@@ -2,7 +2,9 @@
 
 ## 1.8.1.0
 
-*
+* Fix map generator so that it does not generate duplicate keys
+* Add `MapValidationDuplicateKeys`; validator now checks for duplicate elements
+* Add `Codec.CBOR.Cuddle.CBOR.Canonical`
 
 ## 1.8.0.0
 

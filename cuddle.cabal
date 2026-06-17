@@ -38,6 +38,7 @@ common warnings
 library
   import: warnings
   exposed-modules:
+    Codec.CBOR.Cuddle.CBOR.Canonical
     Codec.CBOR.Cuddle.CBOR.Gen
     Codec.CBOR.Cuddle.CBOR.Validator
     Codec.CBOR.Cuddle.CBOR.Validator.Trace
@@ -128,6 +129,7 @@ test-suite cuddle-test
 
   other-modules:
     Paths_cuddle
+    Test.Codec.CBOR.Cuddle.CBOR.Canonical
     Test.Codec.CBOR.Cuddle.CDDL.Examples
     Test.Codec.CBOR.Cuddle.CDDL.Examples.Huddle
     Test.Codec.CBOR.Cuddle.CDDL.Gen
