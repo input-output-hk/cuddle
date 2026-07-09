@@ -33,6 +33,8 @@ import Codec.CBOR.Cuddle.CDDL.Custom.Validator (TermValidator)
 import Codec.CBOR.Cuddle.CDDL.Postlude (appendPostlude)
 import Codec.CBOR.Cuddle.CDDL.Resolve (MonoReferenced, fullResolveCDDL)
 import Codec.CBOR.Cuddle.Huddle (
+  CanQuantify (..),
+  GroupDef,
   Huddle,
   HuddleItem (..),
   Value (..),
@@ -40,9 +42,11 @@ import Codec.CBOR.Cuddle.Huddle (
   arr,
   collectFrom,
   int,
+  opt,
   toCDDL,
   withValidator,
   (=:=),
+  (=:~),
  )
 import Codec.CBOR.Cuddle.Huddle qualified as H
 import Codec.CBOR.Cuddle.IndexMappable (mapCDDLDropExt, mapIndex)
@@ -343,6 +347,85 @@ spec = describe "Validator" $ do
         prop "Fails to validate map with too many range elements"
           . forAll (genHuddleRangeMap (11, 20))
           $ expectInvalid . validateHuddle huddleRangeMap "a"
+
+    -- Regression tests showing that optional ('?') validation is broken when
+    -- the optional element is inside a group (`grp` / `=:~`) that is itself
+    -- referenced inside an array. When the optional element is absent,
+    -- `consumeGroup` receives a corrupted leftover-term list (due to `(<>)`
+    -- on the result tuple accumulating terms from the failed consume path),
+    -- causing the continuation to see phantom extra terms and report them as
+    -- `ListValidationLeftoverTerms` instead of succeeding.
+    describe "Group" $ do
+      describe "Optional inside a group referenced from an array" $ do
+        let
+          -- @
+          --   root = [innerGrp, int]
+          --   innerGrp = (int, ? bool)
+          -- @
+          -- => [int, ? bool, int]
+          optionalInGroupHuddle :: Huddle
+          optionalInGroupHuddle =
+            let
+              innerGrp :: GroupDef
+              innerGrp = "innerGrp" =:~ [a VInt, opt $ a VBool]
+             in
+              collectFrom
+                [ HIRule $ "root" =:= arr [a innerGrp, a VInt]
+                ]
+        it "Validates when optional entry is present" $
+          expectValid $
+            validateHuddle optionalInGroupHuddle "root" (TList [TInt 1, TBool True, TInt 2])
+        it "Validates when optional entry is absent" $
+          expectValid $
+            validateHuddle optionalInGroupHuddle "root" (TList [TInt 1, TInt 2])
+      describe "ZeroOrMore (*) inside a group referenced from an array" $ do
+        let
+          -- @
+          --   root = [zeroOrMoreGrp, text]
+          --   zeroOrMoreGrp = (* bool, int)
+          -- @
+          -- => [* bool, int, text]
+          zeroOrMoreInGroupHuddle :: Huddle
+          zeroOrMoreInGroupHuddle =
+            let
+              zeroOrMoreGrp :: GroupDef
+              zeroOrMoreGrp = "zeroOrMoreGrp" =:~ [0 <+ a VBool, a VInt]
+             in
+              collectFrom
+                [ HIRule $ "root" =:= arr [a zeroOrMoreGrp, a VText]
+                ]
+
+        it "Validates when zero-or-more entry has elements" $
+          expectValid $
+            validateHuddle
+              zeroOrMoreInGroupHuddle
+              "root"
+              (TList [TBool True, TBool False, TInt 42, TString "hi"])
+        it "Validates when zero-or-more entry has zero elements" $
+          expectValid $
+            validateHuddle zeroOrMoreInGroupHuddle "root" (TList [TInt 42, TString "hi"])
+      describe "Bounded (n..m) inside a group referenced from an array" $ do
+        -- @
+        --   root = [boundedGrp, text]
+        --   boundedGrp = (0..2 bool, int)
+        -- @
+        -- => [0..2 bool, int, text]
+        let boundedInGroupHuddle :: Huddle
+            boundedInGroupHuddle =
+              let boundedGrp :: GroupDef
+                  boundedGrp = "boundedGrp" =:~ [0 <+ a VBool +> 2, a VInt]
+               in collectFrom
+                    [ HIRule $ "root" =:= arr [a boundedGrp, a VText]
+                    ]
+        it "Validates when bounded entry has elements (within bounds)" $
+          expectValid $
+            validateHuddle
+              boundedInGroupHuddle
+              "root"
+              (TList [TBool True, TInt 42, TString "hi"])
+        it "Validates when bounded entry has zero elements (lower bound is 0)" $
+          expectValid $
+            validateHuddle boundedInGroupHuddle "root" (TList [TInt 42, TString "hi"])
 
     describe "Bignums" $ do
       let
