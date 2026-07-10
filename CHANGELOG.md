@@ -5,6 +5,7 @@
 * Fix map generator so that it does not generate duplicate keys
 * Add `MapValidationDuplicateKeys`; validator now checks for duplicate elements
 * Add `Codec.CBOR.Cuddle.CBOR.Canonical`
+* Fix list validation of occurrence indicators inside a group referenced from an array
 
 ## 1.8.0.0
 

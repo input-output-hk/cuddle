@@ -20,6 +20,7 @@ import Codec.CBOR.Cuddle.CBOR.Validator.Trace (
   MapValidationTrace (..),
   SValidity (..),
   ValidationTrace (..),
+  compareEvidencedProgress,
   evidence,
   isValid,
   mapTrace,
@@ -862,6 +863,12 @@ validateList cddl terms rule =
       | otherwise = (evidence . ListValidationUnappliedRule $ mapIndex r, [])
     validate f skipped tss@(t : ts) (r : rs) =
       let
+        orElse x@(Evidenced SValid _, _) _ = x
+        orElse x@(ex, _) y@(ey, _) =
+          case compareEvidencedProgress ex ey of
+            GT -> x
+            _ -> y
+
         consumeTerm ct g = case validateTerm cddl t ct of
           Evidenced SValid trc -> first (mapTrace $ ListValidationConsume (mapIndex r) trc) $ g ts
           Evidenced SInvalid trc -> (evidence $ ListValidationMissingRequired (mapIndex ct) trc, tss)
@@ -886,14 +893,14 @@ validateList cddl terms rule =
         validateRule =
           \case
             Occur ct oi -> case oi of
-              OIOptional -> consume ct continue <> skipRule
-              OIZeroOrMore -> consume ct (rewriteRule r) <> skipRule
+              OIOptional -> consume ct continue `orElse` skipRule
+              OIZeroOrMore -> consume ct (rewriteRule r) `orElse` skipRule
               OIOneOrMore -> consume ct (rewriteRule (Occur ct OIZeroOrMore))
               OIBounded lb ub ->
                 let bounds = (lb, ub)
                  in case boundPlacement 1 bounds Closed of
                       BelowBounds -> consume ct (rewriteRule (Occur ct $ decrementBounds bounds))
-                      WithinBounds -> consume ct (rewriteRule (Occur ct $ decrementBounds bounds)) <> skipRule
+                      WithinBounds -> consume ct (rewriteRule (Occur ct $ decrementBounds bounds)) `orElse` skipRule
                       AboveBounds
                         | boundPlacement 0 (lb, ub) Closed == WithinBounds -> skipRule
                         | otherwise -> error "Negative upper bound"
