@@ -40,6 +40,7 @@ library
   exposed-modules:
     Codec.CBOR.Cuddle.CBOR.Canonical
     Codec.CBOR.Cuddle.CBOR.Gen
+    Codec.CBOR.Cuddle.CBOR.Term
     Codec.CBOR.Cuddle.CBOR.Validator
     Codec.CBOR.Cuddle.CBOR.Validator.Trace
     Codec.CBOR.Cuddle.CDDL

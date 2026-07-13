@@ -10,6 +10,7 @@ module Codec.CBOR.Cuddle.CBOR.Canonical (
   nintMin,
 ) where
 
+import Codec.CBOR.Cuddle.CBOR.Term (NInt, fromNInt, nintMin, toNInt, uintMax)
 import Codec.CBOR.Term (Term (..))
 import Data.Bifunctor (bimap)
 import Data.ByteString (ByteString)
@@ -22,29 +23,6 @@ import Data.Text.Lazy qualified as TL
 import Data.Word (Word64, Word8)
 import GHC.Generics (Generic)
 import Numeric.Half (Half, toHalf)
-import Test.QuickCheck (Arbitrary (..))
-
--- | A negative integer in the range @[-2^64, -1]@: exactly the values
--- representable by CBOR major type 1 (RFC 8949 §3.1). The range is wider
--- than 'Int64' on the negative side, so it can't be stored as a plain
--- signed integer.
-newtype NInt = NInt Word64
-  deriving (Eq, Ord, Bounded)
-
-instance Show NInt where
-  showsPrec p x =
-    showParen (p > 10) $ showString "toNInt " . showsPrec 11 (fromNInt x)
-
-instance Arbitrary NInt where
-  arbitrary = NInt <$> arbitrary
-
-toNInt :: Integer -> Maybe NInt
-toNInt x
-  | x >= nintMin && x < 0 = Just . NInt . fromInteger $ x - nintMin
-  | otherwise = Nothing
-
-fromNInt :: NInt -> Integer
-fromNInt (NInt n) = nintMin + toInteger n
 
 -- | Convert a `cborg` @Term@ to a @CanonicalTerm@.
 --
@@ -96,7 +74,7 @@ toCanonical = \case
 integerToCanonical :: Integer -> CanonicalTerm
 integerToCanonical n
   | n >= 0, n <= uintMax = CTInt $ fromInteger n
-  | n < 0, n >= nintMin = CTNInt . NInt . fromInteger $ n - nintMin
+  | n < 0, Just nn <- toNInt n = CTNInt nn
   | n > uintMax = CTTagged 2 . CTBytes $ unsignedToBytes n
   | otherwise = CTTagged 3 . CTBytes . unsignedToBytes $ -1 - n
 
@@ -145,11 +123,3 @@ data CanonicalTerm
   | CTFloat !Float
   | CTDouble !Double
   deriving (Generic, Eq, Ord, Show)
-
--- Bounds
-
-uintMax :: Integer
-uintMax = 2 ^ (64 :: Int) - 1
-
-nintMin :: Integer
-nintMin = -(2 ^ (64 :: Int))
