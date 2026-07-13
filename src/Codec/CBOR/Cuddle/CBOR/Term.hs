@@ -1,6 +1,7 @@
 module Codec.CBOR.Cuddle.CBOR.Term (
   CBORTerm (..),
   decodeCBORTerm,
+  encodeCBORTerm,
   NInt,
   toNInt,
   fromNInt,
@@ -28,6 +29,25 @@ import Codec.CBOR.Decoding (
   decodeWord64,
   peekTokenType,
  )
+import Codec.CBOR.Encoding (
+  Encoding,
+  encodeBreak,
+  encodeBytes,
+  encodeBytesIndef,
+  encodeDouble,
+  encodeFloat,
+  encodeFloat16,
+  encodeInteger,
+  encodeListLen,
+  encodeListLenIndef,
+  encodeMapLen,
+  encodeMapLenIndef,
+  encodeSimple,
+  encodeString,
+  encodeStringIndef,
+  encodeTag64,
+  encodeWord64,
+ )
 import Control.Monad (replicateM)
 import Data.Bits (complement)
 import Data.ByteString qualified as BS
@@ -35,9 +55,9 @@ import Data.ByteString.Lazy qualified as LBS
 import Data.Text qualified as T
 import Data.Text.Lazy qualified as LT
 import Data.Word (Word64, Word8)
-import Numeric.Half (Half, toHalf)
+import Numeric.Half (Half, fromHalf, toHalf)
 import Test.QuickCheck (Arbitrary (..))
-import Prelude hiding (decodeFloat)
+import Prelude hiding (decodeFloat, encodeFloat)
 
 -- | A negative integer in the range @[-2^64, -1]@: exactly the values
 -- representable by CBOR major type 1 (RFC 8949 §3.1). The range is wider
@@ -158,6 +178,42 @@ decodeChunks dec = go
     go = do
       done <- decodeBreakOr
       if done then pure [] else (:) <$> dec <*> go
+
+-- | Encode a term back to CBOR. Integer, length and tag arguments are
+-- emitted with minimal width, so @encodeCBORTerm@ after 'decodeCBORTerm'
+-- reproduces the input bytes only if the input used minimal-width
+-- arguments; the definite\/indefinite structure is always preserved.
+encodeCBORTerm :: CBORTerm -> Encoding
+encodeCBORTerm term = case term of
+  TermUInt w -> encodeWord64 w
+  -- For values in @[-2^64, -1]@ 'encodeInteger' always emits major type 1
+  -- with argument @-1 - n@, never a bignum.
+  TermNInt n -> encodeInteger $ fromNInt n
+  TermBytes bs -> encodeBytes bs
+  TermBytesI chunks ->
+    encodeBytesIndef
+      <> foldMap (encodeBytes . LBS.toStrict) chunks
+      <> encodeBreak
+  TermString s -> encodeString s
+  TermStringI chunks ->
+    encodeStringIndef
+      <> foldMap (encodeString . LT.toStrict) chunks
+      <> encodeBreak
+  TermArray ts ->
+    encodeListLen (fromIntegral $ length ts) <> foldMap encodeCBORTerm ts
+  TermArrayI ts ->
+    encodeListLenIndef <> foldMap encodeCBORTerm ts <> encodeBreak
+  TermMap kvs ->
+    encodeMapLen (fromIntegral $ length kvs) <> foldMap encodeKeyValue kvs
+  TermMapI kvs ->
+    encodeMapLenIndef <> foldMap encodeKeyValue kvs <> encodeBreak
+  TermTag tag t -> encodeTag64 tag <> encodeCBORTerm t
+  TermSimple w -> encodeSimple w
+  TermHalf h -> encodeFloat16 $ fromHalf h
+  TermFloat f -> encodeFloat f
+  TermDouble d -> encodeDouble d
+  where
+    encodeKeyValue (k, v) = encodeCBORTerm k <> encodeCBORTerm v
 
 -- Bounds
 
