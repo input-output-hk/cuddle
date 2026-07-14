@@ -52,11 +52,20 @@ import Control.Monad (replicateM)
 import Data.Bits (complement)
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
+import Data.Maybe (mapMaybe)
 import Data.Text qualified as T
 import Data.Text.Lazy qualified as LT
 import Data.Word (Word64, Word8)
 import Numeric.Half (Half, fromHalf, toHalf)
-import Test.QuickCheck (Arbitrary (..))
+import Test.QuickCheck (
+  Arbitrary (..),
+  Gen,
+  chooseInt,
+  oneof,
+  sized,
+  suchThat,
+  vectorOf,
+ )
 import Prelude hiding (decodeFloat, encodeFloat)
 
 -- | A negative integer in the range @[-2^64, -1]@: exactly the values
@@ -72,6 +81,7 @@ instance Show NInt where
 
 instance Arbitrary NInt where
   arbitrary = NInt <$> arbitrary
+  shrink = mapMaybe toNInt . shrink . fromNInt
 
 toNInt :: Integer -> Maybe NInt
 toNInt x
@@ -113,6 +123,67 @@ data CBORTerm
   | -- | Major type 7 (27)
     TermDouble Double
   deriving (Eq, Show)
+
+-- | Floats never include NaN: the many NaN bit patterns don't survive
+-- round-trips through 'Float' (see 'decodeCBORTerm') and compare unequal
+-- to themselves anyway.
+instance Arbitrary CBORTerm where
+  arbitrary = sized genTerm
+    where
+      genTerm :: Int -> Gen CBORTerm
+      genTerm n
+        | n <= 0 = leaf
+        | otherwise = oneof [leaf, branch]
+        where
+          leaf =
+            oneof
+              [ TermUInt <$> arbitrary
+              , TermNInt <$> arbitrary
+              , TermBytes . BS.pack <$> arbitrary
+              , TermBytesI . fmap LBS.pack <$> arbitrary
+              , TermString . T.pack <$> arbitrary
+              , TermStringI . fmap LT.pack <$> arbitrary
+              , TermSimple <$> arbitrary
+              , TermHalf . toHalf <$> nonNaN
+              , TermFloat <$> nonNaN
+              , TermDouble <$> nonNaN
+              ]
+          nonNaN :: (RealFloat a, Arbitrary a) => Gen a
+          nonNaN = arbitrary `suchThat` (not . isNaN)
+          branch =
+            oneof
+              [ TermArray <$> subterms
+              , TermArrayI <$> subterms
+              , TermMap <$> subpairs
+              , TermMapI <$> subpairs
+              , TermTag <$> arbitrary <*> genTerm (n - 1)
+              ]
+          subterms = do
+            k <- chooseInt (0, 5)
+            vectorOf k . genTerm $ n `div` (k + 1)
+          subpairs = do
+            k <- chooseInt (0, 5)
+            let sub = genTerm $ n `div` (2 * k + 1)
+            vectorOf k $ (,) <$> sub <*> sub
+
+  shrink term = case term of
+    TermUInt w -> TermUInt <$> shrink w
+    TermNInt n -> TermNInt <$> shrink n
+    TermBytes bs -> TermBytes . BS.pack <$> shrink (BS.unpack bs)
+    TermBytesI chunks -> TermBytesI . fmap LBS.pack <$> shrink (LBS.unpack <$> chunks)
+    TermString s -> TermString . T.pack <$> shrink (T.unpack s)
+    TermStringI chunks -> TermStringI . fmap LT.pack <$> shrink (LT.unpack <$> chunks)
+    TermArray ts -> ts <> (TermArray <$> shrink ts)
+    TermArrayI ts -> ts <> (TermArrayI <$> shrink ts)
+    TermMap kvs -> subterms kvs <> (TermMap <$> shrink kvs)
+    TermMapI kvs -> subterms kvs <> (TermMapI <$> shrink kvs)
+    TermTag tag t -> t : (TermTag <$> shrink tag <*> pure t) <> (TermTag tag <$> shrink t)
+    TermSimple w -> TermSimple <$> shrink w
+    TermHalf _ -> []
+    TermFloat f -> TermFloat <$> shrink f
+    TermDouble d -> TermDouble <$> shrink d
+    where
+      subterms = concatMap $ \(k, v) -> [k, v]
 
 decodeCBORTerm :: Decoder s CBORTerm
 decodeCBORTerm = do
