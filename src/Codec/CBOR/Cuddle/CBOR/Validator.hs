@@ -534,29 +534,6 @@ controlDouble _ _ op _ = error $ "Not yet implmented for double: " <> show op
 --------------------------------------------------------------------------------
 -- Bool
 
--- | Validating a boolean
-validateBool ::
-  CTreeRoot ValidatorPhase ->
-  Bool ->
-  CTree ValidatorPhase ->
-  Evidenced ValidationTrace
-validateBool cddl b (CTreeE (VRuleRef n)) =
-  dereferenceAndValidate cddl n $ validateBool cddl b
-validateBool cddl b (CTreeE (VValidator v _)) = runCustomValidator cddl (SingleTerm $ TermSimple (if b then 21 else 20)) v
-validateBool cddl b rule =
-  case rule of
-    -- a = any
-    Postlude PTAny -> terminal rule
-    -- a = bool
-    Postlude PTBool -> terminal rule
-    -- a = true
-    Literal (Value (VBool b') _) | b == b' -> terminal rule
-    -- a = foo .ctrl bar
-    Control op tgt ctrl -> ctrlDispatch (validateBool cddl b) op tgt ctrl (controlBool cddl b)
-    -- a = foo / bar
-    Choice opts -> validateChoice (validateBool cddl b) opts
-    _ -> unapplicable rule
-
 -- | Controls for `Bool`
 controlBool ::
   HasCallStack =>
@@ -580,7 +557,6 @@ controlBool _ _ op _ = error $ "Not yet implemented for bool: " <> show op
 --------------------------------------------------------------------------------
 -- Simple
 
--- | Validating a `TSimple`. It is unclear if this is used for anything else than `undefined`.
 validateSimple ::
   CTreeRoot ValidatorPhase ->
   Word8 ->
@@ -590,37 +566,23 @@ validateSimple cddl i (CTreeE (VRuleRef n)) =
   dereferenceAndValidate cddl n $ validateSimple cddl i
 validateSimple cddl i (CTreeE (VValidator v _)) = runCustomValidator cddl (SingleTerm $ TermSimple i) v
 validateSimple cddl i rule =
-  case i of
-    20 -> validateBool cddl False rule
-    21 -> validateBool cddl True rule
-    22 -> validateNull cddl rule
-    23 ->
-      case rule of
-        -- a = any
-        Postlude PTAny -> terminal rule
-        -- a = undefined
-        Postlude PTUndefined -> terminal rule
-        -- a = foo / bar
-        Choice opts -> validateChoice (validateSimple cddl 23) opts
-        _ -> unapplicable rule
-    _ -> error $ "Invalid simple value: " <> show i
-
---------------------------------------------------------------------------------
--- Null/nil
-
--- | Validating nil
-validateNull :: CTreeRoot ValidatorPhase -> CTree ValidatorPhase -> Evidenced ValidationTrace
-validateNull cddl (CTreeE (VRuleRef n)) =
-  dereferenceAndValidate cddl n $ validateNull cddl
-validateNull cddl (CTreeE (VValidator v _)) = runCustomValidator cddl (SingleTerm $ TermSimple 22) v
-validateNull cddl rule =
   case rule of
     -- a = any
     Postlude PTAny -> terminal rule
-    -- a = nil
-    Postlude PTNil -> terminal rule
-    Choice opts -> validateChoice (validateNull cddl) opts
+    Postlude PTBool | isJust boolVal -> terminal rule
+    Literal (Value (VBool b) _) | boolVal == Just b -> terminal rule
+    Control op tgt ctrl | Just b <- boolVal -> ctrlDispatch (validateSimple cddl i) op tgt ctrl (controlBool cddl b)
+    Postlude PTNil | i == 22 -> terminal rule
+    -- a = undefined
+    Postlude PTUndefined | i == 23 -> terminal rule
+    -- a = foo / bar
+    Choice opts -> validateChoice (validateSimple cddl i) opts
     _ -> unapplicable rule
+  where
+    boolVal
+      | i == 20 = Just False
+      | i == 21 = Just True
+      | otherwise = Nothing
 
 --------------------------------------------------------------------------------
 -- Bytes
