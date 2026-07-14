@@ -390,8 +390,8 @@ validateHalf cddl f rule =
       dereferenceAndValidate cddl n $ \lo -> validateHalf cddl f . CRange $ Range lo high bound
     CRange (Range low (CTreeE (VRuleRef n)) bound) ->
       dereferenceAndValidate cddl n $ \hi -> validateHalf cddl f . CRange $ Range low hi bound
-    CRange (Range (Literal (Value (VFloat16 n) _)) (Literal (Value (VFloat16 m) _)) bound)
-      | f `isInRange` Range n m bound -> terminal rule
+    CRange (Range (unFloatLiteral -> Just n) (unFloatLiteral -> Just m) bound)
+      | realToFrac f `isInRange` Range n m bound -> terminal rule
     _ -> unapplicable rule
 
 -- | Controls for `Float16`

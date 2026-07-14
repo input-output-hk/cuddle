@@ -467,9 +467,9 @@ genRange from to bounds
   , lo <= hi = do
       val <-
         case bounds of
-          ClOpen -> genBetween (lo, hi)
+          ClOpen -> genBetween (lo, pred hi)
           Closed
-            | lo < hi -> genBetween (lo, pred hi)
+            | lo < hi -> genBetween (lo, hi)
             | otherwise -> error "Empty range encountered"
       pure . SingleTerm $
         if val >= 0
