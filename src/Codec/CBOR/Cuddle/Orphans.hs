@@ -15,7 +15,7 @@ instance Hashable Half where
   hashWithSalt i (Half x) = hashWithSalt i $ toInteger x
 
 instance Pretty Half where
-  pretty (Half x) = pretty $ toInteger x
+  pretty x = pretty $ realToFrac @_ @Float x
 
 instance Arbitrary Half where
   arbitrary = do
