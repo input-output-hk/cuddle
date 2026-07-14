@@ -468,9 +468,7 @@ genRange from to bounds
       val <-
         case bounds of
           ClOpen -> genBetween (lo, pred hi)
-          Closed
-            | lo < hi -> genBetween (lo, hi)
-            | otherwise -> error "Empty range encountered"
+          Closed -> genBetween (lo, hi)
       pure . SingleTerm $
         if val >= 0
           then TermUInt $ fromInteger val

@@ -469,7 +469,7 @@ bool x = Literal (LBool x) mempty
 inferInteger :: Integer -> Literal
 inferInteger i
   | i >= 0 && i < fromIntegral (maxBound @Word64) = Literal (LInt (fromInteger i)) mempty
-  | Just i' <- toNInt (-i) = Literal (LNInt i') mempty
+  | Just i' <- toNInt i = Literal (LNInt i') mempty
   | otherwise = Literal (LBignum i) mempty
 
 --------------------------------------------------------------------------------
