@@ -67,7 +67,6 @@ import Data.Text qualified as T
 import Data.Text.Encoding (encodeUtf8)
 import Data.Text.Lazy qualified as TL
 import Data.Word
-import GHC.Float
 import GHC.Stack (HasCallStack)
 import Numeric.Half (Half)
 import Text.Regex.TDFA
@@ -320,42 +319,24 @@ controlInteger cddl i Bits ctrl = do
       let bitSet = testBit n 0
           allowed = not bitSet || IS.member idx indices
        in allowed && go indices (shiftR n 1) (idx + 1)
-controlInteger _ i Lt ctrl =
-  case ctrl of
-    Literal (Value (VUInt i') _) -> i < toInteger i'
-    Literal (Value (VNInt i') _) -> i < fromNInt i'
-    Literal (Value (VBignum i') _) -> i < i'
-    _ -> False
-controlInteger _ i Gt ctrl =
-  case ctrl of
-    Literal (Value (VUInt i') _) -> i > fromIntegral i'
-    Literal (Value (VNInt i') _) -> i > fromNInt i'
-    Literal (Value (VBignum i') _) -> i > i'
-    _ -> False
-controlInteger _ i Le ctrl =
-  case ctrl of
-    Literal (Value (VUInt i') _) -> i <= fromIntegral i'
-    Literal (Value (VNInt i') _) -> i <= fromNInt i'
-    Literal (Value (VBignum i') _) -> i <= i'
-    _ -> False
-controlInteger _ i Ge ctrl =
-  case ctrl of
-    Literal (Value (VUInt i') _) -> i >= fromIntegral i'
-    Literal (Value (VNInt i') _) -> i >= fromNInt i'
-    Literal (Value (VBignum i') _) -> i >= i'
-    _ -> False
-controlInteger _ i Eq ctrl =
-  case ctrl of
-    Literal (Value (VUInt i') _) -> i == fromIntegral i'
-    Literal (Value (VNInt i') _) -> i == fromNInt i'
-    Literal (Value (VBignum i') _) -> i == i'
-    _ -> False
-controlInteger _ i Ne ctrl =
-  case ctrl of
-    Literal (Value (VUInt i') _) -> i /= fromIntegral i'
-    Literal (Value (VNInt i') _) -> i /= fromNInt i'
-    Literal (Value (VBignum i') _) -> i /= i'
-    _ -> False
+controlInteger _ i Lt ctrl
+  | Just i' <- unIntLiteral ctrl = i < i'
+  | otherwise = False
+controlInteger _ i Gt ctrl
+  | Just i' <- unIntLiteral ctrl = i > i'
+  | otherwise = False
+controlInteger _ i Le ctrl
+  | Just i' <- unIntLiteral ctrl = i <= i'
+  | otherwise = False
+controlInteger _ i Ge ctrl
+  | Just i' <- unIntLiteral ctrl = i >= i'
+  | otherwise = False
+controlInteger _ i Eq ctrl
+  | Just i' <- unIntLiteral ctrl = i == i'
+  | otherwise = False
+controlInteger _ i Ne ctrl
+  | Just i' <- unIntLiteral ctrl = i /= i'
+  | otherwise = False
 controlInteger _ _ _ ctrl = error $ "unexpected control: " <> showSimple ctrl
 
 --------------------------------------------------------------------------------
@@ -457,18 +438,12 @@ controlFloat ::
   Bool
 controlFloat cddl f op (CTreeE (VRuleRef n)) =
   controlFloat cddl f op $ dereference cddl n
-controlFloat _ f Eq ctrl =
-  case ctrl of
-    Literal (Value (VFloat16 f') _) -> f == realToFrac f'
-    Literal (Value (VFloat32 f') _) -> f == f'
-    Literal (Value (VFloat64 f') _) -> f == realToFrac f'
-    _ -> False
-controlFloat _ f Ne ctrl =
-  case ctrl of
-    Literal (Value (VFloat16 f') _) -> f /= realToFrac f'
-    Literal (Value (VFloat32 f') _) -> f /= f'
-    Literal (Value (VFloat64 f') _) -> f /= realToFrac f'
-    _ -> False
+controlFloat _ f Eq ctrl
+  | Just f' <- unFloatLiteral ctrl = realToFrac f == f'
+  | otherwise = False
+controlFloat _ f Ne ctrl
+  | Just f' <- unFloatLiteral ctrl = realToFrac f /= f'
+  | otherwise = False
 controlFloat _ _ op _ = error $ "Not yet implemented for float: " <> show op
 
 -- | Validating a `Float64`
@@ -500,11 +475,8 @@ validateDouble cddl f rule =
       dereferenceAndValidate cddl n $ \lo -> validateDouble cddl f . CRange $ Range lo high bound
     CRange (Range low (CTreeE (VRuleRef n)) bound) ->
       dereferenceAndValidate cddl n $ \hi -> validateDouble cddl f . CRange $ Range low hi bound
-    CRange (Range nv mv bound)
-      | Just n <- unFloatLiteral nv
-      , Just m <- unFloatLiteral mv
-      , f `isInRange` Range (realToFrac n) (realToFrac m) bound ->
-          terminal rule
+    CRange (Range (unFloatLiteral -> Just n) (unFloatLiteral -> Just m) bound)
+      | f `isInRange` Range (realToFrac n) (realToFrac m) bound -> terminal rule
     _ -> unapplicable rule
 
 -- | Controls for `Float64`
@@ -517,18 +489,12 @@ controlDouble ::
   Bool
 controlDouble cddl f op (CTreeE (VRuleRef n)) =
   controlDouble cddl f op $ dereference cddl n
-controlDouble _ f Eq ctrl =
-  case ctrl of
-    Literal (Value (VFloat16 f') _) -> f == realToFrac f'
-    Literal (Value (VFloat32 f') _) -> f == float2Double f'
-    Literal (Value (VFloat64 f') _) -> f == f'
-    _ -> False
-controlDouble _ f Ne ctrl =
-  case ctrl of
-    Literal (Value (VFloat16 f') _) -> f /= realToFrac f'
-    Literal (Value (VFloat32 f') _) -> f /= float2Double f'
-    Literal (Value (VFloat64 f') _) -> f /= f'
-    _ -> False
+controlDouble _ f Eq ctrl
+  | Just f' <- unFloatLiteral ctrl = f == f'
+  | otherwise = False
+controlDouble _ f Ne ctrl
+  | Just f' <- unFloatLiteral ctrl = f /= f'
+  | otherwise = False
 controlDouble _ _ op _ = error $ "Not yet implmented for double: " <> show op
 
 --------------------------------------------------------------------------------
@@ -624,16 +590,9 @@ controlBytes cddl bs op@Size ctrl =
       dereference cddl n & \lo -> controlBytes cddl bs op . CRange $ Range lo high bound
     CRange (Range low (CTreeE (VRuleRef n)) bound) ->
       dereference cddl n & \hi -> controlBytes cddl bs op . CRange $ Range low hi bound
-    CRange (Range low high bound) ->
+    CRange (Range (unIntLiteral -> Just n) (unIntLiteral -> Just m) bound) ->
       let i = toInteger $ BS.length bs
-       in case (low, high) of
-            (Literal (Value (VUInt (toInteger -> n)) _), Literal (Value (VUInt (toInteger -> m)) _)) ->
-              boundPlacement i (Just n, Just m) bound == WithinBounds
-            (Literal (Value (VNInt (fromNInt -> n)) _), Literal (Value (VUInt (toInteger -> m)) _)) ->
-              boundPlacement i (Just $ -n, Just m) bound == WithinBounds
-            (Literal (Value (VNInt (fromNInt -> n)) _), Literal (Value (VNInt (fromNInt -> m)) _)) ->
-              boundPlacement i (Just $ -n, Just $ -m) bound == WithinBounds
-            _ -> False
+       in boundPlacement i (Just n, Just m) bound == WithinBounds
     _ -> False
 controlBytes cddl bs Bits ctrl = do
   let
@@ -711,15 +670,8 @@ controlText cddl bs op@Size ctrl =
           dereference cddl n & \lo -> controlText cddl bs op . CRange $ Range lo high bound
         CRange (Range low (CTreeE (VRuleRef n)) bound) ->
           dereference cddl n & \hi -> controlText cddl bs op . CRange $ Range low hi bound
-        CRange (Range ff tt bound) ->
-          case (ff, tt) of
-            (Literal (Value (VUInt (toInteger -> n)) _), Literal (Value (VUInt (toInteger -> m)) _)) ->
-              bsSize `isInRange` Range n m bound
-            (Literal (Value (VNInt (fromNInt -> n)) _), Literal (Value (VUInt (toInteger -> m)) _)) ->
-              bsSize `isInRange` Range n m bound
-            (Literal (Value (VNInt (fromNInt -> n)) _), Literal (Value (VNInt (fromNInt -> m)) _)) ->
-              bsSize `isInRange` Range n m bound
-            _ -> False
+        CRange (Range (unIntLiteral -> Just n) (unIntLiteral -> Just m) bound) ->
+          bsSize `isInRange` Range n m bound
         _ -> error "Invalid control value in .size"
 controlText _ s Regexp ctrl =
   case ctrl of
