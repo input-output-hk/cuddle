@@ -645,7 +645,8 @@ valueVariantToTerm (VUInt i) = pure $ TermUInt i
 valueVariantToTerm (VNInt i) = pure $ TermNInt i
 valueVariantToTerm (VBignum i)
   | i >= 0 = TermTag 2 <$> twiddleBytes (unsignedToBytes i)
-  | otherwise = TermTag 3 <$> twiddleBytes (unsignedToBytes (-i))
+  -- RFC 8949 §3.4.3: tag 3 content n denotes -1 - n
+  | otherwise = TermTag 3 <$> twiddleBytes (unsignedToBytes (-1 - i))
 valueVariantToTerm (VFloat16 i) = pure $ TermHalf i
 valueVariantToTerm (VFloat32 i) = pure $ TermFloat i
 valueVariantToTerm (VFloat64 i) = pure $ TermDouble i

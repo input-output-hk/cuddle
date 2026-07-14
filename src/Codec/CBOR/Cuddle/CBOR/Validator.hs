@@ -702,7 +702,8 @@ validateTagged cddl tag term rule =
       | i < 0
       , tag == 3
       , Just bs <- unwrapBytes term
-      , negate (bytesToUnsigned bs) == i ->
+      , -- RFC 8949 §3.4.3: tag 3 content n denotes -1 - n
+        -1 - bytesToUnsigned bs == i ->
           terminal rule
     Tag tag' rule' ->
       -- If the tag does not match, this is a direct fail
