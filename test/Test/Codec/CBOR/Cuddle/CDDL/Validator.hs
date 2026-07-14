@@ -13,7 +13,12 @@ module Test.Codec.CBOR.Cuddle.CDDL.Validator (
 
 import Codec.CBOR.Cuddle.CBOR.Canonical (toCanonical)
 import Codec.CBOR.Cuddle.CBOR.Gen (generateFromName)
-import Codec.CBOR.Cuddle.CBOR.Term (CBORTerm (..))
+import Codec.CBOR.Cuddle.CBOR.Term (
+  CBORTerm (..),
+  encodeCBORTerm,
+  toNInt,
+  unsignedToBytes,
+ )
 import Codec.CBOR.Cuddle.CBOR.Validator (
   ValidatorPhase,
   validateCBOR,
@@ -61,10 +66,12 @@ import Data.ByteString.Lazy qualified as LBS
 import Data.Containers.ListUtils (nubOrdOn)
 import Data.Either (fromRight)
 import Data.Map qualified as Map
+import Data.Maybe (fromJust)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.IO qualified as T
 import Data.Text.Lazy qualified as LT
+import Numeric.Half (toHalf)
 import Paths_cuddle (getDataFileName)
 import Prettyprinter (defaultLayoutOptions, layoutPretty)
 import Prettyprinter.Render.Terminal (renderStrict)
@@ -88,7 +95,6 @@ import Test.Hspec.QuickCheck
 import Test.QuickCheck (
   Arbitrary (..),
   Gen,
-  NonNegative (..),
   choose,
   counterexample,
   elements,
@@ -123,12 +129,12 @@ genAndValidateRule description name resolvedCddl =
           }
     cborTerm <- runAntiGen . runCBORGen genCfg $ generateFromName name
     let
-      generatedCbor = toStrictByteString $ encodeTerm cborTerm
+      generatedCbor = toStrictByteString $ encodeCBORTerm cborTerm
       res = validateCBOR_ generatedCbor name (mapIndex resolvedCddl)
       extraInfo =
         unlines
           [ "CBOR term:"
-          , prettyHexEnc $ encodeTerm cborTerm
+          , prettyHexEnc $ encodeCBORTerm cborTerm
           ]
     pure . counterexample extraInfo $ expectValid res
 
@@ -160,24 +166,24 @@ genInfiniteUniqueListOn f = fmap (nubOrdOn f) . infiniteListOf
 genHuddleRangeMap :: (Int, Int) -> Gen CBORTerm
 genHuddleRangeMap rng@(lo, hi) = do
   n <- choose rng
-  let genKV = (,) <$> fmap TInt arbitrary <*> fmap TBool arbitrary
+  let genKV = (,) <$> fmap termInt arbitrary <*> fmap termBool arbitrary
   genMapTerm . take n
     =<< scale (const $ max lo hi) (genInfiniteUniqueListOn (toCanonical . fst) genKV)
 
 genHuddleArrayRequiredTerms :: Gen [CBORTerm]
 genHuddleArrayRequiredTerms = do
-  ints <- listOf1 $ TInt <$> arbitrary
+  ints <- listOf1 $ termInt <$> arbitrary
   text <-
     oneof
       [ (: []) <$> (genStringTerm . T.pack =<< arbitrary)
       , pure []
       ]
-  lastInt <- TInt . getNonNegative <$> arbitrary
+  lastInt <- TermUInt <$> arbitrary
   pure $ ints <> text <> [lastInt]
 
 genHuddleArrayTerms :: Gen [CBORTerm]
 genHuddleArrayTerms = do
-  bools <- listOf $ TBool <$> arbitrary
+  bools <- listOf $ termBool <$> arbitrary
   required <- genHuddleArrayRequiredTerms
   pure $ bools <> required
 
@@ -211,10 +217,19 @@ genMapTerm :: [(CBORTerm, CBORTerm)] -> Gen CBORTerm
 genMapTerm x = elements [TermMap x, TermMapI x]
 
 genStringTerm :: Text -> Gen CBORTerm
-genStringTerm x = elements [TermString x, TermStringI (LT.fromStrict x)]
+genStringTerm x = elements [TermString x, TermStringI [LT.fromStrict x]]
 
 genBytesTerm :: ByteString -> Gen CBORTerm
-genBytesTerm x = elements [TermBytes x, TermBytesI $ LBS.fromStrict x]
+genBytesTerm x = elements [TermBytes x, TermBytesI [LBS.fromStrict x]]
+
+termInt :: Int -> CBORTerm
+termInt n
+  | n >= 0 = TermUInt $ fromIntegral n
+  | otherwise = TermNInt . fromJust . toNInt $ toInteger n
+
+termBool :: Bool -> CBORTerm
+termBool False = TermSimple 20
+termBool True = TermSimple 21
 
 arbitraryByteString :: Gen ByteString
 arbitraryByteString = BS.pack <$> arbitrary
@@ -222,41 +237,41 @@ arbitraryByteString = BS.pack <$> arbitrary
 arbitraryTerm :: Gen CBORTerm
 arbitraryTerm =
   oneof
-    [ TInt <$> arbitrary
-    , TInteger <$> arbitrary
-    , TBytes . BS.pack <$> arbitrary
-    , TBytesI . LBS.pack <$> arbitrary
-    , TString . T.pack <$> arbitrary
-    , TStringI . LT.pack <$> arbitrary
-    , TList <$> listOf (scale (`div` 2) arbitraryTerm)
-    , TListI <$> listOf (scale (`div` 2) arbitraryTerm)
-    , TMap <$> listOf (scale (`div` 2) $ (,) <$> arbitraryTerm <*> arbitraryTerm)
-    , TMapI <$> listOf (scale (`div` 2) $ (,) <$> arbitraryTerm <*> arbitraryTerm)
+    [ TermUInt <$> arbitrary
+    , TermNInt <$> arbitrary
+    , TermBytes . BS.pack <$> arbitrary
+    , TermBytesI . fmap LBS.pack <$> arbitrary
+    , TermString . T.pack <$> arbitrary
+    , TermStringI . fmap LT.pack <$> arbitrary
+    , TermArray <$> listOf (scale (`div` 2) arbitraryTerm)
+    , TermArrayI <$> listOf (scale (`div` 2) arbitraryTerm)
+    , TermMap <$> listOf (scale (`div` 2) $ (,) <$> arbitraryTerm <*> arbitraryTerm)
+    , TermMapI <$> listOf (scale (`div` 2) $ (,) <$> arbitraryTerm <*> arbitraryTerm)
     , -- TODO properly implement tagged generation
-      -- , TTagged <$> arbitrary <*> arbitraryTerm
-      TBool <$> arbitrary
-    , pure TNull
-    , pure $ TSimple 23 -- TODO add other values once they are supported by cuddle
-    , THalf <$> arbitrary
-    , TFloat <$> arbitrary
-    , TDouble <$> arbitrary
+      -- , TermTag <$> arbitrary <*> arbitraryTerm
+      termBool <$> arbitrary
+    , pure $ TermSimple 22
+    , pure $ TermSimple 23 -- TODO add other values once they are supported by cuddle
+    , TermHalf . toHalf <$> arbitrary
+    , TermFloat <$> arbitrary
+    , TermDouble <$> arbitrary
     ]
 
 genFullMap :: Gen CBORTerm
 genFullMap = do
   field1 <- do
-    es <- listOf $ TInt . getNonNegative <$> arbitrary
-    pure (TInt 1, TList es)
+    es <- listOf $ TermUInt <$> arbitrary
+    pure (TermUInt 1, TermArray es)
   lField2 <-
     oneof
       [ do
           b <- arbitrary
-          pure [(TInt 2, TBool b)]
+          pure [(TermUInt 2, termBool b)]
       , pure []
       ]
   strFields <-
     nubOrdOn (toCanonical . fst)
-      <$> listOf ((,) <$> (genStringTerm . T.pack =<< arbitrary) <*> (TInt <$> arbitrary))
+      <$> listOf ((,) <$> (genStringTerm . T.pack =<< arbitrary) <*> (termInt <$> arbitrary))
   bytesFields <-
     nubOrdOn (toCanonical . fst)
       <$> listOf1 ((,) <$> (genBytesTerm =<< arbitraryByteString) <*> arbitraryTerm)
@@ -266,10 +281,10 @@ genFullMap = do
 genBadMapInvalidIndex :: Gen CBORTerm
 genBadMapInvalidIndex =
   pure $
-    TMap
-      [ (TInt 1, TList [])
-      , (TInt 99, TList [])
-      , (TBytes "foo", TBytes "bar")
+    TermMap
+      [ (TermUInt 1, TermArray [])
+      , (TermUInt 99, TermArray [])
+      , (TermBytes "foo", TermBytes "bar")
       ]
 
 validateHuddle ::
@@ -283,7 +298,7 @@ validateHuddle huddle name term = do
     resolvedCddl = case fullResolveCDDL . mapCDDLDropExt $ toCDDL huddle of
       Right root -> root
       Left err -> error $ show err
-    bs = toStrictByteString $ encodeTerm term
+    bs = toStrictByteString $ encodeCBORTerm term
   validateCBOR_ bs name (mapIndex resolvedCddl)
 
 expectValid :: Evidenced ValidationTrace -> Expectation
@@ -374,10 +389,10 @@ spec = describe "Validator" $ do
                 ]
         it "Validates when optional entry is present" $
           expectValid $
-            validateHuddle optionalInGroupHuddle "root" (TList [TInt 1, TBool True, TInt 2])
+            validateHuddle optionalInGroupHuddle "root" (TermArray [TermUInt 1, termBool True, TermUInt 2])
         it "Validates when optional entry is absent" $
           expectValid $
-            validateHuddle optionalInGroupHuddle "root" (TList [TInt 1, TInt 2])
+            validateHuddle optionalInGroupHuddle "root" (TermArray [TermUInt 1, TermUInt 2])
       describe "ZeroOrMore (*) inside a group referenced from an array" $ do
         let
           -- @
@@ -400,10 +415,10 @@ spec = describe "Validator" $ do
             validateHuddle
               zeroOrMoreInGroupHuddle
               "root"
-              (TList [TBool True, TBool False, TInt 42, TString "hi"])
+              (TermArray [termBool True, termBool False, TermUInt 42, TermString "hi"])
         it "Validates when zero-or-more entry has zero elements" $
           expectValid $
-            validateHuddle zeroOrMoreInGroupHuddle "root" (TList [TInt 42, TString "hi"])
+            validateHuddle zeroOrMoreInGroupHuddle "root" (TermArray [TermUInt 42, TermString "hi"])
       describe "Bounded (n..m) inside a group referenced from an array" $ do
         -- @
         --   root = [boundedGrp, text]
@@ -422,15 +437,16 @@ spec = describe "Validator" $ do
             validateHuddle
               boundedInGroupHuddle
               "root"
-              (TList [TBool True, TInt 42, TString "hi"])
+              (TermArray [termBool True, TermUInt 42, TermString "hi"])
         it "Validates when bounded entry has zero elements (lower bound is 0)" $
           expectValid $
-            validateHuddle boundedInGroupHuddle "root" (TList [TInt 42, TString "hi"])
+            validateHuddle boundedInGroupHuddle "root" (TermArray [TermUInt 42, TermString "hi"])
 
     describe "Bignums" $ do
       let
         bignum = 2 ^ (64 :: Int) :: Integer
-        bignumCBOR = toStrictByteString . encodeTerm $ TInteger bignum
+        bignumCBOR =
+          toStrictByteString . encodeCBORTerm . TermTag 2 . TermBytes $ unsignedToBytes bignum
         resolveCDDL cddlText =
           let cddl = fromRight (error "Failed to parse CDDL") $ runParser pCDDL "" cddlText
            in either (error . show) id . fullResolveCDDL . appendPostlude $ mapCDDLDropExt cddl
@@ -482,7 +498,7 @@ spec = describe "Validator" $ do
               [ HIRule ruleA
               , HIRule $ "b" =:= arr [0, a (ruleA H./ VNil)]
               ]
-        arrTerm <- genArrayTerm [TInt 0, TBytes bs]
+        arrTerm <- genArrayTerm [TermUInt 0, TermBytes bs]
         pure . expectValid $ validateHuddle huddle "b" arrTerm
     describe "Negative" $ do
       prop "Fails if term is valid against the Huddle, but not the custom validator" $ do

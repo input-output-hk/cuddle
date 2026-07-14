@@ -4,16 +4,17 @@ module Test.Codec.CBOR.Cuddle.CBOR.Canonical (spec) where
 
 import Codec.CBOR.Cuddle.CBOR.Canonical (
   CanonicalTerm (..),
+  toCanonical,
+ )
+import Codec.CBOR.Cuddle.CBOR.Term (
+  CBORTerm (..),
   fromNInt,
   nintMin,
-  toCanonical,
   toNInt,
   uintMax,
  )
-import Codec.CBOR.Term (Term (..))
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as BSL
-import Data.Text.Lazy qualified as TL
 import Data.Word (Word64)
 import Test.Hspec
 import Test.Hspec.QuickCheck (prop)
@@ -41,73 +42,71 @@ spec = do
 
   describe "toCanonical" $ do
     describe "integer normalization" $ do
-      prop "TInt and TInteger of the same value are equal" $ \i ->
-        toCanonical (TInt i) === toCanonical (TInteger (toInteger i))
+      prop "TermUInt maps to CTInt" $ \w ->
+        toCanonical (TermUInt w) === CTInt w
+
+      prop "TermNInt maps to CTNInt" $ \n ->
+        toCanonical (TermNInt n) === CTNInt n
 
       prop "in-range positive bignum collapses to CTInt" $ \(w :: Word64) ->
-        let n = toInteger w
-         in toCanonical (TTagged 2 (TBytes (unsignedBE n)))
-              === toCanonical (TInteger n)
+        toCanonical (TermTag 2 (TermBytes (unsignedBE (toInteger w))))
+          === toCanonical (TermUInt w)
 
       prop "in-range negative bignum collapses to CTNInt" $ \nint ->
         let n = fromNInt nint
-         in toCanonical (TTagged 3 (TBytes (unsignedBE (-1 - n))))
-              === toCanonical (TInteger n)
+         in toCanonical (TermTag 3 (TermBytes (unsignedBE (-1 - n))))
+              === toCanonical (TermNInt nint)
 
       it "bignum with leading zeros canonicalizes" $
-        toCanonical (TTagged 2 (TBytes (BS.pack [0, 0, 5])))
+        toCanonical (TermTag 2 (TermBytes (BS.pack [0, 0, 5])))
           `shouldBe` CTInt 5
 
-      prop "bignum from TBytesI matches TBytes" $ \(w :: Word64) ->
+      prop "bignum from TermBytesI matches TermBytes" $ \(w :: Word64) ->
         let bs = unsignedBE (toInteger w)
-         in toCanonical (TTagged 2 (TBytesI (BSL.fromStrict bs)))
-              === toCanonical (TTagged 2 (TBytes bs))
+         in toCanonical (TermTag 2 (TermBytesI [BSL.fromStrict bs]))
+              === toCanonical (TermTag 2 (TermBytes bs))
 
       it "true bignum (above uintMax) stays tagged" $
         let n = uintMax + 1
-         in toCanonical (TInteger n)
+         in toCanonical (TermTag 2 (TermBytes (unsignedBE n)))
               `shouldBe` CTTagged 2 (CTBytes (unsignedBE n))
 
       it "true bignum (below nintMin) stays tagged" $
         let n = nintMin - 1
-         in toCanonical (TInteger n)
+         in toCanonical (TermTag 3 (TermBytes (unsignedBE (-1 - n))))
               `shouldBe` CTTagged 3 (CTBytes (unsignedBE (-1 - n)))
 
     describe "definite/indefinite variants merge" $ do
-      it "TBytes ≡ TBytesI" $
-        toCanonical (TBytes "abc")
-          `shouldBe` toCanonical (TBytesI (BSL.fromStrict "abc"))
+      it "TermBytes ≡ chunked TermBytesI" $
+        toCanonical (TermBytes "abc")
+          `shouldBe` toCanonical (TermBytesI ["a", "bc"])
 
-      it "TString ≡ TStringI" $
-        toCanonical (TString "abc")
-          `shouldBe` toCanonical (TStringI (TL.fromStrict "abc"))
+      it "TermString ≡ chunked TermStringI" $
+        toCanonical (TermString "abc")
+          `shouldBe` toCanonical (TermStringI ["a", "bc"])
 
-      it "TList ≡ TListI" $
-        toCanonical (TList [TInt 1, TInt 2])
-          `shouldBe` toCanonical (TListI [TInt 1, TInt 2])
+      it "TermArray ≡ TermArrayI" $
+        toCanonical (TermArray [TermUInt 1, TermUInt 2])
+          `shouldBe` toCanonical (TermArrayI [TermUInt 1, TermUInt 2])
 
-      it "TMap ≡ TMapI" $
-        toCanonical (TMap [(TInt 1, TInt 2)])
-          `shouldBe` toCanonical (TMapI [(TInt 1, TInt 2)])
+      it "TermMap ≡ TermMapI" $
+        toCanonical (TermMap [(TermUInt 1, TermUInt 2)])
+          `shouldBe` toCanonical (TermMapI [(TermUInt 1, TermUInt 2)])
 
-    describe "bool/null go through CTSimple" $ do
-      it "TBool False ≡ TSimple 20" $
-        toCanonical (TBool False) `shouldBe` toCanonical (TSimple 20)
-      it "TBool True ≡ TSimple 21" $
-        toCanonical (TBool True) `shouldBe` toCanonical (TSimple 21)
-      it "TNull ≡ TSimple 22" $
-        toCanonical TNull `shouldBe` toCanonical (TSimple 22)
+    describe "simple values" $ do
+      prop "TermSimple maps to CTSimple" $ \w ->
+        toCanonical (TermSimple w) === CTSimple w
 
     describe "maps" $ do
       it "key order is irrelevant" $
-        toCanonical (TMap [(TInt 1, TInt 10), (TInt 2, TInt 20)])
-          `shouldBe` toCanonical (TMap [(TInt 2, TInt 20), (TInt 1, TInt 10)])
+        toCanonical (TermMap [(TermUInt 1, TermUInt 10), (TermUInt 2, TermUInt 20)])
+          `shouldBe` toCanonical (TermMap [(TermUInt 2, TermUInt 20), (TermUInt 1, TermUInt 10)])
 
     describe "floats stay distinct by width" $ do
-      it "THalf 1.0 ≠ TFloat 1.0" $
-        toCanonical (THalf 1.0) `shouldNotBe` toCanonical (TFloat 1.0)
-      it "TFloat 1.0 ≠ TDouble 1.0" $
-        toCanonical (TFloat 1.0) `shouldNotBe` toCanonical (TDouble 1.0)
+      it "TermHalf 1.0 ≠ TermFloat 1.0" $
+        toCanonical (TermHalf 1.0) `shouldNotBe` toCanonical (TermFloat 1.0)
+      it "TermFloat 1.0 ≠ TermDouble 1.0" $
+        toCanonical (TermFloat 1.0) `shouldNotBe` toCanonical (TermDouble 1.0)
 
 -- | Encode a non-negative Integer as a big-endian byte string with no leading zeros.
 unsignedBE :: Integer -> BS.ByteString

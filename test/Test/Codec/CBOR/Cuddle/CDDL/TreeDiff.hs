@@ -3,6 +3,7 @@
 
 module Test.Codec.CBOR.Cuddle.CDDL.TreeDiff () where
 
+import Codec.CBOR.Cuddle.CBOR.Term (NInt, fromNInt)
 import Codec.CBOR.Cuddle.CDDL (
   Assign,
   CDDL,
@@ -32,7 +33,8 @@ import Codec.CBOR.Cuddle.CDDL (
 import Codec.CBOR.Cuddle.CDDL.CtlOp (CtlOp)
 import Codec.CBOR.Cuddle.Comments (Comment)
 import Codec.CBOR.Cuddle.Pretty (PrettyStage, XRule, XTerm, XXTopLevel, XXType2)
-import Data.TreeDiff (ToExpr)
+import Data.TreeDiff (ToExpr (..))
+import Numeric.Half (Half, fromHalf)
 
 instance ToExpr Name
 
@@ -43,6 +45,12 @@ instance ForAllExtensions p ToExpr => ToExpr (GenericParameters p)
 instance ForAllExtensions p ToExpr => ToExpr (GenericArg p)
 
 instance ToExpr Comment
+
+instance ToExpr NInt where
+  toExpr = toExpr . fromNInt
+
+instance ToExpr Half where
+  toExpr = toExpr . fromHalf
 
 instance ToExpr ValueVariant
 

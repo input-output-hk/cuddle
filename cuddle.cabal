@@ -160,6 +160,7 @@ test-suite cuddle-test
     data-default-class,
     filepath,
     generic-random,
+    half,
     hspec >=2.11,
     hspec-core,
     hspec-golden,
