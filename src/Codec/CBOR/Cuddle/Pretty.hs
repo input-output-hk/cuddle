@@ -256,7 +256,7 @@ instance Pretty NInt where
 
 instance Pretty ValueVariant where
   pretty (VUInt i) = pretty i
-  pretty (VNInt i) = "-" <> pretty i
+  pretty (VNInt i) = pretty i
   pretty (VBignum i) = pretty i
   pretty (VFloat16 i) = pretty i
   pretty (VFloat32 i) = pretty i

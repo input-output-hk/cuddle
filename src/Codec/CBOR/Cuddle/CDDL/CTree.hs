@@ -6,6 +6,9 @@
 module Codec.CBOR.Cuddle.CDDL.CTree (
   XXCTree,
   Range (..),
+  exclusive,
+  inclusive,
+  isInRange,
   CTree (..),
   traverseCTree,
   foldCTree,
@@ -19,7 +22,13 @@ module Codec.CBOR.Cuddle.CDDL.CTree (
 ) where
 
 import Codec.CBOR.Cuddle.CBOR.Term (fromNInt, nintMin, uintMax)
-import Codec.CBOR.Cuddle.CDDL (Name, OccurrenceIndicator, RangeBound, Value (..), ValueVariant (..))
+import Codec.CBOR.Cuddle.CDDL (
+  Name,
+  OccurrenceIndicator,
+  RangeBound (..),
+  Value (..),
+  ValueVariant (..),
+ )
 import Codec.CBOR.Cuddle.CDDL.CtlOp
 import Control.Monad.Identity (Identity (..))
 import Data.Hashable (Hashable)
@@ -50,6 +59,18 @@ data Range a = Range
   deriving (Eq, Show, Generic)
 
 instance Hashable a => Hashable (Range a)
+
+isInRange :: Ord a => a -> Range a -> Bool
+isInRange x (Range from to bound) =
+  x >= from && case bound of
+    ClOpen -> x < to
+    Closed -> x <= to
+
+exclusive :: a -> a -> Range a
+exclusive from to = Range from to ClOpen
+
+inclusive :: a -> a -> Range a
+inclusive from to = Range from to Closed
 
 data CTree i
   = Literal Value

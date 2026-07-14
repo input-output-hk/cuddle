@@ -201,22 +201,22 @@ validateUInt cddl i rule =
     CRange (Range low high bound) ->
       case (low, high) of
         (Literal (Value (VUInt (toInteger -> n)) _), Literal (Value (VUInt (toInteger -> m)) _))
-          | n <= i' && range bound i' m -> terminal rule
+          | i' `isInRange` Range n m bound -> terminal rule
           | otherwise -> unapplicable rule
         (Literal (Value (VNInt (fromNInt -> n)) _), Literal (Value (VUInt (toInteger -> m)) _))
-          | -n <= i' && range bound i' m -> terminal rule
+          | i' `isInRange` Range n m bound -> terminal rule
           | otherwise -> unapplicable rule
         (Literal (Value (VNInt _) _), Literal (Value (VNInt _) _)) -> unapplicable rule
         (Literal (Value VUInt {} _), Literal (Value VNInt {} _)) -> error "range types mismatch"
         (Literal (Value (VBignum n) _), Literal (Value (VUInt (toInteger -> m)) _))
-          | n <= i' && range bound i' m -> terminal rule
+          | i' `isInRange` Range n m bound -> terminal rule
           | otherwise -> unapplicable rule
         (Literal (Value (VBignum _) _), Literal (Value (VNInt _) _)) -> unapplicable rule
         (Literal (Value (VUInt (toInteger -> n)) _), Literal (Value (VBignum m) _))
-          | n <= i' && range bound i' m -> terminal rule
+          | i' `isInRange` Range n m bound -> terminal rule
           | otherwise -> unapplicable rule
         (Literal (Value (VNInt (fromNInt -> n)) _), Literal (Value (VBignum m) _))
-          | (-n) <= i' && range bound i' m -> terminal rule
+          | i' `isInRange` Range n m bound -> terminal rule
           | otherwise -> unapplicable rule
         (CTreeE (VRuleRef n), _) ->
           dereferenceAndValidate cddl n $ \lo -> validateUInt cddl i (CRange (Range lo high bound))
@@ -253,19 +253,19 @@ validateNInt cddl i rule =
       case (low, high) of
         (Literal (Value (VUInt _) _), Literal (Value (VUInt _) _)) -> unapplicable rule
         (Literal (Value (VNInt (fromNInt -> n)) _), Literal (Value (VUInt (toInteger -> m)) _))
-          | -n <= i' && range bound i' m -> terminal rule
+          | i' `isInRange` Range n m bound -> terminal rule
           | otherwise -> unapplicable rule
         (Literal (Value (VNInt _) _), Literal (Value (VNInt _) _)) -> unapplicable rule
         (Literal (Value VUInt {} _), Literal (Value VNInt {} _)) -> error "range types mismatch"
         (Literal (Value (VBignum n) _), Literal (Value (VUInt (toInteger -> m)) _))
-          | n <= i' && range bound i' m -> terminal rule
+          | i' `isInRange` Range n m bound -> terminal rule
           | otherwise -> unapplicable rule
-        (Literal (Value (VBignum _) _), Literal (Value (VNInt _) _)) -> unapplicable rule
-        (Literal (Value (VUInt (toInteger -> n)) _), Literal (Value (VBignum m) _))
-          | n <= i' && range bound i' m -> terminal rule
+        (Literal (Value (VBignum n) _), Literal (Value (VNInt (fromNInt -> m)) _))
+          | i' `isInRange` Range n m bound -> terminal rule
           | otherwise -> unapplicable rule
+        (Literal (Value (VUInt _) _), Literal (Value (VBignum _) _)) -> unapplicable rule
         (Literal (Value (VNInt (fromNInt -> n)) _), Literal (Value (VBignum m) _))
-          | (-n) <= i' && range bound i' m -> terminal rule
+          | i' `isInRange` Range n m bound -> terminal rule
           | otherwise -> unapplicable rule
         (CTreeE (VRuleRef n), _) ->
           dereferenceAndValidate cddl n $ \lo -> validateNInt cddl i (CRange (Range lo high bound))
@@ -412,37 +412,37 @@ controlInteger cddl i Bits ctrl = do
 controlInteger _ i Lt ctrl =
   case ctrl of
     Literal (Value (VUInt i') _) -> i < toInteger i'
-    Literal (Value (VNInt i') _) -> i < -fromNInt i'
+    Literal (Value (VNInt i') _) -> i < fromNInt i'
     Literal (Value (VBignum i') _) -> i < i'
     _ -> False
 controlInteger _ i Gt ctrl =
   case ctrl of
     Literal (Value (VUInt i') _) -> i > fromIntegral i'
-    Literal (Value (VNInt i') _) -> i > -fromNInt i'
+    Literal (Value (VNInt i') _) -> i > fromNInt i'
     Literal (Value (VBignum i') _) -> i > i'
     _ -> False
 controlInteger _ i Le ctrl =
   case ctrl of
     Literal (Value (VUInt i') _) -> i <= fromIntegral i'
-    Literal (Value (VNInt i') _) -> i <= -fromNInt i'
+    Literal (Value (VNInt i') _) -> i <= fromNInt i'
     Literal (Value (VBignum i') _) -> i <= i'
     _ -> False
 controlInteger _ i Ge ctrl =
   case ctrl of
     Literal (Value (VUInt i') _) -> i >= fromIntegral i'
-    Literal (Value (VNInt i') _) -> i >= -fromNInt i'
+    Literal (Value (VNInt i') _) -> i >= fromNInt i'
     Literal (Value (VBignum i') _) -> i >= i'
     _ -> False
 controlInteger _ i Eq ctrl =
   case ctrl of
     Literal (Value (VUInt i') _) -> i == fromIntegral i'
-    Literal (Value (VNInt i') _) -> i == -fromNInt i'
+    Literal (Value (VNInt i') _) -> i == fromNInt i'
     Literal (Value (VBignum i') _) -> i == i'
     _ -> False
 controlInteger _ i Ne ctrl =
   case ctrl of
     Literal (Value (VUInt i') _) -> i /= fromIntegral i'
-    Literal (Value (VNInt i') _) -> i /= -fromNInt i'
+    Literal (Value (VNInt i') _) -> i /= fromNInt i'
     Literal (Value (VBignum i') _) -> i /= i'
     _ -> False
 controlInteger _ _ _ ctrl = error $ "unexpected control: " <> showSimple ctrl
@@ -851,9 +851,9 @@ controlText cddl bs op@Size ctrl =
             (Literal (Value (VUInt (toInteger -> n)) _), Literal (Value (VUInt (toInteger -> m)) _)) ->
               n <= toInteger (T.length bs) && range bound bsSize m
             (Literal (Value (VNInt (fromNInt -> n)) _), Literal (Value (VUInt (toInteger -> m)) _)) ->
-              -n <= toInteger (T.length bs) && range bound bsSize m
+              n <= toInteger (T.length bs) && range bound bsSize m
             (Literal (Value (VNInt (fromNInt -> n)) _), Literal (Value (VNInt (fromNInt -> m)) _)) ->
-              -n <= toInteger (T.length bs) && range bound bsSize (-m)
+              n <= toInteger (T.length bs) && range bound bsSize m
             _ -> False
         _ -> error "Invalid control value in .size"
 controlText _ s Regexp ctrl =

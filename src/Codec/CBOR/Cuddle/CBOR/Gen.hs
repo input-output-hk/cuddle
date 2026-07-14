@@ -456,6 +456,12 @@ genRange ::
   RangeBound ->
   CBORGen RuleTerm
 genRange from to bounds
+  | CTreeE (GenRef n) <- from = do
+      from' <- resolveRef n
+      genRange from' to bounds
+  | CTreeE (GenRef n) <- to = do
+      to' <- resolveRef n
+      genRange from to' bounds
   | Just lo <- unIntLiteral from
   , Just hi <- unIntLiteral to
   , lo <= hi = do
