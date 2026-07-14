@@ -12,7 +12,14 @@ module Codec.CBOR.Cuddle.CBOR.Validator (
 ) where
 
 import Codec.CBOR.Cuddle.CBOR.Canonical (CanonicalTerm, toCanonical)
-import Codec.CBOR.Cuddle.CBOR.Term (CBORTerm (..), NInt, decodeCBORTerm, fromNInt)
+import Codec.CBOR.Cuddle.CBOR.Term (
+  CBORTerm (..),
+  NInt,
+  bytesToUnsigned,
+  decodeCBORTerm,
+  fromNInt,
+  unwrapBytes,
+ )
 import Codec.CBOR.Cuddle.CBOR.Validator.Trace (
   ControlInfo (..),
   Evidenced (..),
@@ -284,104 +291,6 @@ validateNInt cddl i rule =
   where
     i' = fromNInt i
 
--- validateInteger ::
---  HasCallStack =>
---  CTreeRoot ValidatorPhase ->
---  Integer ->
---  CTree ValidatorPhase ->
---  Evidenced ValidationTrace
--- validateInteger cddl i rule =
---  case rule of
---    CTreeE (VRuleRef n) -> dereferenceAndValidate cddl n $ validateInteger cddl i
---    CTreeE (VValidator v _) -> runCustomValidator cddl (SingleTerm $ TInteger i) v
---    -- echo "C24101" | xxd -r -p - example.cbor
---    -- echo "foo = int" > a.cddl
---    -- cddl a.cddl validate example.cbor
---    --
---    -- but
---    --
---    -- echo "C249010000000000000000"| xxd -r -p - example.cbor
---    -- echo "foo = int" > a.cddl
---    -- cddl a.cddl validate example.cbor
---    --
---    -- and they are both bigints?
---
---    -- a = any
---    Postlude PTAny -> terminal rule
---    -- a = int
---    Postlude PTInt
---      | i >= nintMin && i <= uintMax -> terminal rule
---    -- a = uint
---    Postlude PTUInt
---      | i >= 0 && i <= uintMax -> terminal rule
---    -- a = nint
---    Postlude PTNInt
---      | i >= nintMin && i <= -1 -> terminal rule
---    -- a = x
---    Literal (Value (VUInt i') _) | i == fromIntegral i' -> terminal rule
---    -- a = -x
---    Literal (Value (VNInt i') _) | -i == fromIntegral i' -> terminal rule
---    -- a = <big number>
---    Literal (Value (VBignum i') _) | i == i' -> terminal rule
---    -- a = foo .ctrl bar
---    Control op tgt ctrl -> ctrlDispatch (validateInteger cddl i) op tgt ctrl (controlInteger cddl i)
---    -- a = foo / bar
---    Choice opts -> validateChoice (validateInteger cddl i) opts
---    -- a = x..y
---    Range low high bound ->
---      case (low, high) of
---        (Literal (Value (VUInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _))
---          | n <= i && range bound i m -> terminal rule
---          | otherwise -> unapplicable rule
---        (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VUInt (fromIntegral -> m)) _))
---          | -n <= i && range bound i m -> terminal rule
---          | otherwise -> unapplicable rule
---        (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VNInt (fromIntegral -> m)) _))
---          | -n <= i && range bound i (-m) -> terminal rule
---          | otherwise -> unapplicable rule
---        (Literal (Value VUInt {} _), Literal (Value VNInt {} _)) -> error "range types mismatch"
---        (Literal (Value (VBignum n) _), Literal (Value (VUInt (fromIntegral -> m)) _))
---          | n <= i && range bound i m -> terminal rule
---          | otherwise -> unapplicable rule
---        (Literal (Value (VBignum n) _), Literal (Value (VNInt (fromIntegral -> m)) _))
---          | n <= i && range bound i (-m) -> terminal rule
---          | otherwise -> unapplicable rule
---        (Literal (Value (VUInt (fromIntegral -> n)) _), Literal (Value (VBignum m) _))
---          | n <= i && range bound i m -> terminal rule
---          | otherwise -> unapplicable rule
---        (Literal (Value (VNInt (fromIntegral -> n)) _), Literal (Value (VBignum m) _))
---          | (-n) <= i && range bound i m -> terminal rule
---          | otherwise -> unapplicable rule
---        (CTreeE (VRuleRef n), _) ->
---          dereferenceAndValidate cddl n $ \lo -> validateInteger cddl i (Range lo high bound)
---        (_, CTreeE (VRuleRef n)) ->
---          dereferenceAndValidate cddl n $ \hi -> validateInteger cddl i (Range low hi bound)
---        (lo, hi) -> error $ "Unable to validate range: (" <> showSimple lo <> ", " <> showSimple hi <> ")"
---    -- a = &(x, y, z)
---    Enum g ->
---      case g of
---        CTreeE (VRuleRef n) -> dereferenceAndValidate cddl n $ validateInteger cddl i
---        Group g' -> validateInteger cddl i (Choice (NE.fromList g'))
---        _ -> error "Not yet implemented"
---    -- a = x: y
---    -- Note KV cannot appear on its own, but we will use this when validating
---    -- lists.
---    KV _ v _ -> validateInteger cddl i v
---    Tag 2 x -> validateBigInt x
---    Tag 3 x -> validateBigInt x
---    _ -> unapplicable rule
---  where
---    validateBigInt x = case x of
---      CTreeE (VRuleRef n) -> dereferenceAndValidate cddl n validateBigInt
---      Postlude PTBytes -> terminal rule
---      Control op tgt@(Postlude PTBytes) ctrl ->
---        ctrlDispatch (validateBytes cddl bs) op tgt ctrl (controlBytes cddl bs)
---        where
---          -- TODO figure out a way to turn Integer into bytes or figure out why
---          -- tagged bigints are decoded as integers in the first place
---          bs = mempty
---      _ -> unapplicable rule
-
 -- | Controls for an Integer
 controlInteger ::
   HasCallStack =>
@@ -482,7 +391,7 @@ validateHalf cddl f rule =
     CRange (Range low (CTreeE (VRuleRef n)) bound) ->
       dereferenceAndValidate cddl n $ \hi -> validateHalf cddl f . CRange $ Range low hi bound
     CRange (Range (Literal (Value (VFloat16 n) _)) (Literal (Value (VFloat16 m) _)) bound)
-      | n <= realToFrac f && range bound f (realToFrac m) -> terminal rule
+      | f `isInRange` Range n m bound -> terminal rule
     _ -> unapplicable rule
 
 -- | Controls for `Float16`
@@ -535,7 +444,7 @@ validateFloat cddl f rule =
     CRange (Range low (CTreeE (VRuleRef n)) bound) ->
       dereferenceAndValidate cddl n $ \hi -> validateFloat cddl f . CRange $ Range low hi bound
     CRange (Range (unFloatLiteral -> Just low) (unFloatLiteral -> Just high) bound)
-      | range bound low high -> terminal rule
+      | realToFrac f `isInRange` Range low high bound -> terminal rule
     _ -> unapplicable rule
 
 -- | Controls for `Float32`
@@ -591,18 +500,10 @@ validateDouble cddl f rule =
       dereferenceAndValidate cddl n $ \lo -> validateDouble cddl f . CRange $ Range lo high bound
     CRange (Range low (CTreeE (VRuleRef n)) bound) ->
       dereferenceAndValidate cddl n $ \hi -> validateDouble cddl f . CRange $ Range low hi bound
-    CRange (Range (Literal (Value nv _)) (Literal (Value mv _)) bound)
-      | VFloat16 n <- nv
-      , VFloat16 m <- mv
-      , realToFrac n <= f && range bound f (realToFrac m) ->
-          terminal rule
-      | VFloat32 n <- nv
-      , VFloat32 m <- mv
-      , float2Double n <= f && range bound f (float2Double m) ->
-          terminal rule
-      | VFloat64 n <- nv
-      , VFloat64 m <- mv
-      , n <= f && range bound f m ->
+    CRange (Range nv mv bound)
+      | Just n <- unFloatLiteral nv
+      , Just m <- unFloatLiteral mv
+      , f `isInRange` Range (realToFrac n) (realToFrac m) bound ->
           terminal rule
     _ -> unapplicable rule
 
@@ -878,6 +779,17 @@ validateTagged cddl tag term (CTreeE (VValidator v _)) = runCustomValidator cddl
 validateTagged cddl tag term rule =
   case rule of
     Postlude PTAny -> terminal rule
+    Literal (Value (VBignum i) _)
+      | i >= 0
+      , tag == 2
+      , Just bs <- unwrapBytes term
+      , bytesToUnsigned bs == i ->
+          terminal rule
+      | i < 0
+      , tag == 3
+      , Just bs <- unwrapBytes term
+      , negate (bytesToUnsigned bs) == i ->
+          terminal rule
     Tag tag' rule' ->
       -- If the tag does not match, this is a direct fail
       if tag == tag'
@@ -914,6 +826,9 @@ boundPlacement x (Just lo, mHi) bounds
 boundPlacement x (Nothing, Just hi) bounds
   | range bounds x hi = WithinBounds
   | otherwise = AboveBounds
+  where
+    range ClOpen a upper = a < upper
+    range Closed a upper = a <= upper
 
 decrementBounds :: (Maybe Word64, Maybe Word64) -> OccurrenceIndicator
 decrementBounds (lb, ub) = OIBounded (clampedPred <$> lb) (clampedPred <$> ub)
@@ -1209,10 +1124,3 @@ dereferenceAndValidate ::
   Evidenced ValidationTrace
 dereferenceAndValidate cddl n f =
   mapTrace (ReferenceRule n) . f $ dereference cddl n
-
---------------------------------------------------------------------------------
--- Utils
-
-range :: Ord a => RangeBound -> a -> a -> Bool
-range Closed = (<=)
-range ClOpen = (<)

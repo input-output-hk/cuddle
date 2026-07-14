@@ -9,6 +9,10 @@ module Codec.CBOR.Cuddle.CBOR.Term (
   unsignedToBytes,
   uintMax,
   nintMin,
+  unwrapBytes,
+  unwrapString,
+  unwrapArray,
+  unwrapMap,
 ) where
 
 import Codec.CBOR.Cuddle.Comments (CollectComments)
@@ -58,6 +62,7 @@ import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
 import Data.Hashable (Hashable)
 import Data.Maybe (mapMaybe)
+import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Lazy qualified as LT
 import Data.Word (Word64, Word8)
@@ -300,6 +305,26 @@ unsignedToBytes = BS.pack . reverse . go
   where
     go 0 = []
     go n = let (d, r) = divMod n 256 in fromInteger r : go d
+
+unwrapBytes :: CBORTerm -> Maybe ByteString
+unwrapBytes (TermBytes bs) = Just bs
+unwrapBytes (TermBytesI bss) = Just . LBS.toStrict $ mconcat bss
+unwrapBytes _ = Nothing
+
+unwrapString :: CBORTerm -> Maybe Text
+unwrapString (TermString t) = Just t
+unwrapString (TermStringI ts) = Just . LT.toStrict $ mconcat ts
+unwrapString _ = Nothing
+
+unwrapArray :: CBORTerm -> Maybe [CBORTerm]
+unwrapArray (TermArray xs) = Just xs
+unwrapArray (TermArrayI xs) = Just xs
+unwrapArray _ = Nothing
+
+unwrapMap :: CBORTerm -> Maybe [(CBORTerm, CBORTerm)]
+unwrapMap (TermMap kvs) = Just kvs
+unwrapMap (TermMapI kvs) = Just kvs
+unwrapMap _ = Nothing
 
 -- Bounds
 
