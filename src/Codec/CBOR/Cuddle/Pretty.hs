@@ -19,8 +19,9 @@ module Codec.CBOR.Cuddle.Pretty (
   renderCDDL,
 ) where
 
+import Codec.CBOR.Cuddle.CBOR.Term (NInt, fromNInt)
 import Codec.CBOR.Cuddle.CDDL
-import Codec.CBOR.Cuddle.CDDL.CTree (CTree, PTerm (..), XXCTree)
+import Codec.CBOR.Cuddle.CDDL.CTree (CTree, PTerm (..), Range (..), XXCTree)
 import Codec.CBOR.Cuddle.CDDL.CTree qualified as CT
 import Codec.CBOR.Cuddle.CDDL.CtlOp (CtlOp)
 import Codec.CBOR.Cuddle.Comments (CollectComments (..), Comment, HasComment (..), unComment)
@@ -250,6 +251,9 @@ instance Pretty (MemberKey PrettyStage) where
 instance Pretty Value where
   pretty (Value v cmt) = pretty v <> prettyCommentNoBreakWS cmt
 
+instance Pretty NInt where
+  pretty = pretty . fromNInt
+
 instance Pretty ValueVariant where
   pretty (VUInt i) = pretty i
   pretty (VNInt i) = "-" <> pretty i
@@ -286,8 +290,8 @@ instance Pretty (XXCTree p) => Pretty (CTree p) where
   pretty = \case
     CT.Literal v -> pretty v
     CT.Postlude v -> pretty v
-    CT.Range lo hi ClOpen -> pretty lo <+> "..." <+> pretty hi
-    CT.Range lo hi Closed -> pretty lo <+> ".." <+> pretty hi
+    CT.CRange (Range lo hi ClOpen) -> pretty lo <+> "..." <+> pretty hi
+    CT.CRange (Range lo hi Closed) -> pretty lo <+> ".." <+> pretty hi
     CT.KV k v _ -> pretty k <+> "==>" <+> pretty v
     CT.CTreeE x -> pretty x
     CT.Occur v oi ->

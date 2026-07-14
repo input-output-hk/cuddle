@@ -5,10 +5,13 @@ module Codec.CBOR.Cuddle.CBOR.Term (
   NInt,
   toNInt,
   fromNInt,
+  bytesToUnsigned,
+  unsignedToBytes,
   uintMax,
   nintMin,
 ) where
 
+import Codec.CBOR.Cuddle.Comments (CollectComments)
 import Codec.CBOR.Decoding (
   Decoder,
   TokenType (..),
@@ -50,12 +53,15 @@ import Codec.CBOR.Encoding (
  )
 import Control.Monad (replicateM)
 import Data.Bits (complement)
+import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
+import Data.Hashable (Hashable)
 import Data.Maybe (mapMaybe)
 import Data.Text qualified as T
 import Data.Text.Lazy qualified as LT
 import Data.Word (Word64, Word8)
+import GHC.Generics (Generic)
 import Numeric.Half (Half, fromHalf, toHalf)
 import Test.QuickCheck (
   Arbitrary (..),
@@ -73,7 +79,7 @@ import Prelude hiding (decodeFloat, encodeFloat)
 -- than 'Int64' on the negative side, so it can't be stored as a plain
 -- signed integer.
 newtype NInt = NInt Word64
-  deriving (Eq, Ord, Bounded)
+  deriving (Eq, Ord, Bounded, Hashable, CollectComments)
 
 instance Show NInt where
   showsPrec p x =
@@ -122,7 +128,7 @@ data CBORTerm
     TermFloat Float
   | -- | Major type 7 (27)
     TermDouble Double
-  deriving (Eq, Show)
+  deriving (Generic, Eq, Ord, Show)
 
 -- | Floats never include NaN: the many NaN bit patterns don't survive
 -- round-trips through 'Float' (see 'decodeCBORTerm') and compare unequal
@@ -285,6 +291,15 @@ encodeCBORTerm term = case term of
   TermDouble d -> encodeDouble d
   where
     encodeKeyValue (k, v) = encodeCBORTerm k <> encodeCBORTerm v
+
+bytesToUnsigned :: ByteString -> Integer
+bytesToUnsigned = BS.foldl' (\acc b -> acc * 256 + toInteger b) 0
+
+unsignedToBytes :: Integer -> ByteString
+unsignedToBytes = BS.pack . reverse . go
+  where
+    go 0 = []
+    go n = let (d, r) = divMod n 256 in fromInteger r : go d
 
 -- Bounds
 

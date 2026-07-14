@@ -5,6 +5,7 @@
 
 module Codec.CBOR.Cuddle.CDDL.CTree (
   XXCTree,
+  Range (..),
   CTree (..),
   traverseCTree,
   foldCTree,
@@ -13,10 +14,12 @@ module Codec.CBOR.Cuddle.CDDL.CTree (
   PTerm (..),
   uintMax,
   nintMin,
+  unIntLiteral,
+  unFloatLiteral,
 ) where
 
-import Codec.CBOR.Cuddle.CBOR.Canonical (nintMin, uintMax)
-import Codec.CBOR.Cuddle.CDDL (Name, OccurrenceIndicator, RangeBound, Value)
+import Codec.CBOR.Cuddle.CBOR.Term (fromNInt, nintMin, uintMax)
+import Codec.CBOR.Cuddle.CDDL (Name, OccurrenceIndicator, RangeBound, Value (..), ValueVariant (..))
 import Codec.CBOR.Cuddle.CDDL.CtlOp
 import Control.Monad.Identity (Identity (..))
 import Data.Hashable (Hashable)
@@ -39,6 +42,15 @@ import Test.QuickCheck (Arbitrary (..))
 
 data family XXCTree i
 
+data Range a = Range
+  { rangeFrom :: a
+  , rangeTo :: a
+  , rangeBound :: RangeBound
+  }
+  deriving (Eq, Show, Generic)
+
+instance Hashable a => Hashable (Range a)
+
 data CTree i
   = Literal Value
   | Postlude PTerm
@@ -48,7 +60,7 @@ data CTree i
   | Group [CTree i]
   | KV {key :: CTree i, value :: CTree i, cut :: Bool}
   | Occur {item :: CTree i, occurs :: OccurrenceIndicator}
-  | Range {from :: CTree i, to :: CTree i, inclusive :: RangeBound}
+  | CRange (Range (CTree i))
   | Control {op :: CtlOp, target :: CTree i, controller :: CTree i}
   | Enum (CTree i)
   | Unwrap (CTree i)
@@ -76,10 +88,10 @@ traverseCTree _ atNode (KV k v c) = do
   v' <- atNode v
   pure $ KV k' v' c
 traverseCTree _ atNode (Occur i occ) = flip Occur occ <$> atNode i
-traverseCTree _ atNode (Range f t inc) = do
+traverseCTree _ atNode (CRange (Range f t inc)) = do
   f' <- atNode f
   t' <- atNode t
-  pure $ Range f' t' inc
+  pure $ CRange $ Range f' t' inc
 traverseCTree _ atNode (Control o t c) = do
   t' <- atNode t
   c' <- atNode c
@@ -156,3 +168,18 @@ instance Arbitrary PTerm where
   arbitrary = genericArbitraryU
 
 instance Hashable PTerm
+
+unIntLiteral :: CTree i -> Maybe Integer
+unIntLiteral (Literal (Value x _)) = case x of
+  VUInt v -> Just $ toInteger v
+  VNInt v -> Just $ fromNInt v
+  _ -> Nothing
+unIntLiteral _ = Nothing
+
+unFloatLiteral :: CTree i -> Maybe Double
+unFloatLiteral (Literal (Value x _)) = case x of
+  VFloat16 v -> Just $ realToFrac v
+  VFloat32 v -> Just $ realToFrac v
+  VFloat64 v -> Just v
+  _ -> Nothing
+unFloatLiteral _ = Nothing

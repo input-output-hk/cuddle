@@ -32,6 +32,7 @@ module Test.Codec.CBOR.Cuddle.CDDL.Examples.Huddle (
 ) where
 
 import Codec.CBOR.Cuddle.CBOR.Gen (generateFromGRef)
+import Codec.CBOR.Cuddle.CBOR.Term (CBORTerm (..))
 import Codec.CBOR.Cuddle.CBOR.Validator (validateFromGRef)
 import Codec.CBOR.Cuddle.CDDL (Name)
 import Codec.CBOR.Cuddle.CDDL.Custom.Core (RuleTerm (..))
@@ -57,7 +58,6 @@ import Codec.CBOR.Cuddle.Huddle (
   (==>),
  )
 import Codec.CBOR.Cuddle.Huddle qualified as H
-import Codec.CBOR.Term qualified as C
 import Data.Word (Word64)
 import Test.QuickCheck.GenT (MonadGen (..), frequency)
 
@@ -114,7 +114,7 @@ simpleRule :: Name -> Rule
 simpleRule n = n =:= arr [1, 2, 3]
 
 customGenRule :: Name -> Rule
-customGenRule = withCBORGen (SingleTerm . C.TInt <$> choose (4, 6)) . simpleRule
+customGenRule = withCBORGen (SingleTerm . TermUInt <$> choose (4, 6)) . simpleRule
 
 customGenExample :: Huddle
 customGenExample =
@@ -346,11 +346,11 @@ tagRangeExample =
               , (4, choose (1281, 1399))
               ]
           generateFromGRef x >>= \case
-            SingleTerm inner -> pure $ SingleTerm (C.TTagged tagN inner)
+            SingleTerm inner -> pure $ SingleTerm (TermTag tagN inner)
             _ -> error "tagRangeExample: generic argument must be a single term"
 
         validator x = \case
-          SingleTerm (C.TTagged t inner)
+          SingleTerm (TermTag t inner)
             | t >= 1280 && t <= 1400 -> validateFromGRef x inner
             | otherwise -> fail $ "Tag out of range 1280..1400: " <> show t
           wt -> fail $ "Expected a tagged term, got: " <> show wt

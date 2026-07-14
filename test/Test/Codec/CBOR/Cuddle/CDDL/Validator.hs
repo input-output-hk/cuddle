@@ -13,6 +13,7 @@ module Test.Codec.CBOR.Cuddle.CDDL.Validator (
 
 import Codec.CBOR.Cuddle.CBOR.Canonical (toCanonical)
 import Codec.CBOR.Cuddle.CBOR.Gen (generateFromName)
+import Codec.CBOR.Cuddle.CBOR.Term (CBORTerm (..))
 import Codec.CBOR.Cuddle.CBOR.Validator (
   ValidatorPhase,
   validateCBOR,
@@ -52,7 +53,6 @@ import Codec.CBOR.Cuddle.Huddle qualified as H
 import Codec.CBOR.Cuddle.IndexMappable (mapCDDLDropExt, mapIndex)
 import Codec.CBOR.Cuddle.Parser (pCDDL)
 import Codec.CBOR.Pretty (prettyHexEnc)
-import Codec.CBOR.Term (Term (..), encodeTerm)
 import Codec.CBOR.Write (toStrictByteString)
 import Control.Monad (forM_)
 import Data.ByteString (ByteString)
@@ -157,14 +157,14 @@ genAndValidateFromFile path = do
 genInfiniteUniqueListOn :: Ord b => (a -> b) -> Gen a -> Gen [a]
 genInfiniteUniqueListOn f = fmap (nubOrdOn f) . infiniteListOf
 
-genHuddleRangeMap :: (Int, Int) -> Gen Term
+genHuddleRangeMap :: (Int, Int) -> Gen CBORTerm
 genHuddleRangeMap rng@(lo, hi) = do
   n <- choose rng
   let genKV = (,) <$> fmap TInt arbitrary <*> fmap TBool arbitrary
   genMapTerm . take n
     =<< scale (const $ max lo hi) (genInfiniteUniqueListOn (toCanonical . fst) genKV)
 
-genHuddleArrayRequiredTerms :: Gen [Term]
+genHuddleArrayRequiredTerms :: Gen [CBORTerm]
 genHuddleArrayRequiredTerms = do
   ints <- listOf1 $ TInt <$> arbitrary
   text <-
@@ -175,51 +175,51 @@ genHuddleArrayRequiredTerms = do
   lastInt <- TInt . getNonNegative <$> arbitrary
   pure $ ints <> text <> [lastInt]
 
-genHuddleArrayTerms :: Gen [Term]
+genHuddleArrayTerms :: Gen [CBORTerm]
 genHuddleArrayTerms = do
   bools <- listOf $ TBool <$> arbitrary
   required <- genHuddleArrayRequiredTerms
   pure $ bools <> required
 
-genHuddleArray :: Gen Term
+genHuddleArray :: Gen CBORTerm
 genHuddleArray = genHuddleArrayTerms >>= genArrayTerm
 
-genBadArrayReversed :: Gen Term
-genBadArrayReversed = genHuddleArrayTerms >>= genArrayTerm . reverse . (TBool True :)
+genBadArrayReversed :: Gen CBORTerm
+genBadArrayReversed = genHuddleArrayTerms >>= genArrayTerm . reverse . (TermSimple 21 :)
 
-genBadArrayMissingLastInt :: Gen Term
+genBadArrayMissingLastInt :: Gen CBORTerm
 genBadArrayMissingLastInt =
   genHuddleArrayTerms >>= genArrayTerm . reverse . dropWhile isNonNegativeInt . reverse
   where
-    isNonNegativeInt (TInt x) | x >= 0 = True
+    isNonNegativeInt (TermUInt _) = True
     isNonNegativeInt _ = False
 
-genHuddleRangeArray :: Gen Term
+genHuddleRangeArray :: Gen CBORTerm
 genHuddleRangeArray = do
   numInts <- choose (3, 4)
-  ints <- vectorOf numInts $ TInt <$> arbitrary
+  ints <- vectorOf numInts $ TermUInt <$> arbitrary
   numBools <- choose (0, 3)
-  bools <- vectorOf numBools $ TBool <$> arbitrary
+  bools <- vectorOf numBools $ TermSimple <$> elements [20, 21]
   numTexts <- choose (3, 10)
   texts <- vectorOf numTexts $ genStringTerm . T.pack =<< arbitrary
   genArrayTerm $ ints <> bools <> texts
 
-genArrayTerm :: [Term] -> Gen Term
-genArrayTerm xs = elements [TList xs, TListI xs]
+genArrayTerm :: [CBORTerm] -> Gen CBORTerm
+genArrayTerm xs = elements [TermArray xs, TermArrayI xs]
 
-genMapTerm :: [(Term, Term)] -> Gen Term
-genMapTerm x = elements [TMap x, TMapI x]
+genMapTerm :: [(CBORTerm, CBORTerm)] -> Gen CBORTerm
+genMapTerm x = elements [TermMap x, TermMapI x]
 
-genStringTerm :: Text -> Gen Term
-genStringTerm x = elements [TString x, TStringI (LT.fromStrict x)]
+genStringTerm :: Text -> Gen CBORTerm
+genStringTerm x = elements [TermString x, TermStringI (LT.fromStrict x)]
 
-genBytesTerm :: ByteString -> Gen Term
-genBytesTerm x = elements [TBytes x, TBytesI $ LBS.fromStrict x]
+genBytesTerm :: ByteString -> Gen CBORTerm
+genBytesTerm x = elements [TermBytes x, TermBytesI $ LBS.fromStrict x]
 
 arbitraryByteString :: Gen ByteString
 arbitraryByteString = BS.pack <$> arbitrary
 
-arbitraryTerm :: Gen Term
+arbitraryTerm :: Gen CBORTerm
 arbitraryTerm =
   oneof
     [ TInt <$> arbitrary
@@ -242,7 +242,7 @@ arbitraryTerm =
     , TDouble <$> arbitrary
     ]
 
-genFullMap :: Gen Term
+genFullMap :: Gen CBORTerm
 genFullMap = do
   field1 <- do
     es <- listOf $ TInt . getNonNegative <$> arbitrary
@@ -263,7 +263,7 @@ genFullMap = do
   allFields <- shuffle $ field1 : lField2 <> strFields <> bytesFields
   genMapTerm allFields
 
-genBadMapInvalidIndex :: Gen Term
+genBadMapInvalidIndex :: Gen CBORTerm
 genBadMapInvalidIndex =
   pure $
     TMap
@@ -276,7 +276,7 @@ validateHuddle ::
   HasCallStack =>
   Huddle ->
   Name ->
-  Term ->
+  CBORTerm ->
   Evidenced ValidationTrace
 validateHuddle huddle name term = do
   let
@@ -301,13 +301,13 @@ expectInvalid (Evidenced SValid t) =
 expectInvalid _ = pure ()
 
 stringValidator :: TermValidator
-stringValidator (SingleTerm (TString _)) = pure ()
-stringValidator (SingleTerm (TStringI _)) = pure ()
+stringValidator (SingleTerm (TermString _)) = pure ()
+stringValidator (SingleTerm (TermStringI _)) = pure ()
 stringValidator t = fail $ "Expected a string, got\n" <> show t
 
 bytesValidator :: TermValidator
-bytesValidator (SingleTerm (TBytes _)) = pure ()
-bytesValidator (SingleTerm (TBytesI _)) = pure ()
+bytesValidator (SingleTerm (TermBytes _)) = pure ()
+bytesValidator (SingleTerm (TermBytesI _)) = pure ()
 bytesValidator t = fail $ "Expected bytes, got\n" <> show t
 
 spec :: Spec

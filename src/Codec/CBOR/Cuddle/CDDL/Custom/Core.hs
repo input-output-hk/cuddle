@@ -2,9 +2,9 @@
 
 module Codec.CBOR.Cuddle.CDDL.Custom.Core (MonadCddl (..), RuleTerm (..)) where
 
+import Codec.CBOR.Cuddle.CBOR.Term (CBORTerm)
 import Codec.CBOR.Cuddle.CDDL (GRef, Name)
 import Codec.CBOR.Cuddle.CDDL.CTree (CTree)
-import Codec.CBOR.Term (Term)
 import Data.Kind (Type)
 
 class MonadCddl m where
@@ -19,7 +19,7 @@ class MonadCddl m where
   lookupGRef :: GRef -> m (Maybe (CTree (Phase m)))
 
 data RuleTerm
-  = SingleTerm Term
-  | PairTerm Term Term
+  = SingleTerm CBORTerm
+  | PairTerm CBORTerm CBORTerm
   | GroupTerm [RuleTerm]
   deriving (Eq, Ord, Show)

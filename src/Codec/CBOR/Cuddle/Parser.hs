@@ -6,6 +6,7 @@
 
 module Codec.CBOR.Cuddle.Parser where
 
+import Codec.CBOR.Cuddle.CBOR.Term (toNInt)
 import Codec.CBOR.Cuddle.CDDL
 import Codec.CBOR.Cuddle.CDDL.CtlOp (CtlOp)
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as COp
@@ -306,7 +307,7 @@ pValue =
           | val <= fromIntegral (maxBound @Word64) -> pure . VUInt $ fromIntegral val
           | otherwise -> pure $ VBignum val
         (True, val)
-          | val <= fromIntegral (maxBound @Word64) -> pure . VNInt $ fromIntegral val
+          | Just nVal <- toNInt (-val) -> pure $ VNInt nVal
           | otherwise -> pure . VBignum $ -val
     pFloat =
       pSignedNum L.float >>= \case

@@ -31,11 +31,11 @@ module Codec.CBOR.Cuddle.CBOR.Validator.Trace (
 ) where
 
 import Codec.CBOR.Cuddle.CBOR.Canonical (CanonicalTerm)
+import Codec.CBOR.Cuddle.CBOR.Term (CBORTerm)
 import Codec.CBOR.Cuddle.CDDL (Name (..))
 import Codec.CBOR.Cuddle.CDDL.CTree (CTree (..))
 import Codec.CBOR.Cuddle.CDDL.CtlOp (CtlOp)
 import Codec.CBOR.Cuddle.CDDL.Resolve (MonoSimplePhase)
-import Codec.CBOR.Term (Term)
 import Data.Foldable (Foldable (..))
 import Data.Function (on)
 import Data.Kind (Type)
@@ -108,7 +108,7 @@ deriving instance Show (ValidationTrace v)
 data ListValidationTrace (v :: Validity) where
   ListValidationDone :: ListValidationTrace IsValid
   ListValidationLeftoverTerms ::
-    NonEmpty Term ->
+    NonEmpty CBORTerm ->
     Maybe (CTree MonoSimplePhase, ValidationTrace IsInvalid) ->
     ListValidationTrace IsInvalid
   ListValidationUnappliedRule ::
@@ -138,7 +138,7 @@ deriving instance Show (ListValidationTrace v)
 data MapValidationTrace (v :: Validity) where
   MapValidationDone :: MapValidationTrace IsValid
   MapValidationLeftoverKVs ::
-    (Term, Term) ->
+    (CBORTerm, CBORTerm) ->
     Maybe (CTree MonoSimplePhase, MapValidationTrace IsInvalid) ->
     MapValidationTrace IsInvalid
   MapValidationUnappliedRules :: NonEmpty (CTree MonoSimplePhase) -> MapValidationTrace IsInvalid

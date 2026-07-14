@@ -53,6 +53,7 @@ import Codec.CBOR.Cuddle.CDDL.CTree (
   CTree (..),
   CTreeRoot (..),
   PTerm (..),
+  Range (..),
   XXCTree,
   foldCTree,
  )
@@ -232,11 +233,12 @@ buildRefCTree rules = PartialCTreeRoot $ toCTreeRule <$> rules
     toCTreeT1 (Type1 t2 Nothing _) = toCTreeT2 t2
     toCTreeT1 (Type1 t2 (Just (op, t2')) _) = case op of
       RangeOp bound ->
-        CTree.Range
-          { CTree.from = toCTreeT2 t2
-          , CTree.to = toCTreeT2 t2'
-          , CTree.inclusive = bound
-          }
+        CTree.CRange $
+          Range
+            { rangeFrom = toCTreeT2 t2
+            , rangeTo = toCTreeT2 t2'
+            , rangeBound = bound
+            }
       CtrlOp ctlop ->
         CTree.Control
           { CTree.op = ctlop
