@@ -245,7 +245,7 @@ validateNInt cddl i rule =
     CTreeE (VValidator v _) -> runCustomValidator cddl (SingleTerm $ TermNInt i) v
     Postlude PTAny -> terminal rule
     Postlude PTInt -> terminal rule
-    Postlude PTUInt -> terminal rule
+    Postlude PTNInt -> terminal rule
     Literal (Value (VNInt j) _) | i' == fromNInt j -> terminal rule
     Control op tgt ctrl -> ctrlDispatch (validateNInt cddl i) op tgt ctrl (controlInteger cddl i')
     Choice opts -> validateChoice (validateNInt cddl i) opts
@@ -255,7 +255,9 @@ validateNInt cddl i rule =
         (Literal (Value (VNInt (fromNInt -> n)) _), Literal (Value (VUInt (toInteger -> m)) _))
           | i' `isInRange` Range n m bound -> terminal rule
           | otherwise -> unapplicable rule
-        (Literal (Value (VNInt _) _), Literal (Value (VNInt _) _)) -> unapplicable rule
+        (Literal (Value (VNInt (fromNInt -> n)) _), Literal (Value (VNInt (fromNInt -> m)) _))
+          | i' `isInRange` Range n m bound -> terminal rule
+          | otherwise -> unapplicable rule
         (Literal (Value VUInt {} _), Literal (Value VNInt {} _)) -> error "range types mismatch"
         (Literal (Value (VBignum n) _), Literal (Value (VUInt (toInteger -> m)) _))
           | i' `isInRange` Range n m bound -> terminal rule
