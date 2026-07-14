@@ -849,11 +849,11 @@ controlText cddl bs op@Size ctrl =
         CRange (Range ff tt bound) ->
           case (ff, tt) of
             (Literal (Value (VUInt (toInteger -> n)) _), Literal (Value (VUInt (toInteger -> m)) _)) ->
-              n <= toInteger (T.length bs) && range bound bsSize m
+              bsSize `isInRange` Range n m bound
             (Literal (Value (VNInt (fromNInt -> n)) _), Literal (Value (VUInt (toInteger -> m)) _)) ->
-              n <= toInteger (T.length bs) && range bound bsSize m
+              bsSize `isInRange` Range n m bound
             (Literal (Value (VNInt (fromNInt -> n)) _), Literal (Value (VNInt (fromNInt -> m)) _)) ->
-              n <= toInteger (T.length bs) && range bound bsSize m
+              bsSize `isInRange` Range n m bound
             _ -> False
         _ -> error "Invalid control value in .size"
 controlText _ s Regexp ctrl =
