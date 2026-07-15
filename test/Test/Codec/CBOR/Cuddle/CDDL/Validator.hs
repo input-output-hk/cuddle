@@ -508,6 +508,12 @@ spec = describe "Validator" $ do
           expectValid $ validateTermText "a = -5 .. -1" "a" (termInt (-3))
           expectInvalid $ validateTermText "a = -5 .. -1" "a" (mkTermUInt 0)
       describe "Float" $ do
+        it "Accepts a float16 within the range" $
+          expectValid $
+            validateTermText "a = 0.0 .. 1.0" "a" (TermHalf 0.5)
+        it "Rejects a float16 outside the range" $
+          expectInvalid $
+            validateTermText "a = 0.0 .. 1.0" "a" (TermHalf 100.0)
         it "Accepts a float32 within the range" $
           expectValid $
             validateTermText "a = 0.0 .. 1.0" "a" (TermFloat 0.5)

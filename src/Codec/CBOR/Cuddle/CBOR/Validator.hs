@@ -211,31 +211,7 @@ validateUInt cddl i rule =
     Literal (Value (VUInt j) _) | i' == toInteger j -> terminal rule
     Control op tgt ctrl -> ctrlDispatch (validateUInt cddl i) op tgt ctrl (controlInteger cddl i')
     Choice opts -> validateChoice (validateUInt cddl i) opts
-    CRange (Range low high bound) ->
-      case (low, high) of
-        (Literal (Value (VUInt (toInteger -> n)) _), Literal (Value (VUInt (toInteger -> m)) _))
-          | i' `isInRange` Range n m bound -> terminal rule
-          | otherwise -> unapplicable rule
-        (Literal (Value (VNInt (fromNInt -> n)) _), Literal (Value (VUInt (toInteger -> m)) _))
-          | i' `isInRange` Range n m bound -> terminal rule
-          | otherwise -> unapplicable rule
-        (Literal (Value (VNInt _) _), Literal (Value (VNInt _) _)) -> unapplicable rule
-        (Literal (Value VUInt {} _), Literal (Value VNInt {} _)) -> error "range types mismatch"
-        (Literal (Value (VBignum n) _), Literal (Value (VUInt (toInteger -> m)) _))
-          | i' `isInRange` Range n m bound -> terminal rule
-          | otherwise -> unapplicable rule
-        (Literal (Value (VBignum _) _), Literal (Value (VNInt _) _)) -> unapplicable rule
-        (Literal (Value (VUInt (toInteger -> n)) _), Literal (Value (VBignum m) _))
-          | i' `isInRange` Range n m bound -> terminal rule
-          | otherwise -> unapplicable rule
-        (Literal (Value (VNInt (fromNInt -> n)) _), Literal (Value (VBignum m) _))
-          | i' `isInRange` Range n m bound -> terminal rule
-          | otherwise -> unapplicable rule
-        (CTreeE (VRuleRef n), _) ->
-          dereferenceAndValidate cddl n $ \lo -> validateUInt cddl i (CRange (Range lo high bound))
-        (_, CTreeE (VRuleRef n)) ->
-          dereferenceAndValidate cddl n $ \hi -> validateUInt cddl i (CRange (Range low hi bound))
-        (lo, hi) -> error $ "Unable to validate range: (" <> showSimple lo <> ", " <> showSimple hi <> ")"
+    CRange rng -> validateIntRange cddl (validateUInt cddl i) i' rng
     Enum g ->
       case g of
         CTreeE (VRuleRef n) -> dereferenceAndValidate cddl n $ validateUInt cddl i
@@ -262,31 +238,7 @@ validateNInt cddl i rule =
     Literal (Value (VNInt j) _) | i' == fromNInt j -> terminal rule
     Control op tgt ctrl -> ctrlDispatch (validateNInt cddl i) op tgt ctrl (controlInteger cddl i')
     Choice opts -> validateChoice (validateNInt cddl i) opts
-    CRange (Range low high bound) ->
-      case (low, high) of
-        (Literal (Value (VUInt _) _), Literal (Value (VUInt _) _)) -> unapplicable rule
-        (Literal (Value (VNInt (fromNInt -> n)) _), Literal (Value (VUInt (toInteger -> m)) _))
-          | i' `isInRange` Range n m bound -> terminal rule
-          | otherwise -> unapplicable rule
-        (Literal (Value (VNInt (fromNInt -> n)) _), Literal (Value (VNInt (fromNInt -> m)) _))
-          | i' `isInRange` Range n m bound -> terminal rule
-          | otherwise -> unapplicable rule
-        (Literal (Value VUInt {} _), Literal (Value VNInt {} _)) -> error "range types mismatch"
-        (Literal (Value (VBignum n) _), Literal (Value (VUInt (toInteger -> m)) _))
-          | i' `isInRange` Range n m bound -> terminal rule
-          | otherwise -> unapplicable rule
-        (Literal (Value (VBignum n) _), Literal (Value (VNInt (fromNInt -> m)) _))
-          | i' `isInRange` Range n m bound -> terminal rule
-          | otherwise -> unapplicable rule
-        (Literal (Value (VUInt _) _), Literal (Value (VBignum _) _)) -> unapplicable rule
-        (Literal (Value (VNInt (fromNInt -> n)) _), Literal (Value (VBignum m) _))
-          | i' `isInRange` Range n m bound -> terminal rule
-          | otherwise -> unapplicable rule
-        (CTreeE (VRuleRef n), _) ->
-          dereferenceAndValidate cddl n $ \lo -> validateNInt cddl i (CRange (Range lo high bound))
-        (_, CTreeE (VRuleRef n)) ->
-          dereferenceAndValidate cddl n $ \hi -> validateNInt cddl i (CRange (Range low hi bound))
-        (lo, hi) -> error $ "Unable to validate range: (" <> showSimple lo <> ", " <> showSimple hi <> ")"
+    CRange rng -> validateIntRange cddl (validateNInt cddl i) i' rng
     Enum g ->
       case g of
         CTreeE (VRuleRef n) -> dereferenceAndValidate cddl n $ validateNInt cddl i
@@ -296,6 +248,67 @@ validateNInt cddl i rule =
     _ -> unapplicable rule
   where
     i' = fromNInt i
+
+-- | The integer value of a literal range bound. Unlike 'unIntLiteral' this
+-- also interprets bignum literals, which is safe here because the value is
+-- only compared against, never narrowed to a machine word.
+intBound :: CTree ValidatorPhase -> Maybe Integer
+intBound (Literal (Value v _)) = case v of
+  VUInt n -> Just $ toInteger n
+  VNInt n -> Just $ fromNInt n
+  VBignum n -> Just n
+  _ -> Nothing
+intBound _ = Nothing
+
+-- | Validate an integer against a range with integer-literal or referenced
+-- bounds, re-entering the given validator once a referenced bound has been
+-- dereferenced. A range whose lower bound exceeds its upper bound is the
+-- empty type (RFC 8610 §2.2.2.1) and simply never matches.
+validateIntRange ::
+  HasCallStack =>
+  CTreeRoot ValidatorPhase ->
+  (CTree ValidatorPhase -> Evidenced ValidationTrace) ->
+  Integer ->
+  Range (CTree ValidatorPhase) ->
+  Evidenced ValidationTrace
+validateIntRange cddl self i rng@(Range low high bound) =
+  case (low, high) of
+    (intBound -> Just n, intBound -> Just m)
+      | i `isInRange` Range n m bound -> terminal rule
+      | otherwise -> unapplicable rule
+    (CTreeE (VRuleRef n), _) ->
+      dereferenceAndValidate cddl n $ \lo -> self (CRange (Range lo high bound))
+    (_, CTreeE (VRuleRef n)) ->
+      dereferenceAndValidate cddl n $ \hi -> self (CRange (Range low hi bound))
+    (lo, hi) -> error $ "Unable to validate range: (" <> showSimple lo <> ", " <> showSimple hi <> ")"
+  where
+    rule = CRange rng
+
+-- | Validate a float against a range with float-literal or referenced
+-- bounds, re-entering the given validator once a referenced bound has been
+-- dereferenced. Ranges are typed by kind, not width (RFC 8610 §2.2.2.1),
+-- so bounds of any float width apply and are compared at 'Double'
+-- precision, which is lossless for the narrower widths. A range with
+-- bounds of any other shape is unapplicable.
+validateFloatRange ::
+  HasCallStack =>
+  CTreeRoot ValidatorPhase ->
+  (CTree ValidatorPhase -> Evidenced ValidationTrace) ->
+  Double ->
+  Range (CTree ValidatorPhase) ->
+  Evidenced ValidationTrace
+validateFloatRange cddl self f rng@(Range low high bound) =
+  case (low, high) of
+    (unFloatLiteral -> Just n, unFloatLiteral -> Just m)
+      | f `isInRange` Range n m bound -> terminal rule
+      | otherwise -> unapplicable rule
+    (CTreeE (VRuleRef n), _) ->
+      dereferenceAndValidate cddl n $ \lo -> self (CRange (Range lo high bound))
+    (_, CTreeE (VRuleRef n)) ->
+      dereferenceAndValidate cddl n $ \hi -> self (CRange (Range low hi bound))
+    _ -> unapplicable rule
+  where
+    rule = CRange rng
 
 -- | Controls for an Integer
 controlInteger ::
@@ -374,12 +387,7 @@ validateHalf cddl f rule =
     -- a = foo .ctrl bar
     Control op tgt ctrl -> ctrlDispatch (validateHalf cddl f) op tgt ctrl (controlHalf cddl f)
     -- a = x..y
-    CRange (Range (CTreeE (VRuleRef n)) high bound) ->
-      dereferenceAndValidate cddl n $ \lo -> validateHalf cddl f . CRange $ Range lo high bound
-    CRange (Range low (CTreeE (VRuleRef n)) bound) ->
-      dereferenceAndValidate cddl n $ \hi -> validateHalf cddl f . CRange $ Range low hi bound
-    CRange (Range (unFloatLiteral -> Just n) (unFloatLiteral -> Just m) bound)
-      | realToFrac f `isInRange` Range n m bound -> terminal rule
+    CRange rng -> validateFloatRange cddl (validateHalf cddl f) (realToFrac f) rng
     _ -> unapplicable rule
 
 -- | Controls for `Float16`
@@ -426,13 +434,7 @@ validateFloat cddl f rule =
     -- a = foo .ctrl bar
     Control op tgt ctrl -> ctrlDispatch (validateFloat cddl f) op tgt ctrl (controlFloat cddl f)
     -- a = x..y
-    -- TODO it is unclear if this should mix floating point types too
-    CRange (Range (CTreeE (VRuleRef n)) high bound) ->
-      dereferenceAndValidate cddl n $ \lo -> validateFloat cddl f . CRange $ Range lo high bound
-    CRange (Range low (CTreeE (VRuleRef n)) bound) ->
-      dereferenceAndValidate cddl n $ \hi -> validateFloat cddl f . CRange $ Range low hi bound
-    CRange (Range (unFloatLiteral -> Just low) (unFloatLiteral -> Just high) bound)
-      | realToFrac f `isInRange` Range low high bound -> terminal rule
+    CRange rng -> validateFloatRange cddl (validateFloat cddl f) (realToFrac f) rng
     _ -> unapplicable rule
 
 -- | Controls for `Float32`
@@ -477,13 +479,7 @@ validateDouble cddl f rule =
     -- a = foo .ctrl bar
     Control op tgt ctrl -> ctrlDispatch (validateDouble cddl f) op tgt ctrl (controlDouble cddl f)
     -- a = x..y
-    -- TODO it is unclear if this should mix floating point types too
-    CRange (Range (CTreeE (VRuleRef n)) high bound) ->
-      dereferenceAndValidate cddl n $ \lo -> validateDouble cddl f . CRange $ Range lo high bound
-    CRange (Range low (CTreeE (VRuleRef n)) bound) ->
-      dereferenceAndValidate cddl n $ \hi -> validateDouble cddl f . CRange $ Range low hi bound
-    CRange (Range (unFloatLiteral -> Just n) (unFloatLiteral -> Just m) bound)
-      | f `isInRange` Range (realToFrac n) (realToFrac m) bound -> terminal rule
+    CRange rng -> validateFloatRange cddl (validateDouble cddl f) f rng
     _ -> unapplicable rule
 
 -- | Controls for `Float64`
