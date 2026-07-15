@@ -15,6 +15,16 @@ module Codec.CBOR.Cuddle.CBOR.Term (
     TermMap,
     TermTag
   ),
+
+  -- * Argument width
+  ArgWidth (..),
+  isValidWidth,
+  optimalWidth,
+  genValidWidth,
+  textArg,
+  nintArg,
+
+  -- * Construction
   mkTermUInt,
   mkTermNInt,
   mkTermBytes,
@@ -24,20 +34,18 @@ module Codec.CBOR.Cuddle.CBOR.Term (
   mkTermArray,
   mkTermMap,
   mkTermTag,
+
+  -- * Encoding-agnostic unwrapping
   unwrapBytes,
   unwrapString,
   unwrapArray,
   unwrapMap,
-  decodeCBORTerm,
+
+  -- * Encoding
   encodeCBORTerm,
 
-  -- * Argument width
-  ArgWidth (..),
-  isValidWidth,
-  optimalWidth,
-  genValidWidth,
-  textArg,
-  nintArg,
+  -- * Decoding
+  decodeCBORTerm,
 
   -- * Utils
   bytesToUnsigned,
