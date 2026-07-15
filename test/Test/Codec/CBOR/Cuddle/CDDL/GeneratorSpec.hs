@@ -5,6 +5,11 @@
 module Test.Codec.CBOR.Cuddle.CDDL.GeneratorSpec (spec) where
 
 import Codec.CBOR.Cuddle.CBOR.Gen (GenPhase, generateFromName)
+import Codec.CBOR.Cuddle.CBOR.Term (
+  CBORTerm (..),
+  decodeCBORTerm,
+  encodeCBORTerm,
+ )
 import Codec.CBOR.Cuddle.CDDL (Name)
 import Codec.CBOR.Cuddle.CDDL.CTree (CTreeRoot (..))
 import Codec.CBOR.Cuddle.CDDL.Custom.Generator (GenConfig (..), runCBORGen)
@@ -13,7 +18,6 @@ import Codec.CBOR.Cuddle.Huddle (Huddle, toCDDL)
 import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..), mapCDDLDropExt)
 import Codec.CBOR.Pretty (prettyHexEnc)
 import Codec.CBOR.Read (deserialiseFromBytes)
-import Codec.CBOR.Term (Term (..), decodeTerm, encodeTerm)
 import Codec.CBOR.Write (toStrictByteString)
 import Data.ByteString.Lazy qualified as LBS
 import Data.Text qualified as T
@@ -39,7 +43,7 @@ import Test.Hspec.QuickCheck (prop)
 import Test.QuickCheck (Gen, Property, Testable (..), classify, counterexample)
 import Text.Pretty.Simple (pShow)
 
-generateCDDL :: CTreeRoot GenPhase -> Gen Term
+generateCDDL :: CTreeRoot GenPhase -> Gen CBORTerm
 generateCDDL cddl = runAntiGen . runCBORGen cfg $ generateFromName "root"
   where
     cfg =
@@ -64,12 +68,12 @@ expectZapInvalidates cddl name = property $ do
         }
   res@ZapResult {zrValue} <- zapAntiGenResult 1 . runCBORGen cfg $ generateFromName name
   let
-    bs = toStrictByteString $ encodeTerm zrValue
+    bs = toStrictByteString $ encodeCBORTerm zrValue
     validationRes = validateCBOR_ bs name $ mapIndex cddl
     failMsg =
       unlines
-        [ case deserialiseFromBytes decodeTerm (LBS.fromStrict bs) of
-            Right (_, t) -> prettyHexEnc (encodeTerm t)
+        [ case deserialiseFromBytes decodeCBORTerm (LBS.fromStrict bs) of
+            Right (_, t) -> prettyHexEnc (encodeCBORTerm t)
             Left _ -> mempty
         , mempty
         , T.unpack $ prettyZapResult res
@@ -122,30 +126,30 @@ spec = do
         res <- generateCDDL $ mapIndex customGenExampleCddl
         pure $
           res `shouldSatisfy` \case
-            TInt i -> i > 3 && i < 7
+            TermUInt i -> i > 3 && i < 7
             _ -> False
       refTermExampleCddl <- tryResolveHuddle refTermExample
       prop "Custom generator works when called via reference" $ do
         res <- generateCDDL $ mapIndex refTermExampleCddl
         pure $
           res `shouldSatisfy` \case
-            TList [TInt 0, TInt i] -> i > 3 && i < 7
-            TListI [TInt 0, TInt i] -> i > 3 && i < 7
+            TermArray [TermUInt 0, TermUInt i] -> i > 3 && i < 7
+            TermArrayI [TermUInt 0, TermUInt i] -> i > 3 && i < 7
             _ -> False
       bytesExampleCddl <- tryResolveHuddle bytesExample
       prop "Bytes are generated correctly" $ do
         res <- generateCDDL $ mapIndex bytesExampleCddl
         pure $
           res `shouldSatisfy` \case
-            TBytes "\x01\x02\x03\xff" -> True
-            TBytesI "\x01\x02\x03\xff" -> True
+            TermBytes "\x01\x02\x03\xff" -> True
+            TermBytesI chunks -> mconcat chunks == "\x01\x02\x03\xff"
             _ -> False
       tagRangeExampleCddl <- tryResolveHuddle tagRangeExample
       prop "tagRange generator covers edges and middle" $ do
         res <- generateCDDL $ mapIndex tagRangeExampleCddl
         let tags = case res of
-              TList xs -> [t | TTagged t _ <- xs]
-              TListI xs -> [t | TTagged t _ <- xs]
+              TermArray xs -> [t | TermTag t _ <- xs]
+              TermArrayI xs -> [t | TermTag t _ <- xs]
               _ -> []
             classifyTag t p =
               classify (t == 1280 || t == 1400) "edge tag (1280 or 1400)" $
@@ -166,21 +170,21 @@ spec = do
       ZapResult {zrValue} <-
         zapAntiGenResult 1 . runCBORGen cfg $ generateFromName "root"
       let
-        isBytes TBytes {} = True
-        isBytes TBytesI {} = True
+        isBytes TermBytes {} = True
+        isBytes TermBytesI {} = True
         isBytes _ = False
         tagOmitted = case zrValue of
-          TTagged {} -> False
+          TermTag {} -> False
           _ -> True
         tagChanged = case zrValue of
-          TTagged t _ -> t /= 42
+          TermTag t _ -> t /= 42
           _ -> False
         innerValueZapped = case zrValue of
-          TTagged 42 inner -> not (isBytes inner)
+          TermTag 42 inner -> not (isBytes inner)
           _ -> False
       pure
         . classify tagOmitted "tag omitted"
         . classify tagChanged "tag changed"
         . classify innerValueZapped "inner value zapped"
         $ expectInvalid
-          (validateCBOR_ (toStrictByteString $ encodeTerm zrValue) "root" $ mapIndex taggedBytesCddl)
+          (validateCBOR_ (toStrictByteString $ encodeCBORTerm zrValue) "root" $ mapIndex taggedBytesCddl)

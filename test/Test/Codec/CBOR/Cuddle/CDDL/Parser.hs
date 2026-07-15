@@ -2,6 +2,7 @@
 
 module Test.Codec.CBOR.Cuddle.CDDL.Parser where
 
+import Codec.CBOR.Cuddle.CBOR.NInt (toNInt)
 import Codec.CBOR.Cuddle.CDDL
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
 import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))
@@ -9,6 +10,7 @@ import Codec.CBOR.Cuddle.Parser
 import Codec.CBOR.Cuddle.Parser.Lexer (Parser)
 import Codec.CBOR.Cuddle.Pretty (PrettyStage)
 import Data.List.NonEmpty (NonEmpty (..))
+import Data.Maybe (fromJust)
 import Data.Text qualified as T
 import Data.TreeDiff (ToExpr (..), ansiWlBgEditExprCompact, exprDiff)
 import Prettyprinter (Pretty, defaultLayoutOptions, layoutPretty, pretty)
@@ -79,7 +81,7 @@ valueSpec = describe "pValue" $ do
   it "Parses integer" $
     parse pValue "" "123" `shouldParse` value (VUInt 123)
   it "Parses negative integer" $
-    parse pValue "" "-123" `shouldParse` value (VNInt 123)
+    parse pValue "" "-123" `shouldParse` value (VNInt (fromJust (toNInt (-123))))
   it "Parses float" $
     parse pValue "" "3.1415" `shouldParse` value (VFloat64 3.1415)
   it "Parses text" $

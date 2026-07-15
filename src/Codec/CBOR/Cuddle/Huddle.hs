@@ -109,6 +109,7 @@ module Codec.CBOR.Cuddle.Huddle (
 )
 where
 
+import Codec.CBOR.Cuddle.CBOR.NInt (NInt, toNInt)
 import Codec.CBOR.Cuddle.CDDL (
   CDDL,
   GRef (..),
@@ -442,7 +443,7 @@ data LiteralVariant where
   -- | We store both int and nint as a Word64, since the sign is indicated in
   -- the type.
   LInt :: Word64 -> LiteralVariant
-  LNInt :: Word64 -> LiteralVariant
+  LNInt :: NInt -> LiteralVariant
   LBignum :: Integer -> LiteralVariant
   LText :: T.Text -> LiteralVariant
   LFloat :: Float -> LiteralVariant
@@ -467,8 +468,8 @@ bool x = Literal (LBool x) mempty
 
 inferInteger :: Integer -> Literal
 inferInteger i
-  | i >= 0 && i < fromIntegral (maxBound @Word64) = Literal (LInt (fromInteger i)) mempty
-  | i < 0 && (-i) < fromIntegral (maxBound @Word64) = Literal (LNInt (fromInteger (-i))) mempty
+  | i >= 0 && i <= fromIntegral (maxBound @Word64) = Literal (LInt (fromInteger i)) mempty
+  | Just i' <- toNInt i = Literal (LNInt i') mempty
   | otherwise = Literal (LBignum i) mempty
 
 --------------------------------------------------------------------------------

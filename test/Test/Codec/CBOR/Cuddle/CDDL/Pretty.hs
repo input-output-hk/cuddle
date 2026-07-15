@@ -7,6 +7,7 @@ module Test.Codec.CBOR.Cuddle.CDDL.Pretty (
   roundtripSpec,
 ) where
 
+import Codec.CBOR.Cuddle.CBOR.NInt (toNInt)
 import Codec.CBOR.Cuddle.CDDL (
   Assign (..),
   CDDL,
@@ -30,6 +31,7 @@ import Codec.CBOR.Cuddle.Parser (pCDDL)
 import Codec.CBOR.Cuddle.Pretty (PrettyStage, XRule (..), renderCDDL)
 import Data.Default.Class (Default (..))
 import Data.List.NonEmpty (NonEmpty (..))
+import Data.Maybe (fromJust)
 import Data.Text qualified as T
 import Data.Text.IO qualified as T
 import Data.TreeDiff (ToExpr (..), prettyExpr)
@@ -138,6 +140,11 @@ unitSpec = describe "HUnit" $ do
   describe "CDDL" $ do
     describe "Name" $ do
       it "names" $ Name "a" `prettyPrintsTo` "a"
+    describe "Value" $ do
+      it "negative integer literal" $
+        value (VNInt (fromJust (toNInt (-123)))) `prettyPrintsTo` "-123"
+      it "float16 literal" $
+        value (VFloat16 1.5) `prettyPrintsTo` "1.5"
     describe "Type0" $ do
       it "name" $ Type0 @PrettyStage (t1Name :| []) `prettyPrintsTo` "a"
     describe "Type1" $ do

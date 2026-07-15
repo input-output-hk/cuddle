@@ -40,6 +40,8 @@ library
   exposed-modules:
     Codec.CBOR.Cuddle.CBOR.Canonical
     Codec.CBOR.Cuddle.CBOR.Gen
+    Codec.CBOR.Cuddle.CBOR.NInt
+    Codec.CBOR.Cuddle.CBOR.Term
     Codec.CBOR.Cuddle.CBOR.Validator
     Codec.CBOR.Cuddle.CBOR.Validator.Trace
     Codec.CBOR.Cuddle.CDDL
@@ -54,6 +56,7 @@ library
     Codec.CBOR.Cuddle.Comments
     Codec.CBOR.Cuddle.Huddle
     Codec.CBOR.Cuddle.IndexMappable
+    Codec.CBOR.Cuddle.Orphans
     Codec.CBOR.Cuddle.Parser
     Codec.CBOR.Cuddle.Parser.Lexer
     Codec.CBOR.Cuddle.Pretty
@@ -130,6 +133,8 @@ test-suite cuddle-test
   other-modules:
     Paths_cuddle
     Test.Codec.CBOR.Cuddle.CBOR.Canonical
+    Test.Codec.CBOR.Cuddle.CBOR.NInt
+    Test.Codec.CBOR.Cuddle.CBOR.Term
     Test.Codec.CBOR.Cuddle.CDDL.Examples
     Test.Codec.CBOR.Cuddle.CDDL.Examples.Huddle
     Test.Codec.CBOR.Cuddle.CDDL.Gen
@@ -157,6 +162,7 @@ test-suite cuddle-test
     data-default-class,
     filepath,
     generic-random,
+    half,
     hspec >=2.11,
     hspec-core,
     hspec-golden,

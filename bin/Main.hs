@@ -7,6 +7,7 @@
 module Main (main) where
 
 import Codec.CBOR.Cuddle.CBOR.Gen (generateFromName)
+import Codec.CBOR.Cuddle.CBOR.Term (CBORTerm, decodeCBORTerm, encodeCBORTerm)
 import Codec.CBOR.Cuddle.CBOR.Validator
 import Codec.CBOR.Cuddle.CBOR.Validator.Trace (
   Evidenced (..),
@@ -27,7 +28,6 @@ import Codec.CBOR.Cuddle.Pretty (PrettyStage, renderCDDL)
 import Codec.CBOR.FlatTerm (toFlatTerm)
 import Codec.CBOR.Pretty (prettyHexEnc)
 import Codec.CBOR.Read (deserialiseFromBytes)
-import Codec.CBOR.Term (Term, decodeTerm, encodeTerm)
 import Codec.CBOR.Write (toStrictByteString)
 import Control.Monad (unless)
 import Data.ByteString (ByteString)
@@ -342,13 +342,13 @@ tryParseFromFile cddlFile =
       exitFailure
     Right res -> pure res
 
-formatTerm :: Term -> CBOROutputFormat -> ByteString
+formatTerm :: CBORTerm -> CBOROutputFormat -> ByteString
 formatTerm term = \case
   AsTerm -> encodeUtf8 . T.pack $ show term
-  AsFlatTerm -> encodeUtf8 . T.pack . show . toFlatTerm $ encodeTerm term
-  AsBinary -> toStrictByteString $ encodeTerm term
-  AsHex -> Base16.encode . toStrictByteString $ encodeTerm term
-  AsDiagnostic -> encodeUtf8 . T.pack . prettyHexEnc $ encodeTerm term
+  AsFlatTerm -> encodeUtf8 . T.pack . show . toFlatTerm $ encodeCBORTerm term
+  AsBinary -> toStrictByteString $ encodeCBORTerm term
+  AsHex -> Base16.encode . toStrictByteString $ encodeCBORTerm term
+  AsDiagnostic -> encodeUtf8 . T.pack . prettyHexEnc $ encodeCBORTerm term
 
 runGen :: Int -> Int -> Gen a -> a
 runGen seed size gen = unGen gen (mkQCGen seed) size
@@ -422,7 +422,7 @@ run = \case
         runValidateCBOR cbor (Name vcItemName) (mapIndex mt) vcTraceOpts
   FormatCBOR FormatCBOROpts {..} cborFile -> do
     contents <- tryReadCBOR dcInputFormat cborFile
-    term <- case deserialiseFromBytes decodeTerm (LBS.fromStrict contents) of
+    term <- case deserialiseFromBytes decodeCBORTerm (LBS.fromStrict contents) of
       Right (leftover, term) -> do
         unless (LBS.null leftover) . putStrLnErr $
           "Warning: " <> show (LBS.length leftover) <> " leftover bytes after decoding"

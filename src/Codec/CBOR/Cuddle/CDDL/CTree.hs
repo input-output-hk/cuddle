@@ -5,6 +5,10 @@
 
 module Codec.CBOR.Cuddle.CDDL.CTree (
   XXCTree,
+  Range (..),
+  exclusive,
+  inclusive,
+  isInRange,
   CTree (..),
   traverseCTree,
   foldCTree,
@@ -13,10 +17,18 @@ module Codec.CBOR.Cuddle.CDDL.CTree (
   PTerm (..),
   uintMax,
   nintMin,
+  unIntegerLiteral,
+  unDoubleLiteral,
 ) where
 
-import Codec.CBOR.Cuddle.CBOR.Canonical (nintMin, uintMax)
-import Codec.CBOR.Cuddle.CDDL (Name, OccurrenceIndicator, RangeBound, Value)
+import Codec.CBOR.Cuddle.CBOR.NInt (fromNInt, nintMin, uintMax)
+import Codec.CBOR.Cuddle.CDDL (
+  Name,
+  OccurrenceIndicator,
+  RangeBound (..),
+  Value (..),
+  ValueVariant (..),
+ )
 import Codec.CBOR.Cuddle.CDDL.CtlOp
 import Control.Monad.Identity (Identity (..))
 import Data.Hashable (Hashable)
@@ -39,6 +51,27 @@ import Test.QuickCheck (Arbitrary (..))
 
 data family XXCTree i
 
+data Range a = Range
+  { rangeFrom :: a
+  , rangeTo :: a
+  , rangeBound :: RangeBound
+  }
+  deriving (Eq, Show, Generic)
+
+instance Hashable a => Hashable (Range a)
+
+isInRange :: Ord a => a -> Range a -> Bool
+isInRange x (Range from to bound) =
+  x >= from && case bound of
+    ClOpen -> x < to
+    Closed -> x <= to
+
+exclusive :: a -> a -> Range a
+exclusive from to = Range from to ClOpen
+
+inclusive :: a -> a -> Range a
+inclusive from to = Range from to Closed
+
 data CTree i
   = Literal Value
   | Postlude PTerm
@@ -48,7 +81,7 @@ data CTree i
   | Group [CTree i]
   | KV {key :: CTree i, value :: CTree i, cut :: Bool}
   | Occur {item :: CTree i, occurs :: OccurrenceIndicator}
-  | Range {from :: CTree i, to :: CTree i, inclusive :: RangeBound}
+  | CRange (Range (CTree i))
   | Control {op :: CtlOp, target :: CTree i, controller :: CTree i}
   | Enum (CTree i)
   | Unwrap (CTree i)
@@ -76,10 +109,10 @@ traverseCTree _ atNode (KV k v c) = do
   v' <- atNode v
   pure $ KV k' v' c
 traverseCTree _ atNode (Occur i occ) = flip Occur occ <$> atNode i
-traverseCTree _ atNode (Range f t inc) = do
+traverseCTree _ atNode (CRange (Range f t inc)) = do
   f' <- atNode f
   t' <- atNode t
-  pure $ Range f' t' inc
+  pure $ CRange $ Range f' t' inc
 traverseCTree _ atNode (Control o t c) = do
   t' <- atNode t
   c' <- atNode c
@@ -156,3 +189,18 @@ instance Arbitrary PTerm where
   arbitrary = genericArbitraryU
 
 instance Hashable PTerm
+
+unIntegerLiteral :: CTree i -> Maybe Integer
+unIntegerLiteral (Literal (Value x _)) = case x of
+  VUInt v -> Just $ toInteger v
+  VNInt v -> Just $ fromNInt v
+  _ -> Nothing
+unIntegerLiteral _ = Nothing
+
+unDoubleLiteral :: CTree i -> Maybe Double
+unDoubleLiteral (Literal (Value x _)) = case x of
+  VFloat16 v -> Just $ realToFrac v
+  VFloat32 v -> Just $ realToFrac v
+  VFloat64 v -> Just v
+  _ -> Nothing
+unDoubleLiteral _ = Nothing

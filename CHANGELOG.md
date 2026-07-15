@@ -1,7 +1,18 @@
 # Changelog for `cuddle`
 
-## 1.8.1.0
+## 1.9.0.0
 
+* Change `ListValidationLeftoverTerms` and `MapValidationLeftoverKVs` to hold `CBORTerm` instead of `Term`
+* Add `Codec.CBOR.Cuddle.CBOR.Term`
+* Add `Codec.CBOR.Cuddle.CBOR.NInt`
+* Change `generateFromName` and `generateFromGRef` to return `CBORTerm` instead of `Term`
+* Change `RuleTerm` to use `CBORTerm` instead of `Term`
+* Add `Range`, `exclusive`, `inclusive`, `isInRange`, `unIntegerLiteral`, `unDoubleLiteral`
+* Rename `Range` constructor of `CTree` to `CRange`, now takes a `Range` argument
+* Change `VNInt` to have an `NInt` field instead of `Word64`
+* Change `VFloat16` to have a `Half` field instead of `Float`
+* Change `LNInt` to have a `NInt` field instead of `Word64`
+* Add `Codec.CBOR.Cuddle.Orphans`
 * Fix map generator so that it does not generate duplicate keys
 * Add `MapValidationDuplicateKeys`; validator now checks for duplicate elements
 * Add `Codec.CBOR.Cuddle.CBOR.Canonical`

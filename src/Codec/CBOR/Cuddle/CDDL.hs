@@ -49,8 +49,10 @@ module Codec.CBOR.Cuddle.CDDL (
   XXType2,
 ) where
 
+import Codec.CBOR.Cuddle.CBOR.NInt (NInt)
 import Codec.CBOR.Cuddle.CDDL.CtlOp (CtlOp)
 import Codec.CBOR.Cuddle.Comments (CollectComments (..), Comment, HasComment (..))
+import Codec.CBOR.Cuddle.Orphans ()
 import Data.ByteString qualified as B
 import Data.Default.Class (Default (..))
 import Data.Function (on)
@@ -63,6 +65,7 @@ import Data.Text qualified as T
 import Data.Word (Word64, Word8)
 import GHC.Base (Constraint, Type)
 import GHC.Generics (Generic)
+import Numeric.Half (Half)
 import Optics.Core ((%), (%~), (&))
 
 data family XXTopLevel i
@@ -559,9 +562,9 @@ value x = Value x mempty
 
 data ValueVariant
   = VUInt Word64
-  | VNInt Word64
+  | VNInt NInt
   | VBignum Integer
-  | VFloat16 Float
+  | VFloat16 Half
   | VFloat32 Float
   | VFloat64 Double
   | VText T.Text
