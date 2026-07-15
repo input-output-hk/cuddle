@@ -117,6 +117,8 @@ shrinkWidth v w = [w' | w' <- [InlineArg ..], w' < w, isValidWidth v w']
 textArg :: T.Text -> Word64
 textArg = fromIntegral . lengthWord8
 
+-- | The wire argument of the major type 1 head encoding this value:
+-- @-1 - v@ (RFC 8949 §3.1).
 nintArg :: NInt -> Word64
 nintArg = toWord64Raw
 
@@ -374,7 +376,7 @@ decodeCBORTerm = do
     TypeUInt -> decodeUInt
     TypeUInt64 -> decodeUInt
     -- 'decodeNegWord64' yields the argument @n@ of the wire encoding, which
-    -- denotes the value @-1 - n@, i.e. @nintMin + complement n@.
+    -- denotes the value @-1 - n@: exactly the raw word 'NInt' stores.
     TypeNInt -> decodeNInt
     TypeNInt64 -> decodeNInt
     -- 'peekTokenType' classifies tags 2 and 3 (bignums) as 'TypeInteger'
@@ -475,10 +477,12 @@ encodeRawDataItem major width arg
       | InlineArg <- width = fromIntegral arg
       | otherwise = 0x00
 
--- | Encode a term back to CBOR. Integer, length and tag arguments are
--- emitted with minimal width, so @encodeCBORTerm@ after 'decodeCBORTerm'
--- reproduces the input bytes only if the input used minimal-width
--- arguments; the definite\/indefinite structure is always preserved.
+-- | Encode a term back to CBOR. Every argument is emitted at the width
+-- recorded in the term (an 'error' if the argument does not fit it), so
+-- @encodeCBORTerm@ after 'decodeCBORTerm' reproduces the input bytes
+-- exactly, with one exception: a float16 NaN with a non-canonical payload
+-- may re-encode differently, since cborg only exposes halves as a widened
+-- 'Float' (see 'decodeCBORTerm').
 encodeCBORTerm :: CBORTerm -> Encoding
 encodeCBORTerm term = case term of
   TermUInt' w v -> encodeRawDataItem M0 w v
