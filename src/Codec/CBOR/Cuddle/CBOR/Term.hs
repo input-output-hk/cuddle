@@ -98,7 +98,7 @@ isValidWidth i = \case
   OneByteArg -> i <= 0xff
   TwoByteArg -> i <= 0xff_ff
   FourByteArg -> i <= 0xff_ff_ff_ff
-  EightByteArg -> i <= 0xff_ff_ff_ff_ff_ff_ff_ff
+  EightByteArg -> True
 
 optimalWidth :: Word64 -> ArgWidth
 optimalWidth i
