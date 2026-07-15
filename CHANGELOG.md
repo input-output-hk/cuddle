@@ -1,5 +1,9 @@
 # Changelog for `cuddle`
 
+## 1.8.1.1
+
+*
+
 ## 1.8.1.0
 
 * Fix map generator so that it does not generate duplicate keys
