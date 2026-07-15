@@ -36,6 +36,7 @@ module Codec.CBOR.Cuddle.CBOR.Term (
   isValidWidth,
   optimalWidth,
   genValidWidth,
+  textArg,
 
   -- * NInt
   NInt,
@@ -98,7 +99,7 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
 import Data.Text.Lazy qualified as LT
-import Data.Text.Lazy.Encoding qualified as LTE
+import Data.Text.Unsafe (lengthWord8)
 import Data.Word (Word64, Word8)
 import GHC.Generics (Generic)
 import Numeric.Half (Half, fromHalf, toHalf)
@@ -177,10 +178,7 @@ nintArg (NInt n) = complement n
 -- | The length argument of a text string head counts UTF-8 bytes, not
 -- characters.
 textArg :: T.Text -> Word64
-textArg = fromIntegral . BS.length . TE.encodeUtf8
-
-lazyTextArg :: LT.Text -> Word64
-lazyTextArg = fromIntegral . LBS.length . LTE.encodeUtf8
+textArg = fromIntegral . lengthWord8
 
 data CBORTerm
   = -- | Major type 0
@@ -276,7 +274,7 @@ mkTermString :: T.Text -> CBORTerm
 mkTermString t = TermString' (optimalWidth $ textArg t) t
 
 mkTermStringI :: [LT.Text] -> CBORTerm
-mkTermStringI ts = TermStringI' $ (\t -> (optimalWidth $ lazyTextArg t, t)) <$> ts
+mkTermStringI ts = TermStringI' $ (\t -> (optimalWidth . textArg $ LT.toStrict t, t)) <$> ts
 
 mkTermArray :: [CBORTerm] -> CBORTerm
 mkTermArray es = TermArray' (optimalWidth . fromIntegral $ length es) es
@@ -326,7 +324,7 @@ instance Arbitrary CBORTerm where
           , do
               tss <- listOf $ LT.pack <$> arbitrary
               tsw <- forM tss $ \t -> do
-                w <- genValidWidth $ lazyTextArg t
+                w <- genValidWidth . textArg $ LT.toStrict t
                 pure (w, t)
               pure $ TermStringI' tsw
           , TermSimple <$> arbitrary
@@ -404,7 +402,7 @@ instance Arbitrary CBORTerm where
         [(w', c) | w' <- shrinkWidth (fromIntegral $ LBS.length c) w]
           <> [(w, LBS.pack c') | c' <- shrink (LBS.unpack c)]
       shrinkStringChunk (w, c) =
-        [(w', c) | w' <- shrinkWidth (lazyTextArg c) w]
+        [(w', c) | w' <- shrinkWidth (textArg $ LT.toStrict c) w]
           <> [(w, LT.pack c') | c' <- shrink (LT.unpack c)]
 
 widthFromOffset :: ByteOffset -> ArgWidth

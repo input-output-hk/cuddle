@@ -31,6 +31,7 @@ import Codec.CBOR.Cuddle.CBOR.Term (
   genValidWidth,
   nintArg,
   optimalWidth,
+  textArg,
   toNInt,
   unsignedToBytes,
  )
@@ -76,7 +77,6 @@ import Data.Maybe (fromJust, fromMaybe)
 import Data.Ord (Down (..))
 import Data.Text (Text)
 import Data.Text qualified as T
-import Data.Text.Encoding (encodeUtf8)
 import Data.Text.Internal.Encoding.Utf8 (utf8Length)
 import Data.Text.Lazy qualified as LT
 import Data.Text.Lazy.Builder (toLazyText)
@@ -163,14 +163,14 @@ twiddleNInt v = do
 
 genTermString :: T.Text -> CBORGen CBORTerm
 genTermString t = do
-  width <- genWidth . fromIntegral . BS.length $ encodeUtf8 t
+  width <- genWidth $ textArg t
   pure $ TermString' width t
 
 genTermStringI :: LT.Text -> CBORGen CBORTerm
 genTermStringI t = do
   ts <- fmap (fmap LT.pack) . genSublists $ LT.unpack t
   tw <- forM ts $ \v -> do
-    width <- genWidth . fromIntegral . BS.length . encodeUtf8 $ LT.toStrict v
+    width <- genWidth . textArg $ LT.toStrict v
     pure (width, v)
   pure $ TermStringI' tw
 
