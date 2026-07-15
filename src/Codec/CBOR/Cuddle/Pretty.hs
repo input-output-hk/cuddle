@@ -19,7 +19,7 @@ module Codec.CBOR.Cuddle.Pretty (
   renderCDDL,
 ) where
 
-import Codec.CBOR.Cuddle.CBOR.Term (NInt, fromNInt)
+import Codec.CBOR.Cuddle.CBOR.NInt (NInt, fromNInt)
 import Codec.CBOR.Cuddle.CDDL
 import Codec.CBOR.Cuddle.CDDL.CTree (CTree, PTerm (..), Range (..), XXCTree)
 import Codec.CBOR.Cuddle.CDDL.CTree qualified as CT

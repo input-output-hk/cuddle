@@ -49,7 +49,7 @@ module Codec.CBOR.Cuddle.CDDL (
   XXType2,
 ) where
 
-import Codec.CBOR.Cuddle.CBOR.Term (NInt)
+import Codec.CBOR.Cuddle.CBOR.NInt (NInt)
 import Codec.CBOR.Cuddle.CDDL.CtlOp (CtlOp)
 import Codec.CBOR.Cuddle.Comments (CollectComments (..), Comment, HasComment (..))
 import Codec.CBOR.Cuddle.Orphans ()

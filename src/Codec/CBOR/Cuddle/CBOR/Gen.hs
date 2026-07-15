@@ -23,16 +23,15 @@ module Codec.CBOR.Cuddle.CBOR.Gen (
 #if MIN_VERSION_random(1,3,0)
 #endif
 import Codec.CBOR.Cuddle.CBOR.Canonical (toCanonical)
+import Codec.CBOR.Cuddle.CBOR.NInt (NInt, toNInt)
 import Codec.CBOR.Cuddle.CBOR.Term (
   ArgWidth,
   CBORTerm (..),
-  NInt,
   encodeCBORTerm,
   genValidWidth,
   nintArg,
   optimalWidth,
   textArg,
-  toNInt,
   unsignedToBytes,
  )
 import Codec.CBOR.Cuddle.CDDL (

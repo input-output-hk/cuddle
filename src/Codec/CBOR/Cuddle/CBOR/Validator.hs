@@ -12,12 +12,11 @@ module Codec.CBOR.Cuddle.CBOR.Validator (
 ) where
 
 import Codec.CBOR.Cuddle.CBOR.Canonical (CanonicalTerm, toCanonical)
+import Codec.CBOR.Cuddle.CBOR.NInt (NInt, fromNInt)
 import Codec.CBOR.Cuddle.CBOR.Term (
   CBORTerm (..),
-  NInt,
   bytesToUnsigned,
   decodeCBORTerm,
-  fromNInt,
   mkTermArray,
   mkTermBytes,
   mkTermMap,

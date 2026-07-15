@@ -6,7 +6,7 @@
 
 module Codec.CBOR.Cuddle.Parser where
 
-import Codec.CBOR.Cuddle.CBOR.Term (toNInt)
+import Codec.CBOR.Cuddle.CBOR.NInt (toNInt)
 import Codec.CBOR.Cuddle.CDDL
 import Codec.CBOR.Cuddle.CDDL.CtlOp (CtlOp)
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as COp

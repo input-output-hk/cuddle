@@ -3,7 +3,7 @@
 
 module Test.Codec.CBOR.Cuddle.CDDL.TreeDiff () where
 
-import Codec.CBOR.Cuddle.CBOR.Term (NInt, fromNInt)
+import Codec.CBOR.Cuddle.CBOR.NInt (NInt, fromNInt)
 import Codec.CBOR.Cuddle.CDDL (
   Assign,
   CDDL,

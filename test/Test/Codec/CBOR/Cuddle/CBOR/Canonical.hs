@@ -6,9 +6,9 @@ import Codec.CBOR.Cuddle.CBOR.Canonical (
   CanonicalTerm (..),
   toCanonical,
  )
+import Codec.CBOR.Cuddle.CBOR.NInt (fromNInt, nintMin, uintMax)
 import Codec.CBOR.Cuddle.CBOR.Term (
   CBORTerm (..),
-  fromNInt,
   mkTermArray,
   mkTermBytes,
   mkTermBytesI,
@@ -18,8 +18,6 @@ import Codec.CBOR.Cuddle.CBOR.Term (
   mkTermStringI,
   mkTermTag,
   mkTermUInt,
-  nintMin,
-  uintMax,
  )
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as BSL

@@ -37,21 +37,15 @@ module Codec.CBOR.Cuddle.CBOR.Term (
   optimalWidth,
   genValidWidth,
   textArg,
-
-  -- * NInt
-  NInt,
-  toNInt,
-  fromNInt,
   nintArg,
 
   -- * Utils
   bytesToUnsigned,
   unsignedToBytes,
-  uintMax,
-  nintMin,
 ) where
 
-import Codec.CBOR.Cuddle.Comments (CollectComments)
+import Codec.CBOR.Cuddle.CBOR.NInt (NInt, toWord64Raw)
+import Codec.CBOR.Cuddle.CBOR.NInt qualified as NInt
 import Codec.CBOR.Decoding (
   ByteOffset,
   Decoder,
@@ -88,12 +82,10 @@ import Codec.CBOR.Encoding (
   encodeStringIndef,
  )
 import Control.Monad (forM, replicateM)
-import Data.Bits (Bits (..), complement)
+import Data.Bits (Bits (..))
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
-import Data.Hashable (Hashable)
-import Data.Maybe (mapMaybe)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
@@ -116,29 +108,6 @@ import Test.QuickCheck (
  )
 import Test.QuickCheck.GenT (MonadGen (liftGen))
 import Prelude hiding (decodeFloat, encodeFloat)
-
--- | A negative integer in the range @[-2^64, -1]@: exactly the values
--- representable by CBOR major type 1 (RFC 8949 §3.1). The range is wider
--- than 'Int64' on the negative side, so it can't be stored as a plain
--- signed integer.
-newtype NInt = NInt Word64
-  deriving (Eq, Ord, Bounded, Hashable, CollectComments)
-
-instance Show NInt where
-  showsPrec p x =
-    showParen (p > 10) $ showString "toNInt " . showsPrec 11 (fromNInt x)
-
-instance Arbitrary NInt where
-  arbitrary = NInt <$> arbitrary
-  shrink = mapMaybe toNInt . shrink . fromNInt
-
-toNInt :: Integer -> Maybe NInt
-toNInt x
-  | x >= nintMin && x < 0 = Just . NInt . fromInteger $ x - nintMin
-  | otherwise = Nothing
-
-fromNInt :: NInt -> Integer
-fromNInt (NInt n) = nintMin + toInteger n
 
 data ArgWidth
   = InlineArg
@@ -168,16 +137,13 @@ optimalWidth i
 shrinkWidth :: Word64 -> ArgWidth -> [ArgWidth]
 shrinkWidth v w = [w' | w' <- [InlineArg ..], w' < w, isValidWidth v w']
 
--- | The wire argument of a major type 1 head encoding the value @v@ is
--- @-1 - v@ (RFC 8949 §3.1), which is the complement of the offset stored
--- in 'NInt'.
-nintArg :: NInt -> Word64
-nintArg (NInt n) = complement n
-
 -- | The length argument of a text string head counts UTF-8 bytes, not
 -- characters.
 textArg :: T.Text -> Word64
 textArg = fromIntegral . lengthWord8
+
+nintArg :: NInt -> Word64
+nintArg = toWord64Raw
 
 data CBORTerm
   = -- | Major type 0
@@ -485,7 +451,7 @@ decodeCBORTerm = do
       pure $ TermUInt' w v
     decodeNInt = do
       (w, v) <- decodeWithWidth decodeNegWord64
-      pure . TermNInt' w . NInt $ complement v
+      pure . TermNInt' w . NInt.fromWord64Raw $ v
     decodeTagged = do
       (w, tag) <- decodeWithWidth decodeTag64
       TermTag' w tag <$> decodeCBORTerm
@@ -597,11 +563,3 @@ unwrapMap :: CBORTerm -> Maybe [(CBORTerm, CBORTerm)]
 unwrapMap (TermMap' _ kvs) = Just kvs
 unwrapMap (TermMapI kvs) = Just kvs
 unwrapMap _ = Nothing
-
--- Bounds
-
-uintMax :: Integer
-uintMax = 2 ^ (64 :: Int) - 1
-
-nintMin :: Integer
-nintMin = -(2 ^ (64 :: Int))

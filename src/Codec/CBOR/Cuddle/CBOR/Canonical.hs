@@ -5,13 +5,10 @@ module Codec.CBOR.Cuddle.CBOR.Canonical (
   toCanonical,
 ) where
 
+import Codec.CBOR.Cuddle.CBOR.NInt (NInt, fromNInt, toNInt, uintMax)
 import Codec.CBOR.Cuddle.CBOR.Term (
   CBORTerm (..),
-  NInt,
   bytesToUnsigned,
-  fromNInt,
-  toNInt,
-  uintMax,
   unsignedToBytes,
  )
 import Data.Bifunctor (bimap)

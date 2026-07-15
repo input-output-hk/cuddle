@@ -21,7 +21,7 @@ module Codec.CBOR.Cuddle.CDDL.CTree (
   unDoubleLiteral,
 ) where
 
-import Codec.CBOR.Cuddle.CBOR.Term (fromNInt, nintMin, uintMax)
+import Codec.CBOR.Cuddle.CBOR.NInt (fromNInt, nintMin, uintMax)
 import Codec.CBOR.Cuddle.CDDL (
   Name,
   OccurrenceIndicator,

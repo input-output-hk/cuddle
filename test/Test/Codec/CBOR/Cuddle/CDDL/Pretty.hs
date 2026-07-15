@@ -7,7 +7,7 @@ module Test.Codec.CBOR.Cuddle.CDDL.Pretty (
   roundtripSpec,
 ) where
 
-import Codec.CBOR.Cuddle.CBOR.Term (toNInt)
+import Codec.CBOR.Cuddle.CBOR.NInt (toNInt)
 import Codec.CBOR.Cuddle.CDDL (
   Assign (..),
   CDDL,

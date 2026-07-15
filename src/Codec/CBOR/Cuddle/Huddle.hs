@@ -109,7 +109,7 @@ module Codec.CBOR.Cuddle.Huddle (
 )
 where
 
-import Codec.CBOR.Cuddle.CBOR.Term (NInt, toNInt)
+import Codec.CBOR.Cuddle.CBOR.NInt (NInt, toNInt)
 import Codec.CBOR.Cuddle.CDDL (
   CDDL,
   GRef (..),

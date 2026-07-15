@@ -2,7 +2,7 @@
 
 module Test.Codec.CBOR.Cuddle.CDDL.Parser where
 
-import Codec.CBOR.Cuddle.CBOR.Term (toNInt)
+import Codec.CBOR.Cuddle.CBOR.NInt (toNInt)
 import Codec.CBOR.Cuddle.CDDL
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
 import Codec.CBOR.Cuddle.IndexMappable (IndexMappable (..))

@@ -4,7 +4,7 @@
 
 * Change `ListValidationLeftoverTerms` and `MapValidationLeftoverKVs` to hold `CBORTerm` instead of `Term`
 * Add `Codec.CBOR.Cuddle.CBOR.Term`
-* Add `NInt`
+* Add `Codec.CBOR.Cuddle.CBOR.NInt`
 * Change `generateFromName` and `generateFromGRef` to return `CBORTerm` instead of `Term`
 * Change `RuleTerm` to use `CBORTerm` instead of `Term`
 * Add `Range`, `exclusive`, `inclusive`, `isInRange`, `unIntegerLiteral`, `unDoubleLiteral`

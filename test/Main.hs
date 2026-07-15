@@ -2,6 +2,7 @@ module Main (main) where
 
 import System.IO (BufferMode (..), hSetBuffering, hSetEncoding, stdout, utf8)
 import Test.Codec.CBOR.Cuddle.CBOR.Canonical qualified as Canonical
+import Test.Codec.CBOR.Cuddle.CBOR.NInt qualified as NInt
 import Test.Codec.CBOR.Cuddle.CBOR.Term qualified as Term
 import Test.Codec.CBOR.Cuddle.CDDL.Examples qualified as Examples
 import Test.Codec.CBOR.Cuddle.CDDL.GeneratorSpec qualified as Generator
@@ -27,6 +28,7 @@ main = do
   hspecWith hspecConfig $ do
     describe "Canonical" Canonical.spec
     describe "Term" Term.spec
+    describe "NInt" NInt.spec
     describe "Parser" parserSpec
     describe "Huddle" huddleSpec
     describe "Examples" Examples.spec

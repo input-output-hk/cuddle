@@ -1,18 +1,16 @@
 module Test.Codec.CBOR.Cuddle.CBOR.Term (spec) where
 
+import Codec.CBOR.Cuddle.CBOR.NInt (nintMin, toNInt)
 import Codec.CBOR.Cuddle.CBOR.Term (
   ArgWidth (..),
   CBORTerm (..),
   decodeCBORTerm,
   encodeCBORTerm,
-  fromNInt,
   isValidWidth,
   mkTermBytes,
   mkTermNInt,
   mkTermTag,
-  nintMin,
   optimalWidth,
-  toNInt,
  )
 import Codec.CBOR.Read (DeserialiseFailure, deserialiseFromBytes)
 import Codec.CBOR.Write (toLazyByteString)
@@ -39,24 +37,6 @@ encode = toLazyByteString . encodeCBORTerm
 
 spec :: Spec
 spec = do
-  describe "NInt" $ do
-    it "toNInt accepts exactly [-2^64, -1]" $ do
-      toNInt 0 `shouldBe` Nothing
-      toNInt 1 `shouldBe` Nothing
-      toNInt (nintMin - 1) `shouldBe` Nothing
-      toNInt nintMin `shouldNotBe` Nothing
-      toNInt (-1) `shouldNotBe` Nothing
-
-    prop "toNInt . fromNInt = Just" $ \n ->
-      toNInt (fromNInt n) === Just n
-
-    it "boundary values roundtrip" $ do
-      fmap fromNInt (toNInt (-1)) `shouldBe` Just (-1)
-      fmap fromNInt (toNInt nintMin) `shouldBe` Just nintMin
-
-    prop "Ord on NInt agrees with Ord on the represented Integer" $ \a b ->
-      compare a b === compare (fromNInt a) (fromNInt b)
-
   describe "decode . encode" $ do
     prop "round-trips arbitrary terms" $ \t ->
       decode (encode t) === Right t

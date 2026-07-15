@@ -13,6 +13,7 @@ module Test.Codec.CBOR.Cuddle.CDDL.Validator (
 
 import Codec.CBOR.Cuddle.CBOR.Canonical (toCanonical)
 import Codec.CBOR.Cuddle.CBOR.Gen (generateFromName)
+import Codec.CBOR.Cuddle.CBOR.NInt (toNInt)
 import Codec.CBOR.Cuddle.CBOR.Term (
   CBORTerm (..),
   encodeCBORTerm,
@@ -25,7 +26,6 @@ import Codec.CBOR.Cuddle.CBOR.Term (
   mkTermStringI,
   mkTermTag,
   mkTermUInt,
-  toNInt,
   unsignedToBytes,
  )
 import Codec.CBOR.Cuddle.CBOR.Validator (
