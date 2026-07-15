@@ -46,41 +46,8 @@ module Codec.CBOR.Cuddle.CBOR.Term (
 
 import Codec.CBOR.Cuddle.CBOR.NInt (NInt, toWord64Raw)
 import Codec.CBOR.Cuddle.CBOR.NInt qualified as NInt
-import Codec.CBOR.Decoding (
-  ByteOffset,
-  Decoder,
-  TokenType (..),
-  decodeBreakOr,
-  decodeBytes,
-  decodeBytesIndef,
-  decodeDouble,
-  decodeFloat,
-  decodeListLen,
-  decodeListLenIndef,
-  decodeMapLen,
-  decodeMapLenIndef,
-  decodeNegWord64,
-  decodeSimple,
-  decodeString,
-  decodeStringIndef,
-  decodeTag64,
-  decodeWord64,
-  peekByteOffset,
-  peekTokenType,
- )
-import Codec.CBOR.Encoding (
-  Encoding,
-  encodeBreak,
-  encodeBytesIndef,
-  encodeDouble,
-  encodeFloat,
-  encodeFloat16,
-  encodeListLenIndef,
-  encodeMapLenIndef,
-  encodePreEncoded,
-  encodeSimple,
-  encodeStringIndef,
- )
+import Codec.CBOR.Decoding
+import Codec.CBOR.Encoding
 import Control.Monad (forM, replicateM)
 import Data.Bits (Bits (..))
 import Data.ByteString (ByteString)
