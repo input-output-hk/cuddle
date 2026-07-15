@@ -18,6 +18,13 @@ import Codec.CBOR.Cuddle.CBOR.Term (
   bytesToUnsigned,
   decodeCBORTerm,
   fromNInt,
+  mkTermArray,
+  mkTermBytes,
+  mkTermMap,
+  mkTermNInt,
+  mkTermString,
+  mkTermTag,
+  mkTermUInt,
   unwrapBytes,
  )
 import Codec.CBOR.Cuddle.CBOR.Validator.Trace (
@@ -197,7 +204,7 @@ validateUInt ::
 validateUInt cddl i rule =
   case rule of
     CTreeE (VRuleRef n) -> dereferenceAndValidate cddl n $ validateUInt cddl i
-    CTreeE (VValidator v _) -> runCustomValidator cddl (SingleTerm $ TermUInt i) v
+    CTreeE (VValidator v _) -> runCustomValidator cddl (SingleTerm $ mkTermUInt i) v
     Postlude PTAny -> terminal rule
     Postlude PTInt -> terminal rule
     Postlude PTUInt -> terminal rule
@@ -248,7 +255,7 @@ validateNInt ::
 validateNInt cddl i rule =
   case rule of
     CTreeE (VRuleRef n) -> dereferenceAndValidate cddl n $ validateNInt cddl i
-    CTreeE (VValidator v _) -> runCustomValidator cddl (SingleTerm $ TermNInt i) v
+    CTreeE (VValidator v _) -> runCustomValidator cddl (SingleTerm $ mkTermNInt i) v
     Postlude PTAny -> terminal rule
     Postlude PTInt -> terminal rule
     Postlude PTNInt -> terminal rule
@@ -558,7 +565,7 @@ validateBytes ::
   CTreeRoot ValidatorPhase -> BS.ByteString -> CTree ValidatorPhase -> Evidenced ValidationTrace
 validateBytes cddl bs (CTreeE (VRuleRef n)) =
   dereferenceAndValidate cddl n $ validateBytes cddl bs
-validateBytes cddl bs (CTreeE (VValidator v _)) = runCustomValidator cddl (SingleTerm $ TermBytes bs) v
+validateBytes cddl bs (CTreeE (VValidator v _)) = runCustomValidator cddl (SingleTerm $ mkTermBytes bs) v
 validateBytes cddl bs rule =
   case rule of
     -- a = any
@@ -622,7 +629,7 @@ controlBytes cddl bs Cbor ctrl =
     _ -> False
 controlBytes cddl bs Cborseq ctrl =
   case deserialiseFromBytes decodeCBORTerm (BSL.fromStrict (BS.snoc (BS.cons 0x9f bs) 0xff)) of
-    Right (BSL.null -> True, TermArrayI terms) -> isValid $ validateTerm cddl (TermArray terms) (Array [Occur ctrl OIZeroOrMore])
+    Right (BSL.null -> True, TermArrayI terms) -> isValid $ validateTerm cddl (mkTermArray terms) (Array [Occur ctrl OIZeroOrMore])
     _ -> False
 controlBytes _ _ op _ = error $ "Not yet implmented for bytes: " <> show op
 
@@ -637,7 +644,7 @@ validateText ::
   Evidenced ValidationTrace
 validateText cddl txt (CTreeE (VRuleRef n)) =
   dereferenceAndValidate cddl n $ validateText cddl txt
-validateText cddl txt (CTreeE (VValidator v _)) = runCustomValidator cddl (SingleTerm $ TermString txt) v
+validateText cddl txt (CTreeE (VValidator v _)) = runCustomValidator cddl (SingleTerm $ mkTermString txt) v
 validateText cddl txt rule =
   case rule of
     -- a = any
@@ -689,7 +696,7 @@ validateTagged ::
   CTreeRoot ValidatorPhase -> Word64 -> CBORTerm -> CTree ValidatorPhase -> Evidenced ValidationTrace
 validateTagged cddl tag term (CTreeE (VRuleRef n)) =
   dereferenceAndValidate cddl n $ validateTagged cddl tag term
-validateTagged cddl tag term (CTreeE (VValidator v _)) = runCustomValidator cddl (SingleTerm $ TermTag tag term) v
+validateTagged cddl tag term (CTreeE (VValidator v _)) = runCustomValidator cddl (SingleTerm $ mkTermTag tag term) v
 validateTagged cddl tag term rule =
   case rule of
     Postlude PTAny -> terminal rule
@@ -758,7 +765,7 @@ validateList ::
   Evidenced ValidationTrace
 validateList cddl terms (CTreeE (VRuleRef n)) =
   dereferenceAndValidate cddl n $ validateList cddl terms
-validateList cddl terms (CTreeE (VValidator v _)) = runCustomValidator cddl (SingleTerm $ TermArray terms) v
+validateList cddl terms (CTreeE (VValidator v _)) = runCustomValidator cddl (SingleTerm $ mkTermArray terms) v
 validateList cddl terms rule =
   case rule of
     Postlude PTAny -> terminal rule
@@ -850,7 +857,7 @@ validateMap ::
   Evidenced ValidationTrace
 validateMap cddl terms (CTreeE (VRuleRef n)) =
   dereferenceAndValidate cddl n $ validateMap cddl terms
-validateMap cddl terms (CTreeE (VValidator v _)) = runCustomValidator cddl (SingleTerm $ TermMap terms) v
+validateMap cddl terms (CTreeE (VValidator v _)) = runCustomValidator cddl (SingleTerm $ mkTermMap terms) v
 validateMap cddl terms rule =
   case rule of
     Postlude PTAny -> terminal rule

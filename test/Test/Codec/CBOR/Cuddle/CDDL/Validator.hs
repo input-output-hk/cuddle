@@ -16,6 +16,15 @@ import Codec.CBOR.Cuddle.CBOR.Gen (generateFromName)
 import Codec.CBOR.Cuddle.CBOR.Term (
   CBORTerm (..),
   encodeCBORTerm,
+  mkTermArray,
+  mkTermBytes,
+  mkTermBytesI,
+  mkTermMap,
+  mkTermNInt,
+  mkTermString,
+  mkTermStringI,
+  mkTermTag,
+  mkTermUInt,
   toNInt,
   unsignedToBytes,
  )
@@ -71,7 +80,6 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.IO qualified as T
 import Data.Text.Lazy qualified as LT
-import Numeric.Half (toHalf)
 import Paths_cuddle (getDataFileName)
 import Prettyprinter (defaultLayoutOptions, layoutPretty)
 import Prettyprinter.Render.Terminal (renderStrict)
@@ -178,7 +186,7 @@ genHuddleArrayRequiredTerms = do
       [ (: []) <$> (genStringTerm . T.pack =<< arbitrary)
       , pure []
       ]
-  lastInt <- TermUInt <$> arbitrary
+  lastInt <- mkTermUInt <$> arbitrary
   pure $ ints <> text <> [lastInt]
 
 genHuddleArrayTerms :: Gen [CBORTerm]
@@ -203,7 +211,7 @@ genBadArrayMissingLastInt =
 genHuddleRangeArray :: Gen CBORTerm
 genHuddleRangeArray = do
   numInts <- choose (3, 4)
-  ints <- vectorOf numInts $ TermUInt <$> arbitrary
+  ints <- vectorOf numInts $ mkTermUInt <$> arbitrary
   numBools <- choose (0, 3)
   bools <- vectorOf numBools $ TermSimple <$> elements [20, 21]
   numTexts <- choose (3, 10)
@@ -211,21 +219,21 @@ genHuddleRangeArray = do
   genArrayTerm $ ints <> bools <> texts
 
 genArrayTerm :: [CBORTerm] -> Gen CBORTerm
-genArrayTerm xs = elements [TermArray xs, TermArrayI xs]
+genArrayTerm xs = elements [mkTermArray xs, TermArrayI xs]
 
 genMapTerm :: [(CBORTerm, CBORTerm)] -> Gen CBORTerm
-genMapTerm x = elements [TermMap x, TermMapI x]
+genMapTerm x = elements [mkTermMap x, TermMapI x]
 
 genStringTerm :: Text -> Gen CBORTerm
-genStringTerm x = elements [TermString x, TermStringI [LT.fromStrict x]]
+genStringTerm x = elements [mkTermString x, mkTermStringI [LT.fromStrict x]]
 
 genBytesTerm :: ByteString -> Gen CBORTerm
-genBytesTerm x = elements [TermBytes x, TermBytesI [LBS.fromStrict x]]
+genBytesTerm x = elements [mkTermBytes x, mkTermBytesI [LBS.fromStrict x]]
 
 termInt :: Int -> CBORTerm
 termInt n
-  | n >= 0 = TermUInt $ fromIntegral n
-  | otherwise = TermNInt . fromJust . toNInt $ toInteger n
+  | n >= 0 = mkTermUInt $ fromIntegral n
+  | otherwise = mkTermNInt . fromJust . toNInt $ toInteger n
 
 termBool :: Bool -> CBORTerm
 termBool False = TermSimple 20
@@ -234,39 +242,16 @@ termBool True = TermSimple 21
 arbitraryByteString :: Gen ByteString
 arbitraryByteString = BS.pack <$> arbitrary
 
-arbitraryTerm :: Gen CBORTerm
-arbitraryTerm =
-  oneof
-    [ TermUInt <$> arbitrary
-    , TermNInt <$> arbitrary
-    , TermBytes . BS.pack <$> arbitrary
-    , TermBytesI . fmap LBS.pack <$> arbitrary
-    , TermString . T.pack <$> arbitrary
-    , TermStringI . fmap LT.pack <$> arbitrary
-    , TermArray <$> listOf (scale (`div` 2) arbitraryTerm)
-    , TermArrayI <$> listOf (scale (`div` 2) arbitraryTerm)
-    , TermMap <$> listOf (scale (`div` 2) $ (,) <$> arbitraryTerm <*> arbitraryTerm)
-    , TermMapI <$> listOf (scale (`div` 2) $ (,) <$> arbitraryTerm <*> arbitraryTerm)
-    , -- TODO properly implement tagged generation
-      -- , TermTag <$> arbitrary <*> arbitraryTerm
-      termBool <$> arbitrary
-    , pure $ TermSimple 22
-    , pure $ TermSimple 23 -- TODO add other values once they are supported by cuddle
-    , TermHalf . toHalf <$> arbitrary
-    , TermFloat <$> arbitrary
-    , TermDouble <$> arbitrary
-    ]
-
 genFullMap :: Gen CBORTerm
 genFullMap = do
   field1 <- do
-    es <- listOf $ TermUInt <$> arbitrary
-    pure (TermUInt 1, TermArray es)
+    es <- listOf $ mkTermUInt <$> arbitrary
+    pure (mkTermUInt 1, mkTermArray es)
   lField2 <-
     oneof
       [ do
           b <- arbitrary
-          pure [(TermUInt 2, termBool b)]
+          pure [(mkTermUInt 2, termBool b)]
       , pure []
       ]
   strFields <-
@@ -274,17 +259,17 @@ genFullMap = do
       <$> listOf ((,) <$> (genStringTerm . T.pack =<< arbitrary) <*> (termInt <$> arbitrary))
   bytesFields <-
     nubOrdOn (toCanonical . fst)
-      <$> listOf1 ((,) <$> (genBytesTerm =<< arbitraryByteString) <*> arbitraryTerm)
+      <$> listOf1 ((,) <$> (genBytesTerm =<< arbitraryByteString) <*> arbitrary)
   allFields <- shuffle $ field1 : lField2 <> strFields <> bytesFields
   genMapTerm allFields
 
 genBadMapInvalidIndex :: Gen CBORTerm
 genBadMapInvalidIndex =
   pure $
-    TermMap
-      [ (TermUInt 1, TermArray [])
-      , (TermUInt 99, TermArray [])
-      , (TermBytes "foo", TermBytes "bar")
+    mkTermMap
+      [ (mkTermUInt 1, mkTermArray [])
+      , (mkTermUInt 99, mkTermArray [])
+      , (mkTermBytes "foo", mkTermBytes "bar")
       ]
 
 validateHuddle ::
@@ -413,10 +398,13 @@ spec = describe "Validator" $ do
                 ]
         it "Validates when optional entry is present" $
           expectValid $
-            validateHuddle optionalInGroupHuddle "root" (TermArray [TermUInt 1, termBool True, TermUInt 2])
+            validateHuddle
+              optionalInGroupHuddle
+              "root"
+              (mkTermArray [mkTermUInt 1, termBool True, mkTermUInt 2])
         it "Validates when optional entry is absent" $
           expectValid $
-            validateHuddle optionalInGroupHuddle "root" (TermArray [TermUInt 1, TermUInt 2])
+            validateHuddle optionalInGroupHuddle "root" (mkTermArray [mkTermUInt 1, mkTermUInt 2])
       describe "ZeroOrMore (*) inside a group referenced from an array" $ do
         let
           -- @
@@ -439,10 +427,10 @@ spec = describe "Validator" $ do
             validateHuddle
               zeroOrMoreInGroupHuddle
               "root"
-              (TermArray [termBool True, termBool False, TermUInt 42, TermString "hi"])
+              (mkTermArray [termBool True, termBool False, mkTermUInt 42, mkTermString "hi"])
         it "Validates when zero-or-more entry has zero elements" $
           expectValid $
-            validateHuddle zeroOrMoreInGroupHuddle "root" (TermArray [TermUInt 42, TermString "hi"])
+            validateHuddle zeroOrMoreInGroupHuddle "root" (mkTermArray [mkTermUInt 42, mkTermString "hi"])
       describe "Bounded (n..m) inside a group referenced from an array" $ do
         -- @
         --   root = [boundedGrp, text]
@@ -461,15 +449,15 @@ spec = describe "Validator" $ do
             validateHuddle
               boundedInGroupHuddle
               "root"
-              (TermArray [termBool True, TermUInt 42, TermString "hi"])
+              (mkTermArray [termBool True, mkTermUInt 42, mkTermString "hi"])
         it "Validates when bounded entry has zero elements (lower bound is 0)" $
           expectValid $
-            validateHuddle boundedInGroupHuddle "root" (TermArray [TermUInt 42, TermString "hi"])
+            validateHuddle boundedInGroupHuddle "root" (mkTermArray [mkTermUInt 42, mkTermString "hi"])
 
     describe "Bignums" $ do
       let
         bignum = 2 ^ (64 :: Int) :: Integer
-        bignumTerm = TermTag 2 . TermBytes $ unsignedToBytes bignum
+        bignumTerm = mkTermTag 2 . mkTermBytes $ unsignedToBytes bignum
       it "Validates a bignum >= 2^64 against biguint" $
         expectValid $
           validateTermText "a = biguint" "a" bignumTerm
@@ -491,34 +479,34 @@ spec = describe "Validator" $ do
       it "Accepts a matching positive bignum" $
         expectValid $
           validateTermText "a = 18446744073709551616" "a" $
-            TermTag 2 (TermBytes (unsignedToBytes bignum))
+            mkTermTag 2 (mkTermBytes (unsignedToBytes bignum))
       it "Rejects a positive bignum with a different value" $
         expectInvalid $
           validateTermText "a = 18446744073709551616" "a" $
-            TermTag 2 (TermBytes (unsignedToBytes (bignum + 1)))
+            mkTermTag 2 (mkTermBytes (unsignedToBytes (bignum + 1)))
       it "Accepts a matching negative bignum" $
         -- tag 3 content n denotes -1 - n: -18446744073709551617 = -1 - 2^64
         expectValid $
           validateTermText "a = -18446744073709551617" "a" $
-            TermTag 3 (TermBytes (unsignedToBytes bignum))
+            mkTermTag 3 (mkTermBytes (unsignedToBytes bignum))
 
     describe "Value ranges" $ do
       describe "Integer" $ do
         it "Accepts the bounds of a closed range" $ do
-          expectValid $ validateTermText "a = 1 .. 5" "a" (TermUInt 1)
-          expectValid $ validateTermText "a = 1 .. 5" "a" (TermUInt 5)
+          expectValid $ validateTermText "a = 1 .. 5" "a" (mkTermUInt 1)
+          expectValid $ validateTermText "a = 1 .. 5" "a" (mkTermUInt 5)
         it "Rejects values outside a closed range" $ do
-          expectInvalid $ validateTermText "a = 1 .. 5" "a" (TermUInt 0)
-          expectInvalid $ validateTermText "a = 1 .. 5" "a" (TermUInt 6)
+          expectInvalid $ validateTermText "a = 1 .. 5" "a" (mkTermUInt 0)
+          expectInvalid $ validateTermText "a = 1 .. 5" "a" (mkTermUInt 6)
         it "Excludes the upper bound of a half-open range" $ do
-          expectValid $ validateTermText "a = 1 ... 5" "a" (TermUInt 4)
-          expectInvalid $ validateTermText "a = 1 ... 5" "a" (TermUInt 5)
+          expectValid $ validateTermText "a = 1 ... 5" "a" (mkTermUInt 4)
+          expectInvalid $ validateTermText "a = 1 ... 5" "a" (mkTermUInt 5)
         it "Accepts the single member of a singleton range" $
           expectValid $
-            validateTermText "a = 5 .. 5" "a" (TermUInt 5)
+            validateTermText "a = 5 .. 5" "a" (mkTermUInt 5)
         it "Handles a range with two negative bounds" $ do
           expectValid $ validateTermText "a = -5 .. -1" "a" (termInt (-3))
-          expectInvalid $ validateTermText "a = -5 .. -1" "a" (TermUInt 0)
+          expectInvalid $ validateTermText "a = -5 .. -1" "a" (mkTermUInt 0)
       describe "Float" $ do
         it "Accepts a float32 within the range" $
           expectValid $
@@ -538,12 +526,12 @@ spec = describe "Validator" $ do
 
     describe "Size control" $ do
       it "Measures text size in UTF-8 bytes, not characters" $ do
-        expectValid $ validateTermText "a = text .size (0 .. 2)" "a" (TermString "é")
-        expectInvalid $ validateTermText "a = text .size (0 .. 2)" "a" (TermString "€")
+        expectValid $ validateTermText "a = text .size (0 .. 2)" "a" (mkTermString "é")
+        expectInvalid $ validateTermText "a = text .size (0 .. 2)" "a" (mkTermString "€")
       it "Handles a bytes size range with a negative lower bound" $ do
-        expectValid $ validateTermText "a = bytes .size (-2 .. 3)" "a" (TermBytes "")
-        expectValid $ validateTermText "a = bytes .size (-2 .. 3)" "a" (TermBytes "ab")
-        expectInvalid $ validateTermText "a = bytes .size (-2 .. 3)" "a" (TermBytes "abcd")
+        expectValid $ validateTermText "a = bytes .size (-2 .. 3)" "a" (mkTermBytes "")
+        expectValid $ validateTermText "a = bytes .size (-2 .. 3)" "a" (mkTermBytes "ab")
+        expectInvalid $ validateTermText "a = bytes .size (-2 .. 3)" "a" (mkTermBytes "abcd")
 
     describe "Simple values" $ do
       it "Validates an unassigned simple value against any" $
@@ -559,7 +547,7 @@ spec = describe "Validator" $ do
           validateHuddle
             (collectFrom [HIRule $ "a" =:= int 18446744073709551615])
             "a"
-            (TermUInt maxBound)
+            (mkTermUInt maxBound)
 
   describe "Custom validator" $ do
     describe "Positive" $ do
@@ -593,7 +581,7 @@ spec = describe "Validator" $ do
               [ HIRule ruleA
               , HIRule $ "b" =:= arr [0, a (ruleA H./ VNil)]
               ]
-        arrTerm <- genArrayTerm [TermUInt 0, TermBytes bs]
+        arrTerm <- genArrayTerm [mkTermUInt 0, mkTermBytes bs]
         pure . expectValid $ validateHuddle huddle "b" arrTerm
     describe "Negative" $ do
       prop "Fails if term is valid against the Huddle, but not the custom validator" $ do

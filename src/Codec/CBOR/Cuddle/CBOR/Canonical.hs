@@ -2,7 +2,6 @@
 
 module Codec.CBOR.Cuddle.CBOR.Canonical (
   CanonicalTerm (..),
-  NInt,
   toCanonical,
 ) where
 

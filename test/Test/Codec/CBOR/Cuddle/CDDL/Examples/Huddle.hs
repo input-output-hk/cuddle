@@ -32,7 +32,7 @@ module Test.Codec.CBOR.Cuddle.CDDL.Examples.Huddle (
 ) where
 
 import Codec.CBOR.Cuddle.CBOR.Gen (generateFromGRef)
-import Codec.CBOR.Cuddle.CBOR.Term (CBORTerm (..))
+import Codec.CBOR.Cuddle.CBOR.Term (CBORTerm (..), mkTermTag, mkTermUInt)
 import Codec.CBOR.Cuddle.CBOR.Validator (validateFromGRef)
 import Codec.CBOR.Cuddle.CDDL (Name)
 import Codec.CBOR.Cuddle.CDDL.Custom.Core (RuleTerm (..))
@@ -114,7 +114,7 @@ simpleRule :: Name -> Rule
 simpleRule n = n =:= arr [1, 2, 3]
 
 customGenRule :: Name -> Rule
-customGenRule = withCBORGen (SingleTerm . TermUInt <$> choose (4, 6)) . simpleRule
+customGenRule = withCBORGen (SingleTerm . mkTermUInt <$> choose (4, 6)) . simpleRule
 
 customGenExample :: Huddle
 customGenExample =
@@ -346,7 +346,7 @@ tagRangeExample =
               , (4, choose (1281, 1399))
               ]
           generateFromGRef x >>= \case
-            SingleTerm inner -> pure $ SingleTerm (TermTag tagN inner)
+            SingleTerm inner -> pure $ SingleTerm (mkTermTag tagN inner)
             _ -> error "tagRangeExample: generic argument must be a single term"
 
         validator x = \case

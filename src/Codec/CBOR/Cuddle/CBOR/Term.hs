@@ -1,22 +1,58 @@
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE ViewPatterns #-}
+
 module Codec.CBOR.Cuddle.CBOR.Term (
-  CBORTerm (..),
-  decodeCBORTerm,
-  encodeCBORTerm,
-  NInt,
-  toNInt,
-  fromNInt,
-  bytesToUnsigned,
-  unsignedToBytes,
-  uintMax,
-  nintMin,
+  CBORTerm (
+    ..,
+    TermUInt,
+    TermNInt,
+    TermBytes,
+    TermBytesI,
+    TermString,
+    TermStringI,
+    TermArray,
+    TermMap,
+    TermTag
+  ),
+  mkTermUInt,
+  mkTermNInt,
+  mkTermBytes,
+  mkTermBytesI,
+  mkTermString,
+  mkTermStringI,
+  mkTermArray,
+  mkTermMap,
+  mkTermTag,
   unwrapBytes,
   unwrapString,
   unwrapArray,
   unwrapMap,
+  decodeCBORTerm,
+  encodeCBORTerm,
+
+  -- * Argument width
+  ArgWidth (..),
+  isValidWidth,
+  optimalWidth,
+  genValidWidth,
+
+  -- * NInt
+  NInt,
+  toNInt,
+  fromNInt,
+  nintArg,
+
+  -- * Utils
+  bytesToUnsigned,
+  unsignedToBytes,
+  uintMax,
+  nintMin,
 ) where
 
 import Codec.CBOR.Cuddle.Comments (CollectComments)
 import Codec.CBOR.Decoding (
+  ByteOffset,
   Decoder,
   TokenType (..),
   decodeBreakOr,
@@ -34,49 +70,51 @@ import Codec.CBOR.Decoding (
   decodeStringIndef,
   decodeTag64,
   decodeWord64,
+  peekByteOffset,
   peekTokenType,
  )
 import Codec.CBOR.Encoding (
   Encoding,
   encodeBreak,
-  encodeBytes,
   encodeBytesIndef,
   encodeDouble,
   encodeFloat,
   encodeFloat16,
-  encodeInteger,
-  encodeListLen,
   encodeListLenIndef,
-  encodeMapLen,
   encodeMapLenIndef,
+  encodePreEncoded,
   encodeSimple,
-  encodeString,
   encodeStringIndef,
-  encodeTag64,
-  encodeWord64,
  )
-import Control.Monad (replicateM)
-import Data.Bits (complement)
+import Control.Monad (forM, replicateM)
+import Data.Bits (Bits (..), complement)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
+import Data.ByteString.Builder qualified as B
 import Data.ByteString.Lazy qualified as LBS
 import Data.Hashable (Hashable)
 import Data.Maybe (mapMaybe)
 import Data.Text (Text)
 import Data.Text qualified as T
+import Data.Text.Encoding qualified as TE
 import Data.Text.Lazy qualified as LT
+import Data.Text.Lazy.Encoding qualified as LTE
 import Data.Word (Word64, Word8)
 import GHC.Generics (Generic)
 import Numeric.Half (Half, fromHalf, toHalf)
 import Test.QuickCheck (
   Arbitrary (..),
   Gen,
-  chooseInt,
+  choose,
+  elements,
+  listOf,
   oneof,
+  scale,
+  shrinkList,
   sized,
   suchThat,
-  vectorOf,
  )
+import Test.QuickCheck.GenT (MonadGen (liftGen))
 import Prelude hiding (decodeFloat, encodeFloat)
 
 -- | A negative integer in the range @[-2^64, -1]@: exactly the values
@@ -102,29 +140,71 @@ toNInt x
 fromNInt :: NInt -> Integer
 fromNInt (NInt n) = nintMin + toInteger n
 
+data ArgWidth
+  = InlineArg
+  | OneByteArg
+  | TwoByteArg
+  | FourByteArg
+  | EightByteArg
+  deriving (Eq, Ord, Enum, Show)
+
+isValidWidth :: Word64 -> ArgWidth -> Bool
+isValidWidth i = \case
+  InlineArg -> i < 24
+  OneByteArg -> i <= 0xff
+  TwoByteArg -> i <= 0xff_ff
+  FourByteArg -> i <= 0xff_ff_ff_ff
+  EightByteArg -> i <= 0xff_ff_ff_ff_ff_ff_ff_ff
+
+optimalWidth :: Word64 -> ArgWidth
+optimalWidth i
+  | i < 24 = InlineArg
+  | i <= 0xff = OneByteArg
+  | i <= 0xff_ff = TwoByteArg
+  | i <= 0xff_ff_ff_ff = FourByteArg
+  | otherwise = EightByteArg
+
+-- | All well-formed widths strictly smaller than the given one.
+shrinkWidth :: Word64 -> ArgWidth -> [ArgWidth]
+shrinkWidth v w = [w' | w' <- [InlineArg ..], w' < w, isValidWidth v w']
+
+-- | The wire argument of a major type 1 head encoding the value @v@ is
+-- @-1 - v@ (RFC 8949 §3.1), which is the complement of the offset stored
+-- in 'NInt'.
+nintArg :: NInt -> Word64
+nintArg (NInt n) = complement n
+
+-- | The length argument of a text string head counts UTF-8 bytes, not
+-- characters.
+textArg :: T.Text -> Word64
+textArg = fromIntegral . BS.length . TE.encodeUtf8
+
+lazyTextArg :: LT.Text -> Word64
+lazyTextArg = fromIntegral . LBS.length . LTE.encodeUtf8
+
 data CBORTerm
   = -- | Major type 0
-    TermUInt Word64
+    TermUInt' ArgWidth Word64
   | -- | Major type 1
-    TermNInt NInt
+    TermNInt' ArgWidth NInt
   | -- | Major type 2 (definite)
-    TermBytes BS.ByteString
+    TermBytes' ArgWidth BS.ByteString
   | -- | Major type 2 (indefinite)
-    TermBytesI [LBS.ByteString]
+    TermBytesI' [(ArgWidth, LBS.ByteString)]
   | -- | Major type 3 (definite)
-    TermString T.Text
+    TermString' ArgWidth T.Text
   | -- | Major type 3 (indefinite)
-    TermStringI [LT.Text]
+    TermStringI' [(ArgWidth, LT.Text)]
   | -- | Major type 4 (definite)
-    TermArray [CBORTerm]
+    TermArray' ArgWidth [CBORTerm]
   | -- | Major type 4 (indefinite)
     TermArrayI [CBORTerm]
   | -- | Major type 5 (definite)
-    TermMap [(CBORTerm, CBORTerm)]
+    TermMap' ArgWidth [(CBORTerm, CBORTerm)]
   | -- | Major type 5 (indefinite)
     TermMapI [(CBORTerm, CBORTerm)]
   | -- | Major type 6
-    TermTag Word64 CBORTerm
+    TermTag' ArgWidth Word64 CBORTerm
   | -- | Major type 7 (0..24)
     TermSimple Word8
   | -- | Major type 7 (25)
@@ -135,77 +215,230 @@ data CBORTerm
     TermDouble Double
   deriving (Generic, Eq, Ord, Show)
 
+pattern TermUInt :: Word64 -> CBORTerm
+pattern TermUInt v <- TermUInt' _ v
+
+pattern TermNInt :: NInt -> CBORTerm
+pattern TermNInt v <- TermNInt' _ v
+
+pattern TermBytes :: BS.ByteString -> CBORTerm
+pattern TermBytes bs <- TermBytes' _ bs
+
+pattern TermBytesI :: [LBS.ByteString] -> CBORTerm
+pattern TermBytesI bss <- TermBytesI' (fmap snd -> bss)
+
+pattern TermString :: T.Text -> CBORTerm
+pattern TermString t <- TermString' _ t
+
+pattern TermStringI :: [LT.Text] -> CBORTerm
+pattern TermStringI ts <- TermStringI' (fmap snd -> ts)
+
+pattern TermArray :: [CBORTerm] -> CBORTerm
+pattern TermArray es <- TermArray' _ es
+
+pattern TermMap :: [(CBORTerm, CBORTerm)] -> CBORTerm
+pattern TermMap kvs <- TermMap' _ kvs
+
+pattern TermTag :: Word64 -> CBORTerm -> CBORTerm
+pattern TermTag t v <- TermTag' _ t v
+
+{-# COMPLETE
+  TermUInt
+  , TermNInt
+  , TermBytes
+  , TermBytesI
+  , TermString
+  , TermStringI
+  , TermArray
+  , TermArrayI
+  , TermMap
+  , TermMapI
+  , TermTag
+  , TermSimple
+  , TermHalf
+  , TermFloat
+  , TermDouble
+  #-}
+
+mkTermUInt :: Word64 -> CBORTerm
+mkTermUInt v = TermUInt' (optimalWidth v) v
+
+mkTermNInt :: NInt -> CBORTerm
+mkTermNInt v = TermNInt' (optimalWidth $ nintArg v) v
+
+mkTermBytes :: BS.ByteString -> CBORTerm
+mkTermBytes bs = TermBytes' (optimalWidth . fromIntegral $ BS.length bs) bs
+
+mkTermBytesI :: [LBS.ByteString] -> CBORTerm
+mkTermBytesI bss = TermBytesI' $ (\bs -> (optimalWidth . fromIntegral $ LBS.length bs, bs)) <$> bss
+
+mkTermString :: T.Text -> CBORTerm
+mkTermString t = TermString' (optimalWidth $ textArg t) t
+
+mkTermStringI :: [LT.Text] -> CBORTerm
+mkTermStringI ts = TermStringI' $ (\t -> (optimalWidth $ lazyTextArg t, t)) <$> ts
+
+mkTermArray :: [CBORTerm] -> CBORTerm
+mkTermArray es = TermArray' (optimalWidth . fromIntegral $ length es) es
+
+mkTermMap :: [(CBORTerm, CBORTerm)] -> CBORTerm
+mkTermMap kvs = TermMap' (optimalWidth . fromIntegral $ length kvs) kvs
+
+mkTermTag :: Word64 -> CBORTerm -> CBORTerm
+mkTermTag t = TermTag' (optimalWidth t) t
+
+genValidWidth :: MonadGen m => Word64 -> m ArgWidth
+genValidWidth v = liftGen $ elements [x | x <- [InlineArg .. EightByteArg], isValidWidth v x]
+
 -- | Floats never include NaN: the many NaN bit patterns don't survive
 -- round-trips through 'Float' (see 'decodeCBORTerm') and compare unequal
 -- to themselves anyway.
 instance Arbitrary CBORTerm where
-  arbitrary = sized genTerm
+  arbitrary = sized $ \sz ->
+    if sz <= 0
+      then leaf
+      else oneof [leaf, branch]
     where
-      genTerm :: Int -> Gen CBORTerm
-      genTerm n
-        | n <= 0 = leaf
-        | otherwise = oneof [leaf, branch]
-        where
-          leaf =
-            oneof
-              [ TermUInt <$> arbitrary
-              , TermNInt <$> arbitrary
-              , TermBytes . BS.pack <$> arbitrary
-              , TermBytesI . fmap LBS.pack <$> arbitrary
-              , TermString . T.pack <$> arbitrary
-              , TermStringI . fmap LT.pack <$> arbitrary
-              , TermSimple <$> arbitrary
-              , TermHalf . toHalf <$> nonNaN
-              , TermFloat <$> nonNaN
-              , TermDouble <$> nonNaN
-              ]
-          nonNaN :: (RealFloat a, Arbitrary a) => Gen a
-          nonNaN = arbitrary `suchThat` (not . isNaN)
-          branch =
-            oneof
-              [ TermArray <$> subterms
-              , TermArrayI <$> subterms
-              , TermMap <$> subpairs
-              , TermMapI <$> subpairs
-              , TermTag <$> arbitrary <*> genTerm (n - 1)
-              ]
-          subterms = do
-            k <- chooseInt (0, 5)
-            vectorOf k . genTerm $ n `div` (k + 1)
-          subpairs = do
-            k <- chooseInt (0, 5)
-            let sub = genTerm $ n `div` (2 * k + 1)
-            vectorOf k $ (,) <$> sub <*> sub
+      leaf =
+        oneof
+          [ do
+              v <- arbitrary
+              w <- genValidWidth v
+              pure $ TermUInt' w v
+          , do
+              v <- arbitrary
+              w <- genValidWidth $ nintArg v
+              pure $ TermNInt' w v
+          , do
+              bs <- BS.pack <$> arbitrary
+              w <- genValidWidth . fromIntegral $ BS.length bs
+              pure $ TermBytes' w bs
+          , do
+              bss <- listOf $ LBS.pack <$> arbitrary
+              bsw <- forM bss $ \bs -> do
+                w <- genValidWidth . fromIntegral $ LBS.length bs
+                pure (w, bs)
+              pure $ TermBytesI' bsw
+          , do
+              t <- T.pack <$> arbitrary
+              w <- genValidWidth $ textArg t
+              pure $ TermString' w t
+          , do
+              tss <- listOf $ LT.pack <$> arbitrary
+              tsw <- forM tss $ \t -> do
+                w <- genValidWidth $ lazyTextArg t
+                pure (w, t)
+              pure $ TermStringI' tsw
+          , TermSimple <$> arbitrary
+          , TermHalf . toHalf <$> nonNaN
+          , TermFloat <$> nonNaN
+          , TermDouble <$> nonNaN
+          ]
+      nonNaN :: (RealFloat a, Arbitrary a) => Gen a
+      nonNaN = arbitrary `suchThat` (not . isNaN)
+      branch =
+        sized $ \sz ->
+          oneof
+            [ do
+                n <- choose (0, max 0 sz)
+                es <- replicateM n $ scale (`div` n) arbitrary
+                w <- genValidWidth . fromIntegral $ length es
+                pure $ TermArray' w es
+            , do
+                n <- choose (0, max 0 sz)
+                es <- replicateM n $ scale (`div` n) arbitrary
+                pure $ TermArrayI es
+            , do
+                n <- choose (0, max 0 sz)
+                es <- replicateM n $ scale (`div` n) arbitrary
+                w <- genValidWidth . fromIntegral $ length es
+                pure $ TermMap' w es
+            , do
+                n <- choose (0, max 0 sz)
+                es <- replicateM n $ scale (`div` n) arbitrary
+                pure $ TermMapI es
+            , do
+                t <- arbitrary
+                v <- scale (\x -> if x > 0 then x - 1 else x) arbitrary
+                w <- genValidWidth t
+                pure $ TermTag' w t v
+            ]
 
   shrink term = case term of
-    TermUInt w -> TermUInt <$> shrink w
-    TermNInt n -> TermNInt <$> shrink n
-    TermBytes bs -> TermBytes . BS.pack <$> shrink (BS.unpack bs)
-    TermBytesI chunks -> TermBytesI . fmap LBS.pack <$> shrink (LBS.unpack <$> chunks)
-    TermString s -> TermString . T.pack <$> shrink (T.unpack s)
-    TermStringI chunks -> TermStringI . fmap LT.pack <$> shrink (LT.unpack <$> chunks)
-    TermArray ts -> ts <> (TermArray <$> shrink ts)
+    TermUInt' w v ->
+      [TermUInt' w' v | w' <- shrinkWidth v w]
+        <> [TermUInt' w v' | v' <- shrink v]
+    TermNInt' w n ->
+      [TermNInt' w' n | w' <- shrinkWidth (nintArg n) w]
+        <> [TermNInt' w n' | n' <- shrink n]
+    TermBytes' w bs ->
+      [TermBytes' w' bs | w' <- shrinkWidth (fromIntegral $ BS.length bs) w]
+        <> [TermBytes' w (BS.pack bs') | bs' <- shrink (BS.unpack bs)]
+    TermBytesI' chunks -> TermBytesI' <$> shrinkList shrinkBytesChunk chunks
+    TermString' w s ->
+      [TermString' w' s | w' <- shrinkWidth (textArg s) w]
+        <> [TermString' w (T.pack s') | s' <- shrink (T.unpack s)]
+    TermStringI' chunks -> TermStringI' <$> shrinkList shrinkStringChunk chunks
+    TermArray' w ts ->
+      ts
+        <> [TermArray' w' ts | w' <- shrinkWidth (fromIntegral $ length ts) w]
+        <> (TermArray' w <$> shrink ts)
     TermArrayI ts -> ts <> (TermArrayI <$> shrink ts)
-    TermMap kvs -> subterms kvs <> (TermMap <$> shrink kvs)
+    TermMap' w kvs ->
+      subterms kvs
+        <> [TermMap' w' kvs | w' <- shrinkWidth (fromIntegral $ length kvs) w]
+        <> (TermMap' w <$> shrink kvs)
     TermMapI kvs -> subterms kvs <> (TermMapI <$> shrink kvs)
-    TermTag tag t -> t : (TermTag <$> shrink tag <*> pure t) <> (TermTag tag <$> shrink t)
-    TermSimple w -> TermSimple <$> shrink w
+    TermTag' w tag t ->
+      t
+        : [TermTag' w' tag t | w' <- shrinkWidth tag w]
+          <> (TermTag' w <$> shrink tag <*> pure t)
+          <> (TermTag' w tag <$> shrink t)
+    TermSimple v -> TermSimple <$> shrink v
     TermHalf _ -> []
     TermFloat f -> TermFloat <$> shrink f
     TermDouble d -> TermDouble <$> shrink d
     where
       subterms = concatMap $ \(k, v) -> [k, v]
+      shrinkBytesChunk (w, c) =
+        [(w', c) | w' <- shrinkWidth (fromIntegral $ LBS.length c) w]
+          <> [(w, LBS.pack c') | c' <- shrink (LBS.unpack c)]
+      shrinkStringChunk (w, c) =
+        [(w', c) | w' <- shrinkWidth (lazyTextArg c) w]
+          <> [(w, LT.pack c') | c' <- shrink (LT.unpack c)]
+
+widthFromOffset :: ByteOffset -> ArgWidth
+widthFromOffset = \case
+  0 -> InlineArg
+  1 -> OneByteArg
+  2 -> TwoByteArg
+  4 -> FourByteArg
+  8 -> EightByteArg
+  n -> error $ "Impossible head size: " <> show n
+
+decodeWithWidth :: Decoder s a -> Decoder s (ArgWidth, a)
+decodeWithWidth = decodeWithLengthWidth $ const 0
+
+-- | Like 'decodeWithWidth', but for decoders that consume both the head and
+-- its content: the content's byte count is discounted from the measured
+-- head size.
+decodeWithLengthWidth :: (a -> Word64) -> Decoder s a -> Decoder s (ArgWidth, a)
+decodeWithLengthWidth contentBytes decoder = do
+  o1 <- peekByteOffset
+  x <- decoder
+  o2 <- peekByteOffset
+  pure (widthFromOffset (o2 - o1 - 1 - fromIntegral (contentBytes x)), x)
 
 decodeCBORTerm :: Decoder s CBORTerm
 decodeCBORTerm = do
   tokType <- peekTokenType
   case tokType of
-    TypeUInt -> TermUInt <$> decodeWord64
-    TypeUInt64 -> TermUInt <$> decodeWord64
+    TypeUInt -> decodeUInt
+    TypeUInt64 -> decodeUInt
     -- 'decodeNegWord64' yields the argument @n@ of the wire encoding, which
     -- denotes the value @-1 - n@, i.e. @nintMin + complement n@.
-    TypeNInt -> TermNInt . NInt . complement <$> decodeNegWord64
-    TypeNInt64 -> TermNInt . NInt . complement <$> decodeNegWord64
+    TypeNInt -> decodeNInt
+    TypeNInt64 -> decodeNInt
     -- 'peekTokenType' classifies tags 2 and 3 (bignums) as 'TypeInteger'
     -- so that 'Integer' decoders know to take the bignum path. We want the
     -- uninterpreted term, and 'decodeTag64' accepts these headers like any
@@ -216,14 +449,20 @@ decodeCBORTerm = do
     TypeFloat16 -> TermHalf . toHalf <$> decodeFloat
     TypeFloat32 -> TermFloat <$> decodeFloat
     TypeFloat64 -> TermDouble <$> decodeDouble
-    TypeBytes -> TermBytes <$> decodeBytes
-    TypeBytesIndef ->
+    TypeBytes -> uncurry TermBytes' <$> decodeBytesWithWidth
+    TypeBytesIndef -> do
       decodeBytesIndef
-        >> TermBytesI <$> decodeChunks (LBS.fromStrict <$> decodeBytes)
-    TypeString -> TermString <$> decodeString
-    TypeStringIndef ->
+      bsw <- decodeChunks $ do
+        (w, bs) <- decodeBytesWithWidth
+        pure (w, LBS.fromStrict bs)
+      pure $ TermBytesI' bsw
+    TypeString -> uncurry TermString' <$> decodeStringWithWidth
+    TypeStringIndef -> do
       decodeStringIndef
-        >> TermStringI <$> decodeChunks (LT.fromStrict <$> decodeString)
+      tsw <- decodeChunks $ do
+        (w, t) <- decodeStringWithWidth
+        pure (w, LT.fromStrict t)
+      pure $ TermStringI' tsw
     TypeListLen -> decodeArray
     TypeListLen64 -> decodeArray
     TypeListLenIndef ->
@@ -242,15 +481,23 @@ decodeCBORTerm = do
     TypeBreak -> fail "decodeCBORTerm: unexpected break"
     TypeInvalid -> fail "decodeCBORTerm: invalid token"
   where
+    decodeBytesWithWidth = decodeWithLengthWidth (fromIntegral . BS.length) decodeBytes
+    decodeStringWithWidth = decodeWithLengthWidth textArg decodeString
+    decodeUInt = do
+      (w, v) <- decodeWithWidth decodeWord64
+      pure $ TermUInt' w v
+    decodeNInt = do
+      (w, v) <- decodeWithWidth decodeNegWord64
+      pure . TermNInt' w . NInt $ complement v
     decodeTagged = do
-      tag <- decodeTag64
-      TermTag tag <$> decodeCBORTerm
+      (w, tag) <- decodeWithWidth decodeTag64
+      TermTag' w tag <$> decodeCBORTerm
     decodeArray = do
-      n <- decodeListLen
-      TermArray <$> replicateM n decodeCBORTerm
+      (w, n) <- decodeWithWidth decodeListLen
+      TermArray' w <$> replicateM n decodeCBORTerm
     decodeMap = do
-      n <- decodeMapLen
-      TermMap <$> replicateM n decodeKeyValue
+      (w, n) <- decodeWithWidth decodeMapLen
+      TermMap' w <$> replicateM n decodeKeyValue
     decodeKeyValue = (,) <$> decodeCBORTerm <*> decodeCBORTerm
 
 -- | Decode items with @dec@ until hitting (and consuming) a break stop code.
@@ -261,41 +508,70 @@ decodeChunks dec = go
       done <- decodeBreakOr
       if done then pure [] else (:) <$> dec <*> go
 
+data MajorType = M0 | M1 | M2 | M3 | M4 | M5 | M6 | M7
+  deriving (Enum, Eq, Ord, Show)
+
+majorTypeMask :: MajorType -> Word8
+majorTypeMask = (`shiftL` 5) . fromIntegral . fromEnum
+
+argWidthMask :: ArgWidth -> Word8
+argWidthMask = \case
+  InlineArg -> 0x00
+  OneByteArg -> 0x18
+  TwoByteArg -> 0x19
+  FourByteArg -> 0x1a
+  EightByteArg -> 0x1b
+
+encodeRawDataItem :: MajorType -> ArgWidth -> Word64 -> Encoding
+encodeRawDataItem major width arg
+  | isValidWidth arg width =
+      encodePreEncoded . LBS.toStrict . B.toLazyByteString $
+        B.word8 headerByte <> payload
+  | otherwise = error $ "Argument is too large to be encoded as " <> show width <> ": " <> show arg
+  where
+    headerByte = majorTypeMask major .|. argWidthMask width .|. inlineArgMask
+    payload = case width of
+      InlineArg -> mempty
+      OneByteArg -> B.word8 $ fromIntegral arg
+      TwoByteArg -> B.word16BE $ fromIntegral arg
+      FourByteArg -> B.word32BE $ fromIntegral arg
+      EightByteArg -> B.word64BE arg
+    inlineArgMask
+      | InlineArg <- width = fromIntegral arg
+      | otherwise = 0x00
+
 -- | Encode a term back to CBOR. Integer, length and tag arguments are
 -- emitted with minimal width, so @encodeCBORTerm@ after 'decodeCBORTerm'
 -- reproduces the input bytes only if the input used minimal-width
 -- arguments; the definite\/indefinite structure is always preserved.
 encodeCBORTerm :: CBORTerm -> Encoding
 encodeCBORTerm term = case term of
-  TermUInt w -> encodeWord64 w
+  TermUInt' w v -> encodeRawDataItem M0 w v
   -- For values in @[-2^64, -1]@ 'encodeInteger' always emits major type 1
   -- with argument @-1 - n@, never a bignum.
-  TermNInt n -> encodeInteger $ fromNInt n
-  TermBytes bs -> encodeBytes bs
-  TermBytesI chunks ->
-    encodeBytesIndef
-      <> foldMap (encodeBytes . LBS.toStrict) chunks
-      <> encodeBreak
-  TermString s -> encodeString s
-  TermStringI chunks ->
-    encodeStringIndef
-      <> foldMap (encodeString . LT.toStrict) chunks
-      <> encodeBreak
-  TermArray ts ->
-    encodeListLen (fromIntegral $ length ts) <> foldMap encodeCBORTerm ts
-  TermArrayI ts ->
-    encodeListLenIndef <> foldMap encodeCBORTerm ts <> encodeBreak
-  TermMap kvs ->
-    encodeMapLen (fromIntegral $ length kvs) <> foldMap encodeKeyValue kvs
-  TermMapI kvs ->
-    encodeMapLenIndef <> foldMap encodeKeyValue kvs <> encodeBreak
-  TermTag tag t -> encodeTag64 tag <> encodeCBORTerm t
-  TermSimple w -> encodeSimple w
+  TermNInt' w v -> encodeRawDataItem M1 w (nintArg v)
+  TermBytes' w bs -> encodeBytesW w bs
+  TermBytesI' chunks ->
+    encodeBytesIndef <> foldMap (\(w, bs) -> encodeBytesW w $ LBS.toStrict bs) chunks <> encodeBreak
+  TermString' w s -> encodeStringW w s
+  TermStringI' chunks ->
+    encodeStringIndef <> foldMap (\(w, t) -> encodeStringW w $ LT.toStrict t) chunks <> encodeBreak
+  TermArray' w ts -> encodeRawDataItem M4 w (fromIntegral $ length ts) <> foldMap encodeCBORTerm ts
+  TermArrayI ts -> encodeListLenIndef <> foldMap encodeCBORTerm ts <> encodeBreak
+  TermMap' w kvs -> encodeRawDataItem M5 w (fromIntegral $ length kvs) <> encodeKVs kvs
+  TermMapI kvs -> encodeMapLenIndef <> encodeKVs kvs <> encodeBreak
+  TermTag' w tag t -> encodeRawDataItem M6 w tag <> encodeCBORTerm t
+  TermSimple v -> encodeSimple v
   TermHalf h -> encodeFloat16 $ fromHalf h
   TermFloat f -> encodeFloat f
   TermDouble d -> encodeDouble d
   where
-    encodeKeyValue (k, v) = encodeCBORTerm k <> encodeCBORTerm v
+    encodeBytesW w bs =
+      encodeRawDataItem M2 w (fromIntegral $ BS.length bs) <> encodePreEncoded bs
+    encodeStringW w t =
+      let bs = TE.encodeUtf8 t
+       in encodeRawDataItem M3 w (fromIntegral $ BS.length bs) <> encodePreEncoded bs
+    encodeKVs = foldMap (\(k, v) -> encodeCBORTerm k <> encodeCBORTerm v)
 
 bytesToUnsigned :: ByteString -> Integer
 bytesToUnsigned = BS.foldl' (\acc b -> acc * 256 + toInteger b) 0
@@ -307,22 +583,22 @@ unsignedToBytes = BS.pack . reverse . go
     go n = let (d, r) = divMod n 256 in fromInteger r : go d
 
 unwrapBytes :: CBORTerm -> Maybe ByteString
-unwrapBytes (TermBytes bs) = Just bs
-unwrapBytes (TermBytesI bss) = Just . LBS.toStrict $ mconcat bss
+unwrapBytes (TermBytes' _ bs) = Just bs
+unwrapBytes (TermBytesI' bss) = Just . LBS.toStrict . mconcat $ snd <$> bss
 unwrapBytes _ = Nothing
 
 unwrapString :: CBORTerm -> Maybe Text
-unwrapString (TermString t) = Just t
-unwrapString (TermStringI ts) = Just . LT.toStrict $ mconcat ts
+unwrapString (TermString' _ t) = Just t
+unwrapString (TermStringI' ts) = Just . LT.toStrict . mconcat $ snd <$> ts
 unwrapString _ = Nothing
 
 unwrapArray :: CBORTerm -> Maybe [CBORTerm]
-unwrapArray (TermArray xs) = Just xs
+unwrapArray (TermArray' _ xs) = Just xs
 unwrapArray (TermArrayI xs) = Just xs
 unwrapArray _ = Nothing
 
 unwrapMap :: CBORTerm -> Maybe [(CBORTerm, CBORTerm)]
-unwrapMap (TermMap kvs) = Just kvs
+unwrapMap (TermMap' _ kvs) = Just kvs
 unwrapMap (TermMapI kvs) = Just kvs
 unwrapMap _ = Nothing
 

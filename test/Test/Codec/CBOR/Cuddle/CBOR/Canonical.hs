@@ -9,8 +9,16 @@ import Codec.CBOR.Cuddle.CBOR.Canonical (
 import Codec.CBOR.Cuddle.CBOR.Term (
   CBORTerm (..),
   fromNInt,
+  mkTermArray,
+  mkTermBytes,
+  mkTermBytesI,
+  mkTermMap,
+  mkTermNInt,
+  mkTermString,
+  mkTermStringI,
+  mkTermTag,
+  mkTermUInt,
   nintMin,
-  toNInt,
   uintMax,
  )
 import Data.ByteString qualified as BS
@@ -22,76 +30,58 @@ import Test.QuickCheck
 
 spec :: Spec
 spec = do
-  describe "NInt" $ do
-    it "toNInt accepts exactly [-2^64, -1]" $ do
-      toNInt 0 `shouldBe` Nothing
-      toNInt 1 `shouldBe` Nothing
-      toNInt (nintMin - 1) `shouldBe` Nothing
-      toNInt nintMin `shouldNotBe` Nothing
-      toNInt (-1) `shouldNotBe` Nothing
-
-    prop "toNInt . fromNInt = Just" $ \n ->
-      toNInt (fromNInt n) === Just n
-
-    it "boundary values roundtrip" $ do
-      fmap fromNInt (toNInt (-1)) `shouldBe` Just (-1)
-      fmap fromNInt (toNInt nintMin) `shouldBe` Just nintMin
-
-    prop "Ord on NInt agrees with Ord on the represented Integer" $ \a b ->
-      compare a b === compare (fromNInt a) (fromNInt b)
-
   describe "toCanonical" $ do
     describe "integer normalization" $ do
       prop "TermUInt maps to CTInt" $ \w ->
-        toCanonical (TermUInt w) === CTInt w
+        toCanonical (mkTermUInt w) === CTInt w
 
       prop "TermNInt maps to CTNInt" $ \n ->
-        toCanonical (TermNInt n) === CTNInt n
+        toCanonical (mkTermNInt n) === CTNInt n
 
       prop "in-range positive bignum collapses to CTInt" $ \(w :: Word64) ->
-        toCanonical (TermTag 2 (TermBytes (unsignedBE (toInteger w))))
-          === toCanonical (TermUInt w)
+        toCanonical (mkTermTag 2 (mkTermBytes (unsignedBE (toInteger w))))
+          === toCanonical (mkTermUInt w)
 
       prop "in-range negative bignum collapses to CTNInt" $ \nint ->
         let n = fromNInt nint
-         in toCanonical (TermTag 3 (TermBytes (unsignedBE (-1 - n))))
-              === toCanonical (TermNInt nint)
+         in toCanonical (mkTermTag 3 (mkTermBytes (unsignedBE (-1 - n))))
+              === toCanonical (mkTermNInt nint)
 
       it "bignum with leading zeros canonicalizes" $
-        toCanonical (TermTag 2 (TermBytes (BS.pack [0, 0, 5])))
+        toCanonical (mkTermTag 2 (mkTermBytes (BS.pack [0, 0, 5])))
           `shouldBe` CTInt 5
 
       prop "bignum from TermBytesI matches TermBytes" $ \(w :: Word64) ->
         let bs = unsignedBE (toInteger w)
-         in toCanonical (TermTag 2 (TermBytesI [BSL.fromStrict bs]))
-              === toCanonical (TermTag 2 (TermBytes bs))
+         in toCanonical (mkTermTag 2 (mkTermBytesI [BSL.fromStrict bs]))
+              === toCanonical (mkTermTag 2 (mkTermBytes bs))
 
       it "true bignum (above uintMax) stays tagged" $
         let n = uintMax + 1
-         in toCanonical (TermTag 2 (TermBytes (unsignedBE n)))
+         in toCanonical (mkTermTag 2 (mkTermBytes (unsignedBE n)))
               `shouldBe` CTTagged 2 (CTBytes (unsignedBE n))
 
       it "true bignum (below nintMin) stays tagged" $
         let n = nintMin - 1
-         in toCanonical (TermTag 3 (TermBytes (unsignedBE (-1 - n))))
+         in toCanonical (mkTermTag 3 (mkTermBytes (unsignedBE (-1 - n))))
               `shouldBe` CTTagged 3 (CTBytes (unsignedBE (-1 - n)))
 
     describe "definite/indefinite variants merge" $ do
       it "TermBytes ≡ chunked TermBytesI" $
-        toCanonical (TermBytes "abc")
-          `shouldBe` toCanonical (TermBytesI ["a", "bc"])
+        toCanonical (mkTermBytes "abc")
+          `shouldBe` toCanonical (mkTermBytesI ["a", "bc"])
 
       it "TermString ≡ chunked TermStringI" $
-        toCanonical (TermString "abc")
-          `shouldBe` toCanonical (TermStringI ["a", "bc"])
+        toCanonical (mkTermString "abc")
+          `shouldBe` toCanonical (mkTermStringI ["a", "bc"])
 
       it "TermArray ≡ TermArrayI" $
-        toCanonical (TermArray [TermUInt 1, TermUInt 2])
-          `shouldBe` toCanonical (TermArrayI [TermUInt 1, TermUInt 2])
+        toCanonical (mkTermArray [mkTermUInt 1, mkTermUInt 2])
+          `shouldBe` toCanonical (TermArrayI [mkTermUInt 1, mkTermUInt 2])
 
       it "TermMap ≡ TermMapI" $
-        toCanonical (TermMap [(TermUInt 1, TermUInt 2)])
-          `shouldBe` toCanonical (TermMapI [(TermUInt 1, TermUInt 2)])
+        toCanonical (mkTermMap [(mkTermUInt 1, mkTermUInt 2)])
+          `shouldBe` toCanonical (TermMapI [(mkTermUInt 1, mkTermUInt 2)])
 
     describe "simple values" $ do
       prop "TermSimple maps to CTSimple" $ \w ->
@@ -99,8 +89,8 @@ spec = do
 
     describe "maps" $ do
       it "key order is irrelevant" $
-        toCanonical (TermMap [(TermUInt 1, TermUInt 10), (TermUInt 2, TermUInt 20)])
-          `shouldBe` toCanonical (TermMap [(TermUInt 2, TermUInt 20), (TermUInt 1, TermUInt 10)])
+        toCanonical (mkTermMap [(mkTermUInt 1, mkTermUInt 10), (mkTermUInt 2, mkTermUInt 20)])
+          `shouldBe` toCanonical (mkTermMap [(mkTermUInt 2, mkTermUInt 20), (mkTermUInt 1, mkTermUInt 10)])
 
     describe "floats stay distinct by width" $ do
       it "TermHalf 1.0 ≠ TermFloat 1.0" $

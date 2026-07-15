@@ -24,8 +24,13 @@ module Codec.CBOR.Cuddle.CBOR.Gen (
 #endif
 import Codec.CBOR.Cuddle.CBOR.Canonical (toCanonical)
 import Codec.CBOR.Cuddle.CBOR.Term (
+  ArgWidth,
   CBORTerm (..),
+  NInt,
   encodeCBORTerm,
+  genValidWidth,
+  nintArg,
+  optimalWidth,
   toNInt,
   unsignedToBytes,
  )
@@ -58,7 +63,7 @@ import Codec.CBOR.Cuddle.CDDL.Custom.Generator (
  )
 import Codec.CBOR.Cuddle.CDDL.Resolve (XXCTree (..), showSimple)
 import Codec.CBOR.Write qualified as CBOR
-import Control.Monad (zipWithM, (<=<))
+import Control.Monad (forM, zipWithM, (<=<))
 import Control.Monad.Reader (asks)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
@@ -71,6 +76,7 @@ import Data.Maybe (fromJust, fromMaybe)
 import Data.Ord (Down (..))
 import Data.Text (Text)
 import Data.Text qualified as T
+import Data.Text.Encoding (encodeUtf8)
 import Data.Text.Internal.Encoding.Utf8 (utf8Length)
 import Data.Text.Lazy qualified as LT
 import Data.Text.Lazy.Builder (toLazyText)
@@ -92,11 +98,10 @@ import Test.AntiGen (
  )
 import Test.QuickCheck (
   Arbitrary,
-  NonNegative (..),
  )
 import Test.QuickCheck qualified as QC
 import Test.QuickCheck.Gen (Gen (..), getSize)
-import Test.QuickCheck.GenT (MonadGen (..), elements, frequency, listOf, oneof, suchThat, vectorOf)
+import Test.QuickCheck.GenT (MonadGen (..), elements, frequency, oneof, suchThat, vectorOf)
 
 -- TODO remove this once QuickCheck gets QC
 data QC = QC
@@ -139,57 +144,94 @@ genSublists xs = do
   let (chunk, rest) = splitAt n xs
   (chunk :) <$> genSublists rest
 
+genWidth :: Word64 -> CBORGen ArgWidth
+genWidth v = do
+  twiddle <- asks $ gcTwiddle . geConfig
+  if twiddle
+    then genValidWidth v
+    else pure $ optimalWidth v
+
+twiddleUInt :: Word64 -> CBORGen CBORTerm
+twiddleUInt v = do
+  width <- genWidth v
+  pure $ TermUInt' width v
+
+twiddleNInt :: NInt -> CBORGen CBORTerm
+twiddleNInt v = do
+  width <- genWidth $ nintArg v
+  pure $ TermNInt' width v
+
+genTermString :: T.Text -> CBORGen CBORTerm
+genTermString t = do
+  width <- genWidth . fromIntegral . BS.length $ encodeUtf8 t
+  pure $ TermString' width t
+
+genTermStringI :: LT.Text -> CBORGen CBORTerm
+genTermStringI t = do
+  ts <- fmap (fmap LT.pack) . genSublists $ LT.unpack t
+  tw <- forM ts $ \v -> do
+    width <- genWidth . fromIntegral . BS.length . encodeUtf8 $ LT.toStrict v
+    pure (width, v)
+  pure $ TermStringI' tw
+
+genTermBytes :: BS.ByteString -> CBORGen CBORTerm
+genTermBytes bs = do
+  width <- genWidth . fromIntegral $ BS.length bs
+  pure $ TermBytes' width bs
+
+genTermBytesI :: LBS.ByteString -> CBORGen CBORTerm
+genTermBytesI bs = do
+  bss <- fmap (fmap LBS.pack) . genSublists $ LBS.unpack bs
+  bsw <- forM bss $ \v -> do
+    width <- genWidth . fromIntegral $ LBS.length v
+    pure (width, v)
+  pure $ TermBytesI' bsw
+
+genTermList :: [CBORTerm] -> CBORGen CBORTerm
+genTermList es = do
+  width <- genWidth . fromIntegral $ length es
+  pure $ TermArray' width es
+
+genTermMap :: [(CBORTerm, CBORTerm)] -> CBORGen CBORTerm
+genTermMap kvs = do
+  width <- genWidth . fromIntegral $ length kvs
+  pure $ TermMap' width kvs
+
+twiddleTag :: Word64 -> CBORTerm -> CBORGen CBORTerm
+twiddleTag t v = do
+  width <- genWidth t
+  pure $ TermTag' width t v
+
 twiddleString :: Text -> CBORGen CBORTerm
 twiddleString t = do
-  twiddle <- asks (gcTwiddle . geConfig)
-  let splitText = fmap (fmap LT.pack) . genSublists . T.unpack
+  twiddle <- asks $ gcTwiddle . geConfig
   if twiddle
-    then oneof [pure $ TermString t, TermStringI <$> splitText t]
-    else pure $ TermString t
-
-twiddleList :: [CBORTerm] -> CBORGen CBORTerm
-twiddleList t = do
-  twiddle <- asks (gcTwiddle . geConfig)
-  if twiddle
-    then elements [TermArray t, TermArrayI t]
-    else pure $ TermArray t
+    then oneof [genTermString t, genTermStringI $ LT.fromStrict t]
+    else genTermString t
 
 twiddleBytes :: ByteString -> CBORGen CBORTerm
 twiddleBytes t = do
-  twiddle <- asks (gcTwiddle . geConfig)
-  let splitBytes = fmap (fmap LBS.pack) . genSublists . BS.unpack
+  twiddle <- asks $ gcTwiddle . geConfig
   if twiddle
-    then oneof [pure $ TermBytes t, TermBytesI <$> splitBytes t]
-    else pure $ TermBytes t
+    then oneof [genTermBytes t, genTermBytesI $ LBS.fromStrict t]
+    else genTermBytes t
+
+twiddleList :: [CBORTerm] -> CBORGen CBORTerm
+twiddleList t = do
+  twiddle <- asks $ gcTwiddle . geConfig
+  if twiddle
+    then oneof [genTermList t, pure $ TermArrayI t]
+    else genTermList t
 
 twiddleMap :: [(CBORTerm, CBORTerm)] -> CBORGen CBORTerm
 twiddleMap t = do
-  twiddle <- asks (gcTwiddle . geConfig)
+  twiddle <- asks $ gcTwiddle . geConfig
   if twiddle
-    then elements [TermMap t, TermMapI t]
-    else pure $ TermMap t
-
-genTerm :: CBORGen CBORTerm
-genTerm =
-  oneof
-    [ TermUInt <$> arbitrary
-    , TermNInt <$> arbitrary
-    , twiddleBytes =<< genNBytes . getNonNegative =<< arbitrary
-    , twiddleString . T.pack =<< arbitrary
-    , twiddleList =<< listOf smallerTerm
-    , twiddleMap =<< listOf ((,) <$> smallerTerm <*> smallerTerm)
-    , TermTag <$> choose (6, maxBound :: Word64) <*> smallerTerm
-    , TermSimple <$> elements [20 .. 23]
-    , TermHalf <$> arbitrary
-    , TermFloat <$> arbitrary
-    , TermDouble <$> arbitrary
-    ]
-  where
-    smallerTerm :: CBORGen CBORTerm
-    smallerTerm = scale (`div` 5) genTerm
+    then oneof [genTermMap t, pure $ TermMapI t]
+    else genTermMap t
 
 genNBytes :: MonadGen m => Int -> m ByteString
-genNBytes n = liftGen (uniformByteStringM n QC)
+genNBytes n = liftGen $ uniformByteStringM n QC
 
 genBytes :: MonadGen m => m ByteString
 genBytes = sized $ \sz -> do
@@ -239,15 +281,15 @@ genPostlude pt = genPTerm =<< liftAntiGen (faultyPTerm pt)
       PTBool -> TermSimple <$> elements [20 .. 21]
       -- For integers, introduce decision points that sometimes generate
       -- out-of-bounds values
-      PTUInt -> TermUInt <$> arbitrary
-      PTNInt -> TermNInt <$> arbitrary
-      PTInt -> oneof [TermNInt <$> arbitrary, TermUInt <$> arbitrary]
+      PTUInt -> twiddleUInt =<< arbitrary
+      PTNInt -> twiddleNInt =<< arbitrary
+      PTInt -> oneof [twiddleUInt =<< arbitrary, twiddleNInt =<< arbitrary]
       PTHalf -> TermHalf <$> arbitrary
       PTFloat -> TermFloat <$> arbitrary
       PTDouble -> TermDouble <$> arbitrary
       PTBytes -> twiddleBytes =<< genBytes
       PTText -> twiddleString =<< genText
-      PTAny -> genTerm
+      PTAny -> arbitrary
       PTNil -> pure $ TermSimple 22
       PTUndefined -> pure $ TermSimple 23
 
@@ -283,7 +325,7 @@ genSized :: HasCallStack => Word64 -> CTree GenPhase -> CBORGen RuleTerm
 genSized s target = annotateTerm target $ case target of
   CTree.Postlude PTText -> fmap SingleTerm . twiddleString =<< genNBytesText (fromIntegral s)
   CTree.Postlude PTBytes -> fmap SingleTerm . twiddleBytes =<< genNBytes (fromIntegral s)
-  CTree.Postlude PTUInt -> SingleTerm . TermUInt <$> choose (0, 256 ^ s - 1)
+  CTree.Postlude PTUInt -> fmap SingleTerm . twiddleUInt =<< choose (0, 256 ^ s - 1)
   _ -> error "Cannot apply size operator to target "
 
 genBetween :: (Integral a, Random a) => (a, a) -> CBORGen a
@@ -469,10 +511,10 @@ genRange from to bounds
         case bounds of
           ClOpen -> genBetween (lo, pred hi)
           Closed -> genBetween (lo, hi)
-      pure . SingleTerm $
-        if val >= 0
-          then TermUInt $ fromInteger val
-          else TermNInt . fromJust $ toNInt val
+      SingleTerm
+        <$> if val >= 0
+          then twiddleUInt $ fromInteger val
+          else twiddleNInt . fromJust $ toNInt val
   | Just lo <- unFloatLiteral from
   , Just hi <- unFloatLiteral to
   , lo <= hi = do
@@ -498,11 +540,11 @@ genControl op target controller = annotateTerm target $ do
     x -> pure x
   case (op, resolvedController) of
     (CtlOp.Le, CTree.Literal (Value (VUInt n) _)) -> case target of
-      CTree.Postlude PTUInt -> SingleTerm . TermUInt <$> choose (0, fromIntegral n)
+      CTree.Postlude PTUInt -> fmap SingleTerm . twiddleUInt =<< choose (0, fromIntegral n)
       _ -> error "Cannot apply le operator to target"
     (CtlOp.Le, _) -> error $ "Invalid controller for .le operator: " <> showSimple controller
     (CtlOp.Lt, CTree.Literal (Value (VUInt n) _)) -> case target of
-      CTree.Postlude PTUInt -> SingleTerm . TermUInt <$> choose (0, fromIntegral n - 1)
+      CTree.Postlude PTUInt -> fmap SingleTerm . twiddleUInt =<< choose (0, fromIntegral n - 1)
       _ -> error "Cannot apply lt operator to target"
     (CtlOp.Lt, _) -> error $ "Invalid controller for .lt operator: " <> showSimple controller
     (CtlOp.Size, CTree.Literal (Value (VUInt s) _)) -> do
@@ -554,7 +596,7 @@ genTag t node = do
               disableTwiddle $ genForCTree node
         _ -> genForCTree node
       case enc of
-        SingleTerm x -> pure $ SingleTerm $ TermTag tag x
+        SingleTerm x -> SingleTerm <$> twiddleTag tag x
         _ -> error "Tag controller does not correspond to a single term"
 
 genForNode :: HasCallStack => Name -> CBORGen RuleTerm
@@ -641,12 +683,12 @@ valueToTerm :: Value -> CBORGen CBORTerm
 valueToTerm (Value x _) = valueVariantToTerm x
 
 valueVariantToTerm :: ValueVariant -> CBORGen CBORTerm
-valueVariantToTerm (VUInt i) = pure $ TermUInt i
-valueVariantToTerm (VNInt i) = pure $ TermNInt i
+valueVariantToTerm (VUInt i) = twiddleUInt i
+valueVariantToTerm (VNInt i) = twiddleNInt i
 valueVariantToTerm (VBignum i)
-  | i >= 0 = TermTag 2 <$> twiddleBytes (unsignedToBytes i)
+  | i >= 0 = twiddleTag 2 =<< twiddleBytes (unsignedToBytes i)
   -- RFC 8949 §3.4.3: tag 3 content n denotes -1 - n
-  | otherwise = TermTag 3 <$> twiddleBytes (unsignedToBytes (-1 - i))
+  | otherwise = twiddleTag 3 =<< twiddleBytes (unsignedToBytes (-1 - i))
 valueVariantToTerm (VFloat16 i) = pure $ TermHalf i
 valueVariantToTerm (VFloat32 i) = pure $ TermFloat i
 valueVariantToTerm (VFloat64 i) = pure $ TermDouble i
