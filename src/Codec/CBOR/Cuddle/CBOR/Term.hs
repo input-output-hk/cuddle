@@ -440,11 +440,9 @@ decodeCBORTerm = do
 
 -- | Decode items with @dec@ until hitting (and consuming) a break stop code.
 decodeChunks :: Decoder s a -> Decoder s [a]
-decodeChunks dec = go
-  where
-    go = do
-      done <- decodeBreakOr
-      if done then pure [] else (:) <$> dec <*> go
+decodeChunks dec = do
+  done <- decodeBreakOr
+  if done then pure [] else (:) <$> dec <*> decodeChunks dec
 
 data MajorType = M0 | M1 | M2 | M3 | M4 | M5 | M6 | M7
   deriving (Enum, Eq, Ord, Show)
