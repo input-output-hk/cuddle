@@ -17,8 +17,8 @@ module Codec.CBOR.Cuddle.CDDL.CTree (
   PTerm (..),
   uintMax,
   nintMin,
-  unIntLiteral,
-  unFloatLiteral,
+  unIntegerLiteral,
+  unDoubleLiteral,
 ) where
 
 import Codec.CBOR.Cuddle.CBOR.Term (fromNInt, nintMin, uintMax)
@@ -190,17 +190,17 @@ instance Arbitrary PTerm where
 
 instance Hashable PTerm
 
-unIntLiteral :: CTree i -> Maybe Integer
-unIntLiteral (Literal (Value x _)) = case x of
+unIntegerLiteral :: CTree i -> Maybe Integer
+unIntegerLiteral (Literal (Value x _)) = case x of
   VUInt v -> Just $ toInteger v
   VNInt v -> Just $ fromNInt v
   _ -> Nothing
-unIntLiteral _ = Nothing
+unIntegerLiteral _ = Nothing
 
-unFloatLiteral :: CTree i -> Maybe Double
-unFloatLiteral (Literal (Value x _)) = case x of
+unDoubleLiteral :: CTree i -> Maybe Double
+unDoubleLiteral (Literal (Value x _)) = case x of
   VFloat16 v -> Just $ realToFrac v
   VFloat32 v -> Just $ realToFrac v
   VFloat64 v -> Just v
   _ -> Nothing
-unFloatLiteral _ = Nothing
+unDoubleLiteral _ = Nothing

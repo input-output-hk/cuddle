@@ -249,7 +249,7 @@ validateNInt cddl i rule =
   where
     i' = fromNInt i
 
--- | The integer value of a literal range bound. Unlike 'unIntLiteral' this
+-- | The integer value of a literal range bound. Unlike 'unIntegerLiteral' this
 -- also interprets bignum literals, which is safe here because the value is
 -- only compared against, never narrowed to a machine word.
 intBound :: CTree ValidatorPhase -> Maybe Integer
@@ -299,7 +299,7 @@ validateFloatRange ::
   Evidenced ValidationTrace
 validateFloatRange cddl self f rng@(Range low high bound) =
   case (low, high) of
-    (unFloatLiteral -> Just n, unFloatLiteral -> Just m)
+    (unDoubleLiteral -> Just n, unDoubleLiteral -> Just m)
       | f `isInRange` Range n m bound -> terminal rule
       | otherwise -> unapplicable rule
     (CTreeE (VRuleRef n), _) ->
@@ -340,22 +340,22 @@ controlInteger cddl i Bits ctrl = do
           allowed = not bitSet || IS.member idx indices
        in allowed && go indices (shiftR n 1) (idx + 1)
 controlInteger _ i Lt ctrl
-  | Just i' <- unIntLiteral ctrl = i < i'
+  | Just i' <- unIntegerLiteral ctrl = i < i'
   | otherwise = False
 controlInteger _ i Gt ctrl
-  | Just i' <- unIntLiteral ctrl = i > i'
+  | Just i' <- unIntegerLiteral ctrl = i > i'
   | otherwise = False
 controlInteger _ i Le ctrl
-  | Just i' <- unIntLiteral ctrl = i <= i'
+  | Just i' <- unIntegerLiteral ctrl = i <= i'
   | otherwise = False
 controlInteger _ i Ge ctrl
-  | Just i' <- unIntLiteral ctrl = i >= i'
+  | Just i' <- unIntegerLiteral ctrl = i >= i'
   | otherwise = False
 controlInteger _ i Eq ctrl
-  | Just i' <- unIntLiteral ctrl = i == i'
+  | Just i' <- unIntegerLiteral ctrl = i == i'
   | otherwise = False
 controlInteger _ i Ne ctrl
-  | Just i' <- unIntLiteral ctrl = i /= i'
+  | Just i' <- unIntegerLiteral ctrl = i /= i'
   | otherwise = False
 controlInteger _ _ _ ctrl = error $ "unexpected control: " <> showSimple ctrl
 
@@ -448,10 +448,10 @@ controlFloat ::
 controlFloat cddl f op (CTreeE (VRuleRef n)) =
   controlFloat cddl f op $ dereference cddl n
 controlFloat _ f Eq ctrl
-  | Just f' <- unFloatLiteral ctrl = realToFrac f == f'
+  | Just f' <- unDoubleLiteral ctrl = realToFrac f == f'
   | otherwise = False
 controlFloat _ f Ne ctrl
-  | Just f' <- unFloatLiteral ctrl = realToFrac f /= f'
+  | Just f' <- unDoubleLiteral ctrl = realToFrac f /= f'
   | otherwise = False
 controlFloat _ _ op _ = error $ "Not yet implemented for float: " <> show op
 
@@ -493,10 +493,10 @@ controlDouble ::
 controlDouble cddl f op (CTreeE (VRuleRef n)) =
   controlDouble cddl f op $ dereference cddl n
 controlDouble _ f Eq ctrl
-  | Just f' <- unFloatLiteral ctrl = f == f'
+  | Just f' <- unDoubleLiteral ctrl = f == f'
   | otherwise = False
 controlDouble _ f Ne ctrl
-  | Just f' <- unFloatLiteral ctrl = f /= f'
+  | Just f' <- unDoubleLiteral ctrl = f /= f'
   | otherwise = False
 controlDouble _ _ op _ = error $ "Not yet implmented for double: " <> show op
 
@@ -593,7 +593,7 @@ controlBytes cddl bs op@Size ctrl =
       dereference cddl n & \lo -> controlBytes cddl bs op . CRange $ Range lo high bound
     CRange (Range low (CTreeE (VRuleRef n)) bound) ->
       dereference cddl n & \hi -> controlBytes cddl bs op . CRange $ Range low hi bound
-    CRange (Range (unIntLiteral -> Just n) (unIntLiteral -> Just m) bound) ->
+    CRange (Range (unIntegerLiteral -> Just n) (unIntegerLiteral -> Just m) bound) ->
       let i = toInteger $ BS.length bs
        in boundPlacement i (Just n, Just m) bound == WithinBounds
     _ -> False
@@ -673,7 +673,7 @@ controlText cddl bs op@Size ctrl =
           dereference cddl n & \lo -> controlText cddl bs op . CRange $ Range lo high bound
         CRange (Range low (CTreeE (VRuleRef n)) bound) ->
           dereference cddl n & \hi -> controlText cddl bs op . CRange $ Range low hi bound
-        CRange (Range (unIntLiteral -> Just n) (unIntLiteral -> Just m) bound) ->
+        CRange (Range (unIntegerLiteral -> Just n) (unIntegerLiteral -> Just m) bound) ->
           bsSize `isInRange` Range n m bound
         _ -> error "Invalid control value in .size"
 controlText _ s Regexp ctrl =

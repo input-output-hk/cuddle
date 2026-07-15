@@ -47,8 +47,8 @@ import Codec.CBOR.Cuddle.CDDL.CTree (
   CTree (..),
   PTerm (..),
   Range (..),
-  unFloatLiteral,
-  unIntLiteral,
+  unDoubleLiteral,
+  unIntegerLiteral,
  )
 import Codec.CBOR.Cuddle.CDDL.CTree qualified as CTree
 import Codec.CBOR.Cuddle.CDDL.CtlOp qualified as CtlOp
@@ -504,8 +504,8 @@ genRange from to bounds
   | CTreeE (GenRef n) <- to = do
       to' <- resolveRef n
       genRange from to' bounds
-  | Just lo <- unIntLiteral from
-  , Just hi <- unIntLiteral to
+  | Just lo <- unIntegerLiteral from
+  , Just hi <- unIntegerLiteral to
   , lo <= hi = do
       val <-
         case bounds of
@@ -517,8 +517,8 @@ genRange from to bounds
         <$> if val >= 0
           then twiddleUInt $ fromInteger val
           else twiddleNInt . fromJust $ toNInt val
-  | Just lo <- unFloatLiteral from
-  , Just hi <- unFloatLiteral to
+  | Just lo <- unDoubleLiteral from
+  , Just hi <- unDoubleLiteral to
   , lo <= hi = do
       val <- choose (lo, hi)
       SingleTerm
