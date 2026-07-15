@@ -91,7 +91,6 @@ import Control.Monad (forM, replicateM)
 import Data.Bits (Bits (..), complement)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
-import Data.ByteString.Builder qualified as B
 import Data.ByteString.Lazy qualified as LBS
 import Data.Hashable (Hashable)
 import Data.Maybe (mapMaybe)
@@ -522,18 +521,17 @@ argWidthMask = \case
 
 encodeRawDataItem :: MajorType -> ArgWidth -> Word64 -> Encoding
 encodeRawDataItem major width arg
-  | isValidWidth arg width =
-      encodePreEncoded . LBS.toStrict . B.toLazyByteString $
-        B.word8 headerByte <> payload
+  | isValidWidth arg width = encodePreEncoded . BS.pack $ headerByte : argBytes
   | otherwise = error $ "Argument is too large to be encoded as " <> show width <> ": " <> show arg
   where
     headerByte = majorTypeMask major .|. argWidthMask width .|. inlineArgMask
-    payload = case width of
+    argBytes = case width of
       InlineArg -> mempty
-      OneByteArg -> B.word8 $ fromIntegral arg
-      TwoByteArg -> B.word16BE $ fromIntegral arg
-      FourByteArg -> B.word32BE $ fromIntegral arg
-      EightByteArg -> B.word64BE arg
+      OneByteArg -> beBytes 1
+      TwoByteArg -> beBytes 2
+      FourByteArg -> beBytes 4
+      EightByteArg -> beBytes 8
+    beBytes n = [fromIntegral (arg `shiftR` (8 * i)) | i <- [n - 1, n - 2 .. 0]]
     inlineArgMask
       | InlineArg <- width = fromIntegral arg
       | otherwise = 0x00
