@@ -46,11 +46,12 @@ Cuddle currently supports the following CDDL features:
 ## The cuddle tool
 
 Included in this package is a command line tool for working with CDDL files. It
-currently supports four functions:
+currently supports the following functions:
 
 - Formatting of CDDL files
 - Validating that a CDDL file is legal
 - Generating random CBOR terms matching CDDL productions
+- Generating random CBOR terms that deliberately don't match CDDL in a fixed number of places (grammar fuzzing)
 - Testing compliance of a CBOR file against a CDDL spec.
 
 # Huddle
